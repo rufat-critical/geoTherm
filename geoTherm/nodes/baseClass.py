@@ -34,22 +34,6 @@ class flowNode(Node):
         return super().initialize(model)
 
 
-    def evaluate(self):
-        """
-        Evaluate the flow node and update pressure and enthalpy differences.
-        """
-
-        # Get the target outlet state
-        # This should be a dictionary in the form of:
-        # {'H': Enthalpy, 'P':Pressure}
-        outletState = self.getOutletState()
-
-        # Update dP and dH
-        self._dP = (self.model.nodes[self.US].thermo._P -
-                    outletState['P'])
-        self._dH = (self.model.nodes[self.US].thermo._H -
-                    outletState['H'])
-
     def getOutletState(self):
         """
         Placeholder method to be overwritten by specific flow nodes.
@@ -148,6 +132,30 @@ class statefulFlowNode(flowNode):
         return super().initialize(model)
 
 
+    def evaluate(self):
+        """
+        Evaluate the flow node and update pressure and enthalpy differences.
+        """
+
+        # Get the target outlet state
+        # This should be a dictionary in the form of:
+        # {'H': Enthalpy, 'P':Pressure}
+        outletState = self.getOutletState()
+
+        US, DS = self._getThermo()
+
+        # Update dP and dH
+        self._dP = (outletState['P']
+                    - US._P)
+
+        self._dH = (outletState['H']
+                    - US._H)
+
+        if abs(self._dP - self._get_dP(US, DS))>1e-9:
+            from pdb import set_trace
+            set_trace()
+
+
     @property
     def x(self):
         """
@@ -213,7 +221,7 @@ class statefulFlowNode(flowNode):
 
         # Return outlet state
         return {'H': US._H + self._dH,
-                'P': US._P - self._dP}
+                'P': US._P + self._dP}
     
 
 class Turbo(statefulFlowNode):
@@ -265,11 +273,9 @@ class Turbo(statefulFlowNode):
             self._w = 1
 
         # Initialize Variables
-        self._W = 0
         self._Q = 0
         
-
-    def getOutletState(self):
+    def getOutletState5(self):
         """
         Calculate the outlet state of the turbine.
 
@@ -289,6 +295,12 @@ class Turbo(statefulFlowNode):
         self._W = -self._dH*np.abs(self._w)
 
         return {'H': US._H + self._dH, 'P': US._P + self._dP}
+
+    @property
+    def _W(self):
+        US, DS = self._getThermo()
+        dH = self._get_dH(US, DS)
+        return -dH*np.abs(self._w)
 
 
     def _get_dH(US, DS):
@@ -351,7 +363,8 @@ class flow(statefulFlowNode):
                                  "Initialization")
         else:
             self.update_dP = False
-            self._dP = dP
+            self.__dPsetpoint = -dP
+            self._dP = -dP
 
 
         self._Qobj = None
@@ -364,7 +377,6 @@ class flow(statefulFlowNode):
             from pdb import set_trace
             set_trace()
 
-
     def _get_dP(self, US, DS):
 
         if self.update_dP:
@@ -374,7 +386,7 @@ class flow(statefulFlowNode):
                           self._w,
                           self._roughness)
         else:
-            return self._dP
+            return self.__dPsetpoint
 
     def _get_dH(self, US, DS):
 
@@ -386,7 +398,6 @@ class flow(statefulFlowNode):
             self._Q = self._get_Q(US, DS)
 
             return self._Q/np.abs(self._w)
-
 
     def _get_Q(self, US, DS):
         # Update Heat in Pipe

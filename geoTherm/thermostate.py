@@ -284,7 +284,7 @@ def addThermoSetters(setterList):
 # Add thermo properties, the _ means they have a unit that's described in units
 # class
 thermoGetters = ['_T', '_P', 'Q', '_H', '_S', '_U', '_cp', '_cv', '_density',
-                    '_viscosity', 'species_names', 'phase', '_sound']
+                    '_viscosity', 'species_names', 'phase', '_sound', '_Pvap']
 
 thermoSetters = ['TP', 'TS', 'HP', 'SP', 'DU', 'PU', 'DP', 'HS',
                  'DH', 'TQ', 'PQ', 'TD','TPY', 'X', 'Y']
@@ -302,7 +302,8 @@ class thermo:
                  '_density', 'viscosity', '_viscosity', 'Y', 'X', 
                  'species_names', 'TP', '_TP', 'TD', '_TD', 'TQ', '_TQ',
                  'TH', '_TH', 'TS', '_TS', 'HP', '_HP', 'HS', '_HS',
-                 'DU', '_DU', 'TPY', '_TPY', 'thermoModel', 'sound', '_sound']
+                 'DU', '_DU', 'TPY', '_TPY', 'thermoModel', 'sound', '_sound',
+                 '_Pvap']
 
     _units = {'T': 'TEMPERATURE',         # Temperature
               'P': 'PRESSURE',            # Pressure
@@ -313,8 +314,8 @@ class thermo:
               'cv': 'SPECIFICHEAT',       # Specific Heat at Constant Volume
               'density': 'DENSITY',       # Density
               'viscosity': 'VISCOSITY',   # Viscosity
-              'sound': 'VELOCITY'         # Velocity
-              }
+              'sound': 'VELOCITY',        # Velocity
+              'Pvap': 'PRESSURE'}         # Vapor Pressure
 
     @inputParser
     def __init__(self, fluid='H2O', state=None, model='coolprop'):

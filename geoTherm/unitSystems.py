@@ -71,7 +71,7 @@ class MIXED:
         'MASS': 'lb',                      # Pound for mass
         'MASSFLOW': 'kg/s',                # Kilogram per second for mass flow rate
         'POWER': 'MW',                     # Megawatt for power
-        'PRESSURE': 'psi',                 # Pounds per square inch for pressure
+        'PRESSURE': 'bar',                 # Pounds per square inch for pressure
         'SPECIFICENERGY': 'kJ/kg',         # Kilojoule per kilogram for specific energy
         'SPECIFICENTROPY': 'kJ/kg/degK',   # Kilojoule per kilogram per Kelvin for specific entropy
         'SPECIFICHEAT': 'kJ/kg/K',         # Kilojoule per kilogram per Kelvin for specific heat

@@ -731,6 +731,8 @@ class Model(modelTable):
         # Get the error
         if all(abs(self.error/(self.x + eps)<1e-3)):
             return True
+        else:
+            return False
 
     @property
     def performance(self):
