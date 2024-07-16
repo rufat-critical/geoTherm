@@ -1,4 +1,5 @@
 import geoTherm as gt
+from matplotlib import pyplot as plt
 
 
 ## Water Circuit
@@ -17,17 +18,20 @@ HOT = gt.Model([gt.Boundary(name='Well', fluid=water, P=(40, 'bar'), T=473),
               gt.POutlet(name='Outlet', fluid=water, P=(140, 'bar'), T=500),
               gt.fixedWPump(name='WaterPump',eta=.7,PR=1,w=(90,'kg/s'),US='WaterHEXOut',DS='Outlet')])
 
-
-
 # Solve Hot
 HOT.solve()
 
 ## ORC Circuit
-fluid = 'isobutane'
+fluid = 'IsoButene'
 
-ww = 50
-ORC = gt.Model([gt.Boundary(name='LowT', fluid=fluid, P=(5.1180101718524, 'bar'), T=308),
-              gt.Pump(name='Pump', eta=.7, PR=30/5.1180101718524, w=50, US='LowT', DS='PumpOut'),
+thermo = gt.thermo()
+thermo.TPY = 308, 101325, 'isobutane'
+
+ww = 60
+
+
+ORC = gt.Model([gt.Boundary(name='LowT', fluid=fluid, P=(thermo.Pvap*1.1, 'bar'), T=308),
+              gt.Pump(name='Pump', eta=.7, PR=2.1, w=ww, US='LowT', DS='PumpOut'),
               gt.Station(name='PumpOut', fluid=fluid),
               #gt.Qdot(name='ORC_Qdot', hot='WaterHEX'),
               gt.HEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=ww, Q=-HOT['WaterHEX']._Q, dP=(1,'bar'), D=(2, 'in'), L=3),
@@ -44,15 +48,31 @@ CombinedModel += HOT
 # Add ORC
 CombinedModel += ORC
 
-
 CombinedModel += gt.wBalance('TurbInT','Turb','Well.T','TurbIn.T',5)
 CombinedModel += gt.TBalance('Blah','WaterHEXOut','WaterHEXOut.T','PumpOut.T',5)
-
 CombinedModel.solve()
 
 
-# ADD Heat Exchange between HOT and ORC
-#CombinedModel += gt.HEXConnector(name='HOT_HEX', hot='WaterHEX', cool='ORC_HEX')
+ORC['Pump'].PR = 3
+CombinedModel.solve()
+
+
+import numpy as np
+PR_sweep = np.arange(2,13,.1)
+
+W_ORC = []
+W_Net = []
+Mdot = []
+
+
+
+for PR in PR_sweep:
+    ORC['Pump'].PR = PR
+    CombinedModel.solve()
+    W_ORC.append(ORC.performance[0])
+    W_Net.append(CombinedModel.performance[0])
+    Mdot.append(ORC['Pump']._w)
+    
 
 
 print('HOT WATER Circut')
@@ -61,3 +81,13 @@ print('ORC Circuit')
 print(ORC)
 print('Combined Thermo')
 print(CombinedModel)
+
+plt.plot(PR_sweep, W_ORC, label='ORC')
+plt.plot(PR_sweep, W_Net, label='W_Net')
+plt.xlabel('PR')
+plt.ylabel('Work [MW]')
+plt.figure()
+plt.plot(PR_sweep, Mdot)
+plt.xlabel('PR')
+plt.ylabel('Mass Flow [kg/s]')
+plt.show()

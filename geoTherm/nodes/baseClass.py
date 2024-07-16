@@ -151,9 +151,9 @@ class statefulFlowNode(flowNode):
         self._dH = (outletState['H']
                     - US._H)
 
-        if abs(self._dP - self._get_dP(US, DS))>1e-9:
-            from pdb import set_trace
-            set_trace()
+        #if abs(self._dP - self._get_dP(US, DS))>1e-9:
+        #    from pdb import set_trace
+        #    set_trace()
 
 
     @property
