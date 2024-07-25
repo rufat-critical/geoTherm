@@ -18,6 +18,7 @@ setup(
         'matplotlib',
         'numpy',
         'rich',
-        'pint'
+        'pint',
+        'pyyaml'
     ],
 )
