@@ -1,9 +1,10 @@
-from geoTherm.units import inputParser, addQuantityProperty
-from .baseClass import flowNode
+from ..units import inputParser, addQuantityProperty
+from .baseClasses import flowNode
 
 
 # PUT THIS IN A LINE TO FIX MASS FLOW RATE!
 # USE THIS TO THROTTLE FLOW AND EVALUATE PROPERTIES
+
 
 @addQuantityProperty
 class fixedFlow(flowNode):

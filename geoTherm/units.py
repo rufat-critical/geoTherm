@@ -2,6 +2,7 @@ import pint
 from dataclasses import dataclass
 import inspect
 import importlib
+from geoTherm.logger import logger
 import os
 import sys
 import numpy as np
@@ -186,7 +187,7 @@ class unitHandler:
             float: The converted value in the desired units.
         """
         return self.Q_(value, input_unit).to(output_unit).magnitude
-    
+
     def parseUnits(self, input_value, quantity):
         """
         Parse and convert input values to SI units.
@@ -217,9 +218,8 @@ class unitHandler:
                                     input_unit=input_value[1],
                                     output_unit=unitSystems['SI'].units[quantity])
         else:
-            return input_value
-            
-            
+            return input_value            
+
 # Create an instance of UnitHandler
 unit_handler = unitHandler()
 
@@ -270,8 +270,9 @@ thermoUnits = {'T': 'TEMPERATURE',         # Temperature
                'cv': 'SPECIFICHEAT',       # Specific Heat at Constant Volume
                'density': 'DENSITY',       # Density
                'viscosity': 'VISCOSITY',   # Viscosity
-               'sound': 'VELOCITY'         # Velocity
-               }
+               'sound': 'VELOCITY',        # Velocity
+               'Q': None}
+
 
 ## UNIT DECORATORS
 def inputParser(init):
@@ -290,7 +291,7 @@ def inputParser(init):
         # Get default argument inputs
         defaults = {var: val.default if val.default != val.empty else None
                     for var, val in sig.parameters.items() if var != 'self'}
-        
+
         # Store the original inputs
         #self.__inputs = {**defaults, **inputs}
 
@@ -298,7 +299,7 @@ def inputParser(init):
         for name, val in inputs.items():
             if val is None:
                 continue
-            
+
             # Check if the input is a 'state'
             if name == 'state':
                 # This should be a dictionary with 2 thermodynamic properties
@@ -307,10 +308,10 @@ def inputParser(init):
                 for Q, v in state.items():
                     state[Q] = unit_handler.parseUnits(v, 
                                                        thermoUnits[Q])
-                
+
                 inputs[name] = state
                 continue
-                
+
             # Check if the parameter has a type annotation
             elif sig.parameters[name].annotation is not inspect.Parameter.empty:
                 quantity = sig.parameters[name].annotation
@@ -321,6 +322,7 @@ def inputParser(init):
         return init(self, **inputs)
     return wrapper 
 
+
 def inputParser(init):
     """
     Decorator to check function annotations and update to SI units.
@@ -330,9 +332,30 @@ def inputParser(init):
     def wrapper(self, *args, **kwargs):
         # Get the function signature
         sig = inspect.signature(init)
+        # These are the component argument names
         arg_names = list(sig.parameters.keys())[1:]
+        
+        # These are the user specified inputs
+        # Generate a dictionary with user inputs that
+        # correspond to component argument names
         inputs = dict(zip(arg_names, args))
         inputs.update(kwargs)
+
+        # Check if the the kwarg correspond to the component arguments
+        # if not then output an error saying invalid argnames specified
+        if any([kwarg not in arg_names for kwarg in kwargs]):
+            # Get the invalid kwargs
+            bad_kwargs = [kwarg for kwarg in kwargs if kwarg not in arg_names]
+
+            if 'name' in inputs:
+                errStr = f"Invalid argument names entered for "\
+                    f"node:'{inputs['name']}' of type: {type(self)}"
+            else:
+                errStr = f"Invalid argument names specified for nodetype: {type(self)}"
+
+            logger.error(f'{errStr}\nInvalid arguments: {bad_kwargs}')
+            logger.info(f'The valid argument names are {arg_names}')
+            raise RuntimeError('Errors Encountered')
 
         # Get default argument inputs
         defaults = {var: val.default if val.default != val.empty else None
@@ -352,15 +375,16 @@ def inputParser(init):
                 # Loop through the dictionary and convert each value to SI units
                 state = dict(val)
                 for Q, v in state.items():
-                    state[Q] = unit_handler.parseUnits(v, 
+                    state[Q] = unit_handler.parseUnits(v,
                                                        thermoUnits[Q])
-                
+
                 inputs[name] = state
                 continue
-                
+
             # Check if the parameter has a type annotation
             elif sig.parameters[name].annotation is not inspect.Parameter.empty:
                 quantity = sig.parameters[name].annotation
+
                 # Convert the input value to SI units
                 inputs[name] = unit_handler.parseUnits(val, quantity)
 

@@ -338,7 +338,6 @@ class Model(modelTable):
         for _,junc in self.junctions.items():
             junc.evaluate()
 
-
         return self._netError
   
 
@@ -352,21 +351,26 @@ class Model(modelTable):
 
         if netSolver:
             self.initializeSteady()
+            
             sol = fsolve(self.evaluateNet, self._netX, full_output=True)
+            
+            self.debug = True
             self.evaluateNet(sol[0])
-
             if not self.converged:
                 from pdb import set_trace
                 set_trace()
-            
-            return
+            else:
+                return
 
 
 
-        sol = fsolve(self.evaluate, self.x)
+        sol = fsolve(self.evaluate, self.x, full_output=True)
         # Update State to Sol
         # Add Update State Method and update that way
-        self.evaluate(sol)
+        self.evaluate(sol[0])
+        #from pdb import set_trace
+        #set_trace()
+
 
     def sim(self):
         
@@ -482,7 +486,7 @@ class Model(modelTable):
             # Get the node instance 
             node = self.nodes[nodeName]
             
-            if isinstance(node, gt.Boundary):
+            if isinstance(node, (gt.Boundary, gt.hexVolume)):
                 return True
             if nodeMap[nodeName]['hot'] or nodeMap[nodeName]['cool']:
                 if (len(nodeMap[nodeName]['US']) == 0 and
@@ -549,9 +553,13 @@ class Model(modelTable):
                     downstreamJunction = traceBranch(nodeMap, nodeName, currentBranch, remainingNodes)
                     branches[branchCounter] = currentBranch
                     junctions[junctionName]['DS'].append(branchCounter)
-                    junctions[downstreamJunction]['US'].append(branchCounter)
-                    branchConnections[branchCounter] = {'US': junctionName, 'DS': downstreamJunction, 'hot': [], 'cool': []}
-                    branchCounter += 1
+                    try:
+                        junctions[downstreamJunction]['US'].append(branchCounter)
+                        branchConnections[branchCounter] = {'US': junctionName, 'DS': downstreamJunction, 'hot': [], 'cool': []}
+                        branchCounter += 1
+                    except:
+                        from pdb import set_trace
+                        set_trace()
 
         if len(remainingNodes) != 0:
             # Some node wasn't classified properly
@@ -562,7 +570,9 @@ class Model(modelTable):
 
     def initializeSteady(self):
 
-        self.initialize()
+
+        if not self.initialized:
+            self.initialize()
 
         (branch, junction,
          branchConnections,
@@ -591,28 +601,28 @@ class Model(modelTable):
             if not branch.initialized:
                 from pdb import set_trace
                 set_trace()
-        
+
         for jname, junction in self.junctions.items():
             if not junction.initialized:
                 from pdb import set_trace
                 set_trace()
-        
+
         self._netState = {}
         self.__netX = np.array([])
 
         for bname, branch in self.branches.items():
             if len(branch.x) == 0:
                 continue
-            
+
             xlen = len(branch.x)
-            
+
             current_len = len(self.__netX)
 
             self._netState[bname] = np.arange(current_len,
                                               current_len+xlen)
 
             self.__netX = np.concatenate((self.__netX, branch.x))
-  
+
         for jname, junc in self.junctions.items():
             if not hasattr(junc, 'x'):
                 continue
@@ -714,7 +724,11 @@ class Model(modelTable):
 
         # Sum the heat in/out of the node
         for name in nodeMap['hot']:
-            Qnet += self.nodes[name]._Q
+            try:
+                Qnet += self.nodes[name]._Q
+            except:
+                from pdb import set_trace
+                set_trace()
 
         for name in nodeMap['cool']:
             Qnet -= self.nodes[name]._Q
@@ -797,7 +811,7 @@ class Junction:
 
 
     def initialize(self):
-        if isinstance(self.node, gt.Boundary):
+        if isinstance(self.node, (gt.Boundary)):
             pass
         elif hasattr(self.node, 'x'):
             # Add properties and method if self.node has attribute 'x'
@@ -878,10 +892,10 @@ class Branch:
             self.DSJunc = model.nodes[DSJunc]
          
         # Try to initialize the Branch
-        try:
-            self.initialize()
-        except:
-            set_trace()
+        #try:
+        self.initialize()
+        #except:
+        #    set_trace()
 
     @property
     def average_w(self):
@@ -891,10 +905,10 @@ class Branch:
         n_w = 0
 
         for node in self.nodes:
-            if hasattr(node, '_w'):
+            if isinstance(node, gt.flowNode):
                 Wnet += node._w
                 n_w += 1
-        
+
         return float(Wnet/n_w)
 
     def evaluate(self):
@@ -907,6 +921,8 @@ class Branch:
         if self.fixedFlow:
             self._w = self.wController._w
 
+        self.backFlow = False
+
         # Reverse order if w is negative
         if self._w < 0:
             # Check if backflow is allowed
@@ -915,8 +931,8 @@ class Branch:
                 Pout = self.USJunc.thermo._P
                 DSJunc = self.USJunc.name
             else:
-                from pdb import set_trace
-                set_trace()
+                self._error = (-self._w - np.sign(self._w+eps))*1e5
+                return
         else:
             Pout = self.DSJunc.thermo._P
             DSJunc = self.DSJunc.name
@@ -943,7 +959,7 @@ class Branch:
                 continue
 
             if isinstance(node, gt.TBoundary):
-                print('NEED TO REFACTOR')
+                #print('NEED TO REFACTOR')
                 continue
             
             # The next nodes should be flowNodes
@@ -971,12 +987,14 @@ class Branch:
                     from pdb import set_trace
                     set_trace()
 
+
                 if dsState['P'] < 0:
                     # Pressure drop is too high because massflow too high, lets decrease mass flow
                     #self._error = (dsState['P'])*1e5*np.sign(self._w)
                     self._error = (-self._w - np.sign(self._w+eps))*1e5
                     print('TRIGGERED THIS', dsState['P'])
                     return
+
 
                 if self.fixedFlow:
                     if self.penalty is not False:
@@ -988,6 +1006,9 @@ class Branch:
                         self._error = (Pout/dsState['P'] - 1)*dsState['P']
                 else:
                     self._error = (dsState['P']/Pout - 1)*np.sign(self._w)*Pout
+                    if self.model.debug == True:
+                        from pdb import set_trace
+                        #set_trace()
                 return
 
             if isinstance(node, (gt.flowNode, gt.Turbo)):
@@ -1002,7 +1023,7 @@ class Branch:
                 # Update thermo for dsNode
 
                 if isinstance(nodes[inode+1], (gt.TBoundary, gt.PBoundary)):
-                    print('REFACTOR AND MAKE THIS NEATER!')
+                    #print('REFACTOR AND MAKE THIS NEATER!')
                     error = self.model.nodes[dsNode].updateThermo(dsState)
                 else:
                     error = self.model.nodes[dsNode].updateThermo(dsState)
@@ -1028,8 +1049,10 @@ class Branch:
         if len(nodeMap['cool']) > 0:
             # There shouldn't be any cool nodes
             # debug if there are
+            from pdb import set_trace
             set_trace()
-        
+            print('Check Line 1037ish')
+
         for hotNode in nodeMap['hot']:
             node = self.model.nodes[hotNode]
             
@@ -1037,9 +1060,20 @@ class Branch:
                 continue
             
             if 'H' in dsState:
-                dsState['H'] += node._Q/abs(self._w)
+                try:
+                    dsState['H'] += node._Q/abs(self._w)
+                except:
+                    from pdb import set_trace
+                    set_trace()
             else:
                 set_trace()
+
+        for coolNode in nodeMap['cool']:
+            node = self.model.nodes[coolNode]
+
+            dsState['H'] -= node._Q/abs(self._w)
+            #from pdb import set_trace
+            #set_trace()
 
         return dsState
 
@@ -1065,7 +1099,9 @@ class Branch:
                 nMap = self.model.nodeMap[node.name]
 
                 if len(nMap['cool']) > 0:
-                    set_trace()
+                    print('Check Line 1073ish')
+                    #from pdb import set_trace
+                    #set_trace()
 
             if isinstance(node, (gt.fixedWTurbine, gt.fixedWPump)):
                 if self.fixedFlow:
@@ -1098,6 +1134,7 @@ class Branch:
                 # Set Branch Mass Flow to this component flow
                 self._w = node._w
                 self.wController = node
+            
 
         if len(self._x) == 0:
             if self.fixedFlow:
@@ -1107,7 +1144,6 @@ class Branch:
                 self._x = np.array([self._w])
 
         self.initialized = True
-
 
     @property
     def x(self):

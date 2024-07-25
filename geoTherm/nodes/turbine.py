@@ -1,7 +1,7 @@
 import numpy as np
-from .baseClass import Turbo
-from geoTherm.units import addQuantityProperty, inputParser
-from geoTherm import logger
+from .baseClasses import Turbo
+from ..units import addQuantityProperty, inputParser
+from ..logger import logger
 
 
 @addQuantityProperty
@@ -15,7 +15,7 @@ class Turbine(Turbo):
         # Get enthalpy change across turbine
 
         # Generate temporary thermo
-        isentropic = US.fromState(US.state)
+        isentropic = US.from_state(US.state)
         isentropic._SP = US._S, US._P/self.PR
 
         return (isentropic._H - US._H)*self.eta

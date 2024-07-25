@@ -1,6 +1,6 @@
-from geoTherm.thermostate import thermo, addThermoAttributes
-from geoTherm.units import inputParser
-from geoTherm.logger import logger
+from ..thermostate import thermo, addThermoAttributes
+from ..units import inputParser
+from ..logger import logger
 from .node import Node
 import numpy as np
 

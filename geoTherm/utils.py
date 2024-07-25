@@ -1,6 +1,7 @@
 import numpy as np
 import re
 from scipy.optimize import root_scalar
+from .logger import logger
 
 # Get Machine precision
 eps = np.finfo(float).eps
@@ -82,6 +83,7 @@ def parseComposition(composition):
             if len(composition) == 1:
                 comp = [(composition[0], 1.0)]
             else:
+                from pdb import set_trace
                 # Something is wrong with the composition string
                 set_trace()
 
@@ -98,68 +100,62 @@ def parseComposition(composition):
     elif isinstance(composition, dict):
         # If input is a dictionary then we guchi
         pass
-        
+
     # Normalize all the quantities
     tot = sum(composition.values())
     # Normalize by total sum
     composition = {species:q/tot for species, q in composition.items()}
-    
+
     return composition
 
-def dPpipe(thermo, D, L, w, roughness=1e-5):
+def dP_pipe(thermo, U, Dh, L, roughness=2.5e-6):
     """ Estimate pressure drop for pipe flow 
-    
+
     Args:
         thermo (thermostate): geoTherm thermostate object
-        D (float): Pipe Diameter in m
+        U (float): Flow Speed in m/s
+        Dh (float): Hydraulic Diameter in m
         L (float): Pipe length in m
         roughness (float, optional): Pipe roughness in m (Default = 1e-5 m)
-    
+
     Returns:
         Pipe pressure drop in Pa """
 
-
-    w = np.abs(w)
-
     # Calculate friction factor
-    f = frictionFactor(thermo, D, w, roughness=roughness)
-    # Calculate Flow Area
-    A = np.pi*D**2/4
+    f = friction_factor(thermo, U, Dh, roughness=roughness)
 
-    # Calculate Pressure drop
-    dP = f*L/D*(.5/thermo._density*(w/A)**2)
-
-    return dP
+    # Calculate Friction Pressure loss
+    return -f*L/Dh*(.5*thermo._density*U**2)
 
 
-def ReCalc(thermo, D, w):
-    """ Get the Reynolds number for pipe flow 
-    
+def Re_calc(thermo, U, L):
+    """ Calculate the Reynolds number
+
     Args:
         thermo (thermostate): geoTherm thermo Object
-        D (float): Pipe Diameter in m
-        w (float): Flow rate in kg/s
-    
+        U (float): Flow Velocity in m/s
+        L (float): Characteristic Length in m
+
     Returns:
         Reynolds Number """
 
-    return (4*w)/(np.pi*D*thermo._viscosity)
+    return thermo._density*U*L/thermo._viscosity
 
 
-def frictionFactor(thermo, D, w, roughness=1e-5):
+def friction_factor(thermo, U, Dh, roughness=2.5e-6):
     """ Get the friction factor for a pipe. 
     
     Args:
         thermo (thermostate): geoTherm thermo Object
-        D (float): Pipe Diameter in m
-        w (float): Flow rate in kg/s
+        U (float): Flow Speed in m/s
+        Dh (float): Hydraulic Diameter in m
 
     Returns:
         friction factor """
     
 
     # Calculate Reynolds number
-    Re = ReCalc(thermo, D, w)
+    Re = Re_calc(thermo, U, Dh)
 
     # friction factor for laminar/turbulent
     if Re<2100:
@@ -169,7 +165,7 @@ def frictionFactor(thermo, D, w, roughness=1e-5):
         # Use colebrook
         
         # Calculate relative roughness
-        k = roughness/D
+        k = roughness/Dh
         f = colebrook(k, Re)
 
     return f
@@ -192,3 +188,29 @@ def colebrook(k, Re):
     f = root_scalar(res, method='brentq', bracket=[1e-10, 1e4]).root
 
     return f
+
+def dittus_boelter(Re, Pr, heating=True):
+    # Dittus Boelter heat transfer correlation
+    # output is Nusselt #
+
+    # Check Applicability
+    if 0.6 <= Pr <= 160:
+        pass
+    else:
+        logger.warn("Dittus-Boelter relation is outside valid range"
+                    "of 0.6<=Pr<=160, "
+                    f"current {Pr}")
+
+    if Re >= 1e4:
+        pass
+    else:
+        logger.warn("Dittus-Boelter relation is outside valid range"
+                    f"Re>1e4, current {Re}")
+
+    # Check what Exponent to use for Nusselt #
+    if heating:
+        n = 0.4
+    else:
+        n = 0.3
+
+    return 0.023*Re*Pr**n

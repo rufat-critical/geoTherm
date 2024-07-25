@@ -1,9 +1,6 @@
 from rich.console import Console
 from rich.table import Table
-import numpy as np
-from geoTherm.logger import logger
-from geoTherm.units import inputParser
-from geoTherm.utils import dPpipe
+#from ..logger import logger
 
 
 class modelTable:

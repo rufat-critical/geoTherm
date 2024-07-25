@@ -1,5 +1,5 @@
-from geoTherm.thermostate import thermo, addThermoAttributes
-from geoTherm.units import inputParser
+from ..thermostate import thermo, addThermoAttributes
+from ..units import inputParser
 from .node import Node
 import numpy as np
 
@@ -66,13 +66,17 @@ class thermoNode(Node):
 class Boundary(thermoNode):
     pass
 
+
+
 class POutlet(thermoNode):
 
     def evaluate(self):
 
         outlet = self.flowNode.getOutletState()
-
-        self.thermo._HP = outlet['H'], self.thermo._P
+        try:
+            self.thermo._HP = outlet['H'], self.thermo._P
+        except:
+            print('Failed to update Poutlet')
 
     def initialize(self, model):
 
@@ -102,16 +106,16 @@ class PBoundary(thermoNode):
 
         try:
             # Update the thermodynamic state
-            self.thermo._HP = x[0], self.thermo._P
+            self.thermo._TP = x[0], self.thermo._P
             self.penalty = False
         except:
-            self.thermo._HP = X0, self.thermo._P
+            self.thermo._TP = X0, self.thermo._P
             self.penalty = (X0-x)*1e5
 
     @property
     def x(self):
         # Return the object state (enthalpy)
-        return np.array([self.thermo._H])
+        return np.array([self.thermo._T])
 
     @property
     def error(self):
@@ -120,7 +124,8 @@ class PBoundary(thermoNode):
 
         if self.penalty is not False:
             return self.penalty
-
+        from pdb import set_trace
+        set_trace()
         return np.array([Hnet+Qnet+Wnet])
 
 

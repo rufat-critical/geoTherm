@@ -5,6 +5,7 @@ from .utils import parseState, parseComposition
 from .units import inputParser, addQuantityProperty, fromSI, toSI, units
 from rich.console import Console
 from rich.table import Table
+from .logger import logger
 
 class coolprop_wrapper:
     """ Wrapper for CoolProp, makes it easy to interface with thermo state """
@@ -148,7 +149,8 @@ class coolprop_wrapper:
             'X': 'get_mole_fractions',
             'species_names': 'fluid_names',
             'sound': 'speed_sound',
-            'Q': 'Q'
+            'Q': 'Q',
+            'conductivity': 'conductivity'
         }
 
         return prop_dict[property]  
@@ -172,7 +174,7 @@ def addThermoAttributes(cls):
     return cls
 
 
-@addQuantityProperty
+#@addQuantityProperty
 def addThermoGetters(getterList):
     """
     Decorator to add thermodynamic properties to a class.
@@ -284,7 +286,8 @@ def addThermoSetters(setterList):
 # Add thermo properties, the _ means they have a unit that's described in units
 # class
 thermoGetters = ['_T', '_P', 'Q', '_H', '_S', '_U', '_cp', '_cv', '_density',
-                    '_viscosity', 'species_names', 'phase', '_sound', '_Pvap']
+                 '_viscosity', 'species_names', 'phase', '_sound', '_Pvap',
+                 '_conductivity']
 
 thermoSetters = ['TP', 'TS', 'HP', 'SP', 'DU', 'PU', 'DP', 'HS',
                  'DH', 'TQ', 'PQ', 'TD','TPY', 'X', 'Y']
@@ -303,19 +306,20 @@ class thermo:
                  'species_names', 'TP', '_TP', 'TD', '_TD', 'TQ', '_TQ',
                  'TH', '_TH', 'TS', '_TS', 'HP', '_HP', 'HS', '_HS',
                  'DU', '_DU', 'TPY', '_TPY', 'thermoModel', 'sound', '_sound',
-                 '_Pvap']
+                 '_Pvap', '_conductivity']
 
-    _units = {'T': 'TEMPERATURE',         # Temperature
-              'P': 'PRESSURE',            # Pressure
-              'H': 'SPECIFICENERGY',      # Specific Enthalpy
-              'S': 'SPECIFICENTROPY',     # Specific Entropy
-              'U': 'SPECIFICENERGY',      # Specific Internal Energy
-              'cp': 'SPECIFICHEAT',       # Specific Heat at Constant Pressure
-              'cv': 'SPECIFICHEAT',       # Specific Heat at Constant Volume
-              'density': 'DENSITY',       # Density
-              'viscosity': 'VISCOSITY',   # Viscosity
-              'sound': 'VELOCITY',        # Velocity
-              'Pvap': 'PRESSURE'}         # Vapor Pressure
+    _units = {'T': 'TEMPERATURE',               # Temperature
+              'P': 'PRESSURE',                  # Pressure
+              'H': 'SPECIFICENERGY',            # Specific Enthalpy
+              'S': 'SPECIFICENTROPY',           # Specific Entropy
+              'U': 'SPECIFICENERGY',            # Specific Internal Energy
+              'cp': 'SPECIFICHEAT',             # Specific Heat at Constant P
+              'cv': 'SPECIFICHEAT',             # Specific Heat at Constant V
+              'density': 'DENSITY',             # Density
+              'viscosity': 'VISCOSITY',         # Viscosity
+              'conductivity': 'CONDUCTIVITY',   # Conductivity
+              'sound': 'VELOCITY',              # Velocity
+              'Pvap': 'PRESSURE'}               # Vapor Pressure
 
     @inputParser
     def __init__(self, fluid='H2O', state=None, model='coolprop'):
@@ -340,7 +344,6 @@ class thermo:
             # Parse the state and composition
             stateVars = parseState(state)
 
-            
 
         if self.thermoModel == 'coolprop':
             self.pObj = coolprop_wrapper(cDict=cDict, state=state, stateVars=stateVars)
@@ -382,6 +385,10 @@ class thermo:
         Returns:
             float: Property value.
         """   
+
+        if property == 'prandtl':
+            return self.prandtl
+
         return self.pObj.getProperty(property)     
 
     @property
@@ -400,7 +407,7 @@ class thermo:
         }
 
     @staticmethod
-    def fromState(state):
+    def from_state(state):
         """
         Generate a thermo class from the state dictionary.
         
@@ -411,23 +418,6 @@ class thermo:
             thermo: Thermo object.
         """
         return thermo(**state)
-
-    @property
-    def Ydict(self):
-        """
-        Return the dictionary containing species mass fractions.
-        
-        Returns:
-            dict: Dictionary of species mass fractions.
-        """
-        species_names = self.pObj.getProperty('species_names')
-        Y = self.pObj.getProperty('Y')
-        return {name: Y[i] for i, name in enumerate(species_names)}
-
-    
-    @property 
-    def gamma(self):
-        return self._cp/self._cv
 
     def __makeTable(self):
         """
@@ -446,13 +436,15 @@ class thermo:
         table.add_row('TEMPERATURE', f'{self.T:0.5g}',
                       units.outputUnits['TEMPERATURE'])
         table.add_row('PRESSURE', f'{self.P:0.5g}',
-                units.outputUnits['PRESSURE'])
+                      units.outputUnits['PRESSURE'])
+        table.add_row('VAPOR P', f'{self.Pvap:0.5g}',
+                      units.outputUnits['PRESSURE'])
         table.add_row('DENSITY', f'{self.density:0.5g}',
-                units.outputUnits['DENSITY'])
+                      units.outputUnits['DENSITY'])
         table.add_row('Cp', f'{self.cp:0.5g}',
-                units.outputUnits['SPECIFICHEAT'])
+                      units.outputUnits['SPECIFICHEAT'])
         table.add_row('Viscosity', f'{self.viscosity:0.5g}',
-                units.outputUnits['VISCOSITY'])        
+                      units.outputUnits['VISCOSITY'])        
         table.add_row('Fluid', str(self.Ydict), '')
         table.add_row('PHASE', self.phase, '')
 
@@ -467,3 +459,71 @@ class thermo:
     
     def __str__(self):
         return self.__makeTable()
+
+    # THESE ARE ADDITIONAL PROPERTIES THAT ARE NOT DEFINED IN THERMOGETTERS
+    @property
+    def Ydict(self):
+        """
+        Return the dictionary containing species mass fractions.
+
+        Returns:
+            dict: Dictionary of species mass fractions.
+        """
+        species_names = self.pObj.getProperty('species_names')
+        Y = self.pObj.getProperty('Y')
+        return {name: Y[i] for i, name in enumerate(species_names)}
+
+    @property 
+    def gamma(self):
+        return self._cp/self._cv
+
+    @property
+    def prandtl(self):
+        
+        # Return gas Prandtl for 2 phase
+        if 0 < self.Q < 1:
+            # Get OG State
+            HP0 = self._HP
+            # Set state to saturated vapor
+            self._PQ = self._P,1
+            # Get Prandtl #
+            prandtl = self.prandtl
+            # Revert state back to OG state
+            self._HP = HP0
+            return prandtl
+
+        if self._cp < 0:
+            # There is some issue in coolprop tables where cp for some
+            # 2 phase mixture is evaluated as a negative value => this 
+            # affects heat transfer calcs and produces erronous predictions
+            # This is a fix if cp is negative by using linear approx of
+            # liq and vapor cp values  
+            logger.warn("Negative Cp detected in Prandl Calc, "
+                        "Will approximate properties as: liq*(1-Q) + Q*vap")
+
+            cp = self._two_phase_average(self.Q, 'cp')
+            viscosity = self._two_phase_average(self.Q, 'viscosity')
+            conductivity = self._two_phase_average(self.Q, 'conductivity')
+
+            # Return prandtl with the interpolated calcs
+            return cp*viscosity/conductivity
+
+        return self._cp*self._viscosity/self._conductivity
+
+    def _two_phase_average(self, Q, prop):
+        # Average properties in 2 phase at constant Pressure
+
+        # Get the initial HP values and Q
+        HP0 = self._HP
+
+        # Set the quality to 0 at the same pressure and evaluate properties
+        self._PQ = self._P, 0
+        prop0 = self.getProperty(prop)
+        # Set the quality to 1 at the same pressure and evaluate properties
+        self._PQ = self._P, 1
+        prop1 = self.getProperty(prop)
+
+        # Revert state back to initial state
+        self._HP = HP0
+        # Linearly interpolate properties
+        return prop0*(1-Q) + prop1*Q
