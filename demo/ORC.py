@@ -10,10 +10,14 @@ water = 'H2O'
 gt.units.input = 'SI'
 gt.units.output = 'mixed'
 
+pump_phi = 0.45
+eta = gt.utils.pump_eta(pump_phi)
+
+
 
 # Hot Circuit
 HOT = gt.Model([gt.Boundary(name='Well', fluid=water, P=(40, 'bar'), T=473),
-              gt.HEX(name='WaterHEX', US='Well', DS='WaterHEXOut', dP =(38, 'bar'),w=50.232),
+              gt.staticHEX(name='WaterHEX', US='Well', DS='WaterHEXOut', dP =(38, 'bar'),w=50.232),
               gt.TBoundary(name='WaterHEXOut', fluid=water, P=(2, 'bar'), T=314.31038),
               gt.POutlet(name='Outlet', fluid=water, P=(140, 'bar'), T=500),
               gt.fixedWPump(name='WaterPump',eta=.7,PR=1,w=(90,'kg/s'),US='WaterHEXOut',DS='Outlet')])
@@ -24,22 +28,29 @@ HOT.solve()
 ## ORC Circuit
 fluid = 'IsoButene'
 
+gt.units.output='SI'
 thermo = gt.thermo()
 thermo.TPY = 308, 101325, 'isobutane'
 
 ww = 60
-
+gt.units.output='mixed'
 
 ORC = gt.Model([gt.Boundary(name='LowT', fluid=fluid, P=(thermo.Pvap*1.1, 'bar'), T=308),
               gt.Pump(name='Pump', eta=.7, PR=2.1, w=ww, US='LowT', DS='PumpOut'),
               gt.Station(name='PumpOut', fluid=fluid),
               #gt.Qdot(name='ORC_Qdot', hot='WaterHEX'),
-              gt.HEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=ww, Q=-HOT['WaterHEX']._Q, dP=(1,'bar'), D=(2, 'in'), L=3),
+              gt.staticHEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=ww, Q=-HOT['WaterHEX']._Q, dP=(1,'bar'), D=(2, 'in'), L=3),
               gt.Station(name='TurbIn', fluid=fluid),
               gt.fixedWTurbine(name='Turb', eta=.75, PR=1.3, w=ww, US='TurbIn', DS='TurbOut'),
               gt.Station(name='TurbOut', fluid=fluid),
-              gt.HEX(name='CoolHex', US = 'TurbOut', DS = 'LowT', w=ww, dP=(1,'bar'))])
+              gt.staticHEX(name='CoolHex', US = 'TurbOut', DS = 'LowT', w=ww, dP=(1,'bar'))])
 
+
+ORC.nodes['TurbIn'].thermo._HP
+state = {'T': 308, 'P': 101325}
+
+
+gt.Station(name='TurbinIn', fluid=ORC.nodes['TurbIn'].thermo.Ydict, state=state)
 
 # Create empty model
 CombinedModel = gt.Model()
