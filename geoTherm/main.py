@@ -495,7 +495,7 @@ class Model(modelTable):
                 
                 # Check these cases
                 # hot or cool only has hot/cool connector and no flow
-                print('CHECK JUNCTION CLASSIFIER WHEN SOBER!')
+                print('CHECK JUNCTION CLASSIFIER!')
                 # If hot or cool in upstream then we ok
                 return False
             

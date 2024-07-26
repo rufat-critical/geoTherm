@@ -8,6 +8,11 @@ import numpy as np
 class Pump(Turbo):
     """Pump class inheriting from Turbo."""
 
+    _displayVars = ['w', 'dP', 'dH', 'W', 'PR', 'vol_flow', 'NPSP']
+    _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
+              'dP': 'PRESSURE', 'vol_flow':'VOLUMETRICFLOW', 'Q':'POWER',
+              'NPSP': 'PRESSURE'}
+
     def _get_dP(self, US, DS):
         """Get delta P across Pump."""
         return US._P*(self.PR-1)
@@ -20,6 +25,13 @@ class Pump(Turbo):
         isentropic._SP = US._S, US._P*self.PR
 
         return (isentropic._H - US._H)/self.eta
+
+    @property
+    def _NPSP(self):
+        US, DS = self._getThermo()
+
+        self._refThermo._TQ = US._T, 0
+        return US._P - self._refThermo._P
 
 
 @addQuantityProperty

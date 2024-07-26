@@ -214,9 +214,9 @@ class statefulFlowNode(flowNode):
 class Turbo(statefulFlowNode):
     """Base Turbo Class for turbines and pumps."""
 
-    _displayVars = ['w', 'dP', 'dH', 'W', 'PR']
+    _displayVars = ['w', 'dP', 'dH', 'W', 'PR', 'vol_flow']
     _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
-              'dP': 'PRESSURE'}
+              'dP': 'PRESSURE', 'vol_flow':'VOLUMETRICFLOW', 'Q':'POWER'}
 
     @inputParser
     def __init__(self, name, eta,
@@ -262,6 +262,12 @@ class Turbo(statefulFlowNode):
         # Initialize Variables
         self._Q = 0
 
+    def initialize(self, model):
+        from geoTherm import thermo
+        self._refThermo = thermo.from_state(model.nodes[self.US].thermo.state)
+
+        return super().initialize(model)
+
     def getOutletState5(self):
         """
         Calculate the outlet state of the turbine.
@@ -289,6 +295,14 @@ class Turbo(statefulFlowNode):
         dH = self._get_dH(US, DS)
         return -dH*np.abs(self._w)
 
+    @property
+    def _vol_flow(self):
+
+        # Get Thermo States
+        US, DS = self._getThermo()
+
+        # Get Upstream
+        return self._w/US._density
 
 class Heat(Node):
     pass

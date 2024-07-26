@@ -29,7 +29,8 @@ class SI:
         'CONDUCTIVITY': 'W/m/K',         # Watts per meter-Kelvin
         'VOLUME': 'm**3',                # Cubic meter
         'THERMALRESISTANCE': 'degK/W',   # Thermal Resistance
-        'CONVECTION': 'W/m**2/degK'        # Convection coeff
+        'CONVECTION': 'W/m**2/degK',        # Convection coeff
+        'VOLUMETRICFLOW': 'm**3/s'
     }
 
 @dataclass
@@ -59,7 +60,8 @@ class ENGLISH:
         'CONDUCTIVITY': 'Btu/hr/ft/F',     # BTU per hour per foot per Fahrenheit
         'VOLUME': 'in**3',                 # Cubic inch
         'THERMALRESISTANCE': 'degR/Btu/s',  # Thermal Resistance
-        'CONVECTION': 'Btu/s/ft**2/degR'   # Convection coeff
+        'CONVECTION': 'Btu/s/ft**2/degR',   # Convection coeff
+        'VOLUMETRICFLOW': 'ft**3/s'
     }
 
 @dataclass
@@ -88,5 +90,6 @@ class MIXED:
         'CONDUCTIVITY': 'W/m/K',           # Watts per meter-Kelvin
         'VOLUME': 'in**3',                 # Cubic inch
         'THERMALRESISTANCE': 'degK/W',      # Thermal Resistance
-        'CONVECTION': 'W/m**2/degK'        # Convection coeff
+        'CONVECTION': 'W/m**2/degK',        # Convection coeff
+        'VOLUMETRICFLOW': 'm**3/s'
     }

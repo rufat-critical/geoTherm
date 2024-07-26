@@ -19,7 +19,8 @@ class Turbine(Turbo):
         isentropic._SP = US._S, US._P/self.PR
 
         return (isentropic._H - US._H)*self.eta
-    
+
+
 
 class fixedWTurbine(Turbine):
     """ 

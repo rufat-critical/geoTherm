@@ -1030,9 +1030,10 @@ class HEX2(Heat):
 @addQuantityProperty
 class HEX(Heat):
 
-    _displayVars = ['w_tube', 'w_shell']
+    _displayVars = ['w_tube', 'w_shell', 'Q', 'L']
     _units = {'w_tube': 'MASSFLOW', 'w_shell': 'MASSFLOW', 'Q': 'POWER', 
-              'D_tube': 'LENGTH', 'D_shell': 'LENGTH', 'wall_th': 'LENGTH'}
+              'D_tube': 'LENGTH', 'D_shell': 'LENGTH', 'wall_th': 'LENGTH',
+              'L': 'LENGTH'}
 
     @inputParser
     def __init__(self, name, shell, tube, L:'LENGTH',
@@ -1198,12 +1199,19 @@ class HEX(Heat):
         # Work backwards
         tube_inlet._HP = tube_outlet._H + dQ/self._w_tube, \
             tube_outlet._P - dP_tube
-        
+
         return shell_outlet, tube_inlet, dQ
 
-
-
     def evaluate(self):
+        self.solveOutlet()
+
+    def set_tube_outlet(self, x):
+        # This is used to specify tube inlet and step down pipe to get
+        x[0]*=1e-5
+        x[1]*=1e-5
+        self.getInlet(x)
+
+    def getInlet(self, x):
 
         # Calculate Spacing
         dL = self._L/self.n_points
@@ -1212,7 +1220,14 @@ class HEX(Heat):
         # For now doing htis
 
         self.hex.nodes['shell'].thermo._HP = self.shell_inlet._HP
-        self.hex.nodes['tube'].thermo._HP = self.tube_outlet._HP
+
+        # Set outlet State
+        X0 = self.hex.nodes['tube'].thermo._HP
+        try:
+            self.hex.nodes['tube'].thermo._HP = x[0]*1e5, x[1]*1e5
+        except:
+            self.hex.nodes['tube'].thermo._HP = X0
+            return (X0-x)*1e5
 
         # Initialize Dict to store data
         self.hexCalcs = {'L':[],
@@ -1220,18 +1235,18 @@ class HEX(Heat):
                          'R':[],
                          'U':[],
                          'Q':[],
-                         'hot': {'T':[],
+                         'shell': {'T':[],
                                  'P':[],
-                                 'prandtl':[]},
-                         'cool':{'T':[],
-                                 'P':[]}}
+                                 'Q':[]},
+                         'tube':{'T':[],
+                                 'P':[],
+                                 'Q':[]}}
 
         # Flow Rates
         self._w_shell = self.shell_node._w
         self._w_tube = self.tube_node._w
 
 
-        #self.model['cool'].thermo._HP = self.model['cool'].thermo._H - dQ/self._w_cool, self.model['cool'].thermo._P
         for i in range(0, self.n_points):
 
             # Update thermo
@@ -1240,40 +1255,77 @@ class HEX(Heat):
             # Update Submodel
             self.hex.nodes['shell'].thermo._HP = shell_outlet._HP
             self.hex.nodes['tube'].thermo._HP = tube_inlet._HP
+            
             self.hexCalcs['L'] = np.linspace(dL,self._L, self.n_points)
             self.hexCalcs['UA'].append(self.hex['wall']._UA)
             self.hexCalcs['Q'].append(dQ)
             self.hexCalcs['R'].append(self.hex['wall']._R)
             self.hexCalcs['U'].append(self.hex['wall']._U_layers)
-            self.hexCalcs['hot']['T'].append(self.hex['shell'].thermo._T)
-            self.hexCalcs['hot']['P'].append(self.hex['shell'].thermo._P)
-            #self.hexCalcs['hot']['T'].append(self._hot_thermo._T)
-            #self.hexCalcs['hot']['P'].append(self._hot_thermo._P)
-            self.hexCalcs['cool']['T'].append(self.hex['tube'].thermo._T)
-            self.hexCalcs['cool']['P'].append(self.hex['tube'].thermo._P)
-            self.hexCalcs['hot']['prandtl'].append(self.hex['shell'].thermo.Q)
+            self.hexCalcs['shell']['T'].append(self.hex['shell'].thermo._T)
+            self.hexCalcs['shell']['P'].append(self.hex['shell'].thermo._P)
+            self.hexCalcs['shell']['Q'].append(self.hex['shell'].thermo.Q)
+            self.hexCalcs['tube']['T'].append(self.hex['tube'].thermo._T)
+            self.hexCalcs['tube']['P'].append(self.hex['tube'].thermo._P)
+            self.hexCalcs['tube']['Q'].append(self.hex['tube'].thermo.Q)
 
         self._dQ = (shell_outlet._H-self.shell_inlet._H)*self._w_shell
         self._dP_shell_actual = shell_outlet._P - self.shell_inlet._P
         self._dP_tube_actual = self.tube_outlet._P - tube_inlet._P
 
+        error = np.array([self.tube_inlet._T - tube_inlet._T,
+                          (self.tube_inlet._P - tube_inlet._P)/self.tube_inlet._P])
+        
+        self.hexCalcs['Q'] = np.array(self.hexCalcs['Q'])
+        self.hexCalcs['shell']['Q'] = np.array(self.hexCalcs['shell']['Q'])
+        self.hexCalcs['tube']['Q'] = np.array(self.hexCalcs['tube']['Q'])
+        self.hexCalcs['shell']['Q'][self.hexCalcs['shell']['Q'] == -1] = 0
+        self.hexCalcs['tube']['Q'][self.hexCalcs['tube']['Q'] == -1] = 0
+        self.hexCalcs['shell']['T'] = np.array(self.hexCalcs['shell']['T'])
+        self.hexCalcs['tube']['T'] = np.array(self.hexCalcs['tube']['T'])
+        self.hexCalcs['shell']['P'] = np.array(self.hexCalcs['shell']['P'])
+        self.hexCalcs['tube']['P'] = np.array(self.hexCalcs['tube']['P'])
+
+        return error
+
+    def solveOutlet(self):
+        
+        if (self.shell_node._w > 1e4 or self.tube_node._w > 1e4):
+            print('Triggered Large mass flow')
+            return
+
+        n_points = np.copy(self.n_points)
+        #self.n_points = 200
+        sol = fsolve(self.getInlet, [self.tube_outlet._H*1e-5, self.tube_outlet._P*1e-5], full_output=True)
+        self.n_points = n_points
+
+        self._Q = self._dQ
+
+
+        if not hasattr(self, '_hexCalcs'):
+            self._hexCalcs = np.copy(self.hexCalcs).tolist()
+
+        if sol[2] != 1:
+            print('No Convergence')
+            from matplotlib import pyplot as plt
+            plt.plot(self._hexCalcs['L'], self._hexCalcs['hot']['T'])
+            plt.plot(self.hexCalcs['L'], self.hexCalcs['hot']['T'])
+            from pdb import set_trace
+            set_trace()
+
+        self.getInlet(sol[0])
+
 
     def updateState(self, x):
 
-        #if any(x[1:]>0):
-        #    self.penalty = 
-        #    from pdb import set_trace
-        #    set_trace()
-
-        self._Q = x[0]*1e2
-        self.shell_node._Q = x[0]*1e2
-        self.tube_node._Q = -x[0]*1e2
+        self._Q = x[0]*1e5
+        self.shell_node._Q = x[0]*1e5
+        self.tube_node._Q = -x[0]*1e5
         self.shell_node._dP = x[1]
         self.tube_node._dP = x[2]
 
     @property
     def x(self):
-        return np.array([self._Q/1e2, self.shell_node._dP, self.tube_node._dP])
+        return np.array([self._Q/1e5, self.shell_node._dP, self.tube_node._dP])
 
     @property
     def error(self):
@@ -1284,7 +1336,7 @@ class HEX(Heat):
         Pshell_error = self._dP_shell_actual - self.shell_node._dP
         Ptube_error = self._dP_tube_actual - self.tube_node._dP
 
-        return np.array([self._dQ-self._Q,
+        return np.array([(self._dQ-self._Q)*1e-5,
                          Pshell_error,
                          Ptube_error])
 
@@ -1327,11 +1379,7 @@ class hexFlow(flowNode):
 
 
 @addQuantityProperty
-class HEXQ(Heat):
-
-    _displayVars = ['w_hot', 'w_cool']
-    _units = {'w_hot': 'MASSFLOW', 'w_cool': 'MASSFLOW', 'Q': 'POWER', 
-              'D_tube': 'LENGTH', 'D_shell': 'LENGTH', 'wall_th': 'LENGTH'}
+class HEXQ(HEX):
 
     @inputParser
     def __init__(self, name, shell, tube, Q:'POWER',
@@ -1341,15 +1389,19 @@ class HEXQ(Heat):
                  wall_th:'LENGTH',
                  k_wall:'CONDUCTIVITY',
                  n_points = 10,
-                 R_tube=None):
+                 R_tube=None,
+                 L=1):
         # Initialize HEX Object
         # Thermo are thermo objects
 
+        self.name = name
 
         self.shell = shell
         self.tube = tube
 
         self._Q = Q
+
+        self._L = L
 
         # Discretization
         self.n_points = n_points
@@ -1365,97 +1417,11 @@ class HEXQ(Heat):
 
         self.penalty = False
 
-    def initialize(self, model):
-        # Initialize Shell Object and calculate flow areas/...
-
-        # Attach model to class
-        self.model = model
-
-
-        # Shell Flow
-        self.shell_node = model.nodes[self.shell]
-        self.shell_node.HEX = self
-        # Tube Flow
-        self.tube_node = model.nodes[self.tube]
-        self.tube_node.HEX = self
-        
-        self.shell_node.initialize(model)
-        self.tube_node.initialize(model)
-
-        self.shell_inlet = self.shell_node.US_vol.thermo
-        self.shell_outlet = self.shell_node.DS_vol.thermo
-        self.tube_inlet = self.tube_node.US_vol.thermo
-        self.tube_outlet = self.tube_node.DS_vol.thermo
-       # from pdb import set_trace
-       # set_trace()
-        # Inlet/Outlet
-        #self.shell_inlet = self.model.nodes[self.shell_node.US].thermo
-        #self.shell_outlet = self.model.nodes[self.shell_node.DS].thermo
-        #self.tube_inlet = self.model.nodes[self.tube_node.US].thermo
-        #self.tube_outlet = self.model.nodes[self.tube_node.DS].thermo
-        # Create temp shell/tube thermo
-        self._shell_thermo = gt.thermo.from_state(self.shell_inlet.state)
-        self._tube_thermo = gt.thermo.from_state(self.tube_outlet.state)
-
-        # Flow Rates
-        self._w_shell = self.shell_node._w
-        self._w_tube = self.tube_node._w
-
-        # Tube Flow Area
-        self._A_tube = np.pi*self._D_tube**2/4
-        # Tube Flow + Wall Area
-        self._Ao_tube = np.pi*(self._D_tube+2*self._wall_th)**2/4
-        # Shell Flow Area
-        self._A_shell = np.pi*self._D_shell**2/4 - self.n_tubes*self._Ao_tube
-        # Flow Area Ratio
-        self.Arat = self._A_tube*self.n_tubes/self._A_shell
-
-        if self._A_shell < 0:
-            logger.critical(f"The Shell & Tube HEX '{self.name}' has a "
-                            "negative shell flow area, increase shell Area "
-                            "or decrease number of tubes/tube Area")
-            from pdb import set_trace
-            set_trace()
-
-        # Shell Perimeter
-        Per_shell = np.pi*self._D_shell + self.n_tubes*np.pi*(self._D_tube+2*self._wall_th)
-        # Shell Hydraulic Diameter
-        self._Dh_shell = 4*self._A_shell/Per_shell
-
-        # Create Submodel for solving heat transfer
-
-        # Define the thermal resistance layer between tube flow and shell flow
-        layers = [gt.CylindricalWallSurface('inner_tube', 'tube', D=(self._D_tube, 'm'), L=1),
-                  gt.CylindricalWall('wall', k=(self._k_wall, 'W/m/K'),
-                                      D=(self._D_tube, 'm'),
-                                      t=(self._wall_th, 'm'),
-                                      L=1,
-                                      R=self._R_tube),
-                  gt.CylindricalWallSurface('outer_tube', 'shell',
-                                            D=(self._D_tube+2*self._wall_th, 'm'),
-                                            L_ht=self._Dh_shell, L=1)]
-
-        self.hex = gt.Model([gt.flowVol('shell', fluid=self.shell_inlet.Ydict,
-                                          T=(self.shell_inlet._T, 'degK'),
-                                          P=(self.shell_inlet._P,'Pa'),
-                                          w=(self._w_shell, 'kg/s'), 
-                                          A=(self._A_shell, 'm**2'),
-                                          Per=(Per_shell, 'm')),
-                               gt.flowVol('tube', fluid=self.tube_outlet.Ydict,
-                                          T=(self.tube_outlet._T, 'degK'),
-                                          P=(self.tube_outlet._P,'Pa'),
-                                          w=(self._w_tube/self.n_tubes, 'kg/s'),
-                                          A=(self._A_tube, 'm**2')),
-                               gt.Heatsistor('wall', layers=layers)])
-
-        # Initialize the model and then we are guchi to use it
-        self.hex.initialize()
-
     def _update_thermo(self, dQ):
 
         # Get dH for cool and hot
-        dH_shell = dQ/self._w_cool
-        dH_tube = dQ/self._w_hot
+        dH_shell = dQ/self._w_shell
+        dH_tube = dQ/self._w_tube
 
         shell_inlet = self.hex.nodes['shell'].thermo
         tube_outlet = self.hex.nodes['tube'].thermo
@@ -1463,19 +1429,53 @@ class HEXQ(Heat):
         shell_outlet = self._shell_thermo
         tube_inlet = self._tube_thermo
 
+        # Calculate dT using Shell Inlet and and cool Outlet
+        # Get dT across tube and shell
+        dT = np.abs(shell_inlet._T - tube_outlet._T)
+
+        # calculate dL
+        dL = dQ/(self.hex.nodes['wall']._UA*self.n_tubes*dT)
+
+        # Calculate Pressure Drop
+        dP_shell = dP_pipe(thermo=shell_inlet,
+                           U=self.hex.nodes['shell']._flowU,
+                           Dh=self._Dh_shell,
+                           L=dL)
+
+        dP_tube = dP_pipe(thermo=tube_outlet,
+                          U=self.hex.nodes['tube']._flowU,
+                          Dh=self._D_tube,
+                          L=dL)
+
+        # Update States
+        # Step forward
+        shell_outlet._HP = shell_inlet._H - dQ/self._w_shell, \
+            shell_inlet._P + dP_shell
+        # Work backwards
+        tube_inlet._HP = tube_outlet._H + dQ/self._w_tube, \
+            tube_outlet._P - dP_tube
 
 
-        return L
+        return shell_outlet, tube_inlet, dL
 
 
     def evaluate(self):
+        self.solveOutlet()
+
+    def getInlet(self, x):
 
 
         dQ = self._Q/self.n_points
 
-
         self.hex.nodes['shell'].thermo._HP = self.shell_inlet._HP
-        self.hex.nodes['tube'].thermo._HP = self.tube_outlet._HP
+
+        # Set outlet State
+        X0 = self.hex.nodes['tube'].thermo._HP
+        try:
+            self.hex.nodes['tube'].thermo._HP = x[0]*1e5, x[1]*1e5
+        except:
+            self.hex.nodes['tube'].thermo._HP = X0
+            return (X0-x)*1e5
 
         # Initialize Dict to store data
         self.hexCalcs = {'L':[],
@@ -1483,78 +1483,56 @@ class HEXQ(Heat):
                          'R':[],
                          'U':[],
                          'Q':[],
-                         'hot': {'T':[],
+                         'shell': {'T':[],
                                  'P':[],
-                                 'prandtl':[]},
-                         'cool':{'T':[],
-                                 'P':[]}}
-        
+                                 'Q':[]},
+                         'tube':{'T':[],
+                                 'P':[],
+                                 'Q':[]}}
+
         # Flow Rates
         self._w_shell = self.shell_node._w
         self._w_tube = self.tube_node._w
 
+
         for i in range(0, self.n_points):
 
             # Update thermo
-            shell_outlet, tube_inlet = self._update_thermo(abs(dL))
+            shell_outlet, tube_inlet, dL = self._update_thermo(dQ)
 
-            # Calculate dL
-            from pdb import set_trace
-            set_trace()
+            # Update Submodel
+            self.hex.nodes['shell'].thermo._HP = shell_outlet._HP
+            self.hex.nodes['tube'].thermo._HP = tube_inlet._HP
 
+            self.hexCalcs['L'].append(dL)
+            self.hexCalcs['UA'].append(self.hex['wall']._UA)
+            self.hexCalcs['Q'].append(dQ)
+            self.hexCalcs['R'].append(self.hex['wall']._R)
+            self.hexCalcs['U'].append(self.hex['wall']._U_layers)
+            self.hexCalcs['shell']['T'].append(self.hex['shell'].thermo._T)
+            self.hexCalcs['shell']['P'].append(self.hex['shell'].thermo._P)
+            self.hexCalcs['shell']['Q'].append(self.hex['shell'].thermo.Q)
+            self.hexCalcs['tube']['T'].append(self.hex['tube'].thermo._T)
+            self.hexCalcs['tube']['P'].append(self.hex['tube'].thermo._P)
+            self.hexCalcs['tube']['Q'].append(self.hex['tube'].thermo.Q)
 
-            self.hexCalcs['L'].append(L)
-            self.hexCalcs['UA'].append(self.model['wall']._UA)
-            self.hexCalcs['R'].append(self.model['wall']._R)
-            self.hexCalcs['dQ'].append(dQ)
-            self.hexCalcs['U'].append(self.model['wall']._U_layers)
-            self.hexCalcs['hot']['T'].append(self.model['hot'].thermo._T)
-            self.hexCalcs['hot']['P'].append(self.model['hot'].thermo._P)
-            #self.hexCalcs['hot']['T'].append(self._hot_thermo._T)
-            #self.hexCalcs['hot']['P'].append(self._hot_thermo._P)
-            self.hexCalcs['cool']['T'].append(self.model['cool'].thermo._T)
-            self.hexCalcs['cool']['P'].append(self.model['cool'].thermo._P)
+        self._dQ = (shell_outlet._H-self.shell_inlet._H)*self._w_shell
+        self._dP_shell_actual = shell_outlet._P - self.shell_inlet._P
+        self._dP_tube_actual = self.tube_outlet._P - tube_inlet._P
 
-
-            # If pressure drop then update with L for pressure
-            #self.model['cool'].updateThermo({'H': self._coolThermo._H,
-            #                                 'P': self._coolThermo._P})
-
-            #self.model['hot'].updateThermo({'H': self._coolThermo._H,
-            #                                'P': self._coolThermo._P})
-            
+        error = np.array([self.tube_inlet._T - tube_inlet._T,
+                          (self.tube_inlet._P - tube_inlet._P)/self.tube_inlet._P])
 
 
-            #T_hot_out = self.model['hot'].thermo._T
-            #T_cool_out = self.model['cool'].thermo._T
-
-            #dT1 = T_hot_in - T_cool_out
-            #dT2 = T_hot_out - T_cool_in
-            #dT1 = T_cool0 - self.model['cool'].thermo._T
-            #dT2 = self.model['hot'].thermo._T - T_hot0
-
-            # Logarithmic mean temperature distribution
-            #LMTD = (dT1 -dT2)/np.log(dT1/dT2)
-            #UA = dQ/LMTD
-
-            #def find_L(L):
-            #    if L<0:
-            #        return 0-L + 10
-                
-            #    self.model['wall']._L = L
-
-            #    return self.model['wall']._UA*self.n_tubes - UA
-
-            #sol = fsolve(find_L, 1)
-            #L.append(properties[0])
-
-        
         self.hexCalcs['L'] = np.cumsum(self.hexCalcs['L'])
-        from matplotlib import pyplot as plt
-        plt.plot(self.hexCalcs['L'], self.hexCalcs['cool']['T'])
-        plt.plot(self.hexCalcs['L'], self.hexCalcs['hot']['T'])
-        plt.figure()
-        plt.plot(self.hexCalcs['L'], self.hexCalcs['dQ'])
+        self.hexCalcs['Q'] = np.array(self.hexCalcs['Q'])
+        self.hexCalcs['shell']['Q'] = np.array(self.hexCalcs['shell']['Q'])
+        self.hexCalcs['tube']['Q'] = np.array(self.hexCalcs['tube']['Q'])
+        self.hexCalcs['shell']['Q'][self.hexCalcs['shell']['Q'] == -1] = 0
+        self.hexCalcs['tube']['Q'][self.hexCalcs['tube']['Q'] == -1] = 0
+        self.hexCalcs['shell']['T'] = np.array(self.hexCalcs['shell']['T'])
+        self.hexCalcs['tube']['T'] = np.array(self.hexCalcs['tube']['T'])
+        self.hexCalcs['shell']['P'] = np.array(self.hexCalcs['shell']['P'])
+        self.hexCalcs['tube']['P'] = np.array(self.hexCalcs['tube']['P'])
 
-        from pdb import set_trace
-        set_trace()
+        return error

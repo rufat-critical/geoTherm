@@ -214,3 +214,25 @@ def dittus_boelter(Re, Pr, heating=True):
         n = 0.3
 
     return 0.023*Re*Pr**n
+
+
+def pump_eta(phi):
+    # Pump efficiency from Claudio
+    eta_max = 0.83
+    phi_max = 0.08
+    k1 = 27
+    k2 = 5000
+    k3 = 10
+    # Why is this 0 and why
+    delta_eta_p = 0
+
+    if phi <= 0.08:
+        eta = eta_max*(1-k1*(phi_max -phi)**2 - k2*(phi_max-phi)**4) + delta_eta_p
+    elif phi > 0.08:
+        eta = eta_max*(1-k3*(phi_max-phi)**2) + delta_eta_p
+
+    return eta
+
+#def turb_axial_eta(phi):
+
+    
