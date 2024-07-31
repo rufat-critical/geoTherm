@@ -30,7 +30,8 @@ class SI:
         'VOLUME': 'm**3',                # Cubic meter
         'THERMALRESISTANCE': 'degK/W',   # Thermal Resistance
         'CONVECTION': 'W/m**2/degK',        # Convection coeff
-        'VOLUMETRICFLOW': 'm**3/s'
+        'VOLUMETRICFLOW': 'm**3/s',
+        'SPECIFICSPEED': '',
     }
 
 @dataclass
@@ -61,7 +62,8 @@ class ENGLISH:
         'VOLUME': 'in**3',                 # Cubic inch
         'THERMALRESISTANCE': 'degR/Btu/s',  # Thermal Resistance
         'CONVECTION': 'Btu/s/ft**2/degR',   # Convection coeff
-        'VOLUMETRICFLOW': 'ft**3/s'
+        'VOLUMETRICFLOW': 'ft**3/s',
+        'SPECIFICSPEED': 'rpm*(ft**3/sec)**(0.5)/(ft*lbf/lb)**(3/4)'
     }
 
 @dataclass
@@ -91,5 +93,6 @@ class MIXED:
         'VOLUME': 'in**3',                 # Cubic inch
         'THERMALRESISTANCE': 'degK/W',      # Thermal Resistance
         'CONVECTION': 'W/m**2/degK',        # Convection coeff
-        'VOLUMETRICFLOW': 'm**3/s'
+        'VOLUMETRICFLOW': 'm**3/s',
+        'SPECIFICSPEED': ''
     }

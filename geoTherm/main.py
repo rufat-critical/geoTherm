@@ -349,31 +349,78 @@ class Model(modelTable):
         # update
         # Error to update mass flow
 
+        from scipy.optimize import root_scalar
+
         if netSolver:
-            self.initializeSteady()
-            
-            sol = fsolve(self.evaluateNet, self._netX, full_output=True)
-            
-            self.debug = True
+            try:
+                self.initializeSteady()
+                
+                sol = fsolve(self.evaluateNet, self._netX, full_output=True)
+            except:
+                from pdb import set_trace
+                set_trace()
+                self.debug = True
+                self.evaluateNet(self._netX)
+                set_trace()
+
+
+            #self.debug = True
             self.evaluateNet(sol[0])
+
             if not self.converged:
                 from pdb import set_trace
                 set_trace()
-            else:
-                return
+                def func(x):
+                    return self.evaluateNet(np.array([x]))[0]
+                try:
+                    print('TRYING Root Scalar')
+                    sol2 = root_scalar(func,x0=sol[0][0])
+                    self.evaluateNet(np.array([sol2.root]))
+                    
+                    if not self.converged:
+                        # Try bounded problem
+                        try:
+                            print('Trying Bisection')
+                            sol3 = root_scalar(func,bracket=[0, 1])
+                            self.evaluateNet(np.array([sol3.root]))
+                        except:
+                            print('failed bisection')
+                            self.debug=True
+                            self.evaluateNet(self._netX)
+                            from pdb import set_trace
+                            set_trace()
+                
+                except:
+                    print('Failed 1st conv')
+                    from pdb import set_trace
+                    set_trace()
 
 
+
+
+        if not self.converged:
+            self.debug = True
+            from pdb import set_trace
+            set_trace()
+            self.evaluateNet(np.array([0.85]))
+            set_trace()
+        else:
+            return
 
         sol = fsolve(self.evaluate, self.x, full_output=True)
         # Update State to Sol
         # Add Update State Method and update that way
         self.evaluate(sol[0])
+
+        if not self.converged:
+            from pdb import set_trace
+            set_trace()
         #from pdb import set_trace
         #set_trace()
 
 
     def sim(self):
-        
+
         integrator = BDF(lambda t,x: self.evaluate(x), 0, self.x, 1e5)
 
         while integrator.t < .1:
@@ -667,9 +714,6 @@ class Model(modelTable):
                 self.junctions[net].updateState(x[indx])
 
 
-        
-
-
     def getFlux(self, node):
         # Calculate mass/energy flux into/out of a node
         # At Steady state mass/energy should be = 0
@@ -743,7 +787,7 @@ class Model(modelTable):
         self.__init_x()
 
         # Get the error
-        if all(abs(self.error/(self.x + eps)<1e-3)):
+        if all(abs(self.error/(self.x + eps))<1e-2):
             return True
         else:
             return False
@@ -772,7 +816,7 @@ class Model(modelTable):
         else:
             eta = Wnet/Qin*1e2
 
-        return Wnet, Qin, eta
+        return np.array([Wnet, Qin, eta])
 
     # Performance Calc
         # Loop thru all components with W and add positive/negative power
@@ -864,10 +908,13 @@ class Branch:
         self.initialized = False
         # Flag to specify if mass flow is constant
         self.fixedFlow = False
-        self.backFlow = True
+
+        self.backFlow = False
         # Node for controlling mass flow
-        self.wController = None
+        self.w_setter = None
         self.penalty = False
+        # Bounds (for massflow if not fixedFlow)
+        self.bounds = [-np.inf, np.inf]
 
         # Convert node names to instances if necessary
         if isinstance(self.nodes[0], str):
@@ -919,24 +966,34 @@ class Branch:
 
         # If we have fixedflow then update mass flow
         if self.fixedFlow:
-            self._w = self.wController._w
-
-        self.backFlow = False
+            self._w = self.w_setter._w
 
         # Reverse order if w is negative
         if self._w < 0:
             # Check if backflow is allowed
             if self.backFlow:
-                nodes = nodes[::-1]
+                nodefs = nodes[::-1]
                 Pout = self.USJunc.thermo._P
                 DSJunc = self.USJunc.name
-            else:
-                self._error = (-self._w - np.sign(self._w+eps))*1e5
+            else:   
+                self.error = (-self._w - np.sign(self._w+eps))*1e5
                 return
         else:
             Pout = self.DSJunc.thermo._P
             DSJunc = self.DSJunc.name
 
+        if self.penalty is not False:
+            self.error = self.penalty
+            return
+
+
+        if self.fixedFlow:
+
+            if self.x <0:
+                from pdb import set_trace
+                set_trace()
+                self._error = (-self.x + 10)**2*1e6
+                return
 
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
@@ -969,18 +1026,30 @@ class Branch:
             dsNode, dsState = node._setFlow(self._w)
 
             if dsState['P'] < 0:
+                # Pressure drop is too high because massflow too high, lets decrease mass flow
                 # Apply penalty
                 # Maybe set this as seperate method for different cases
                 # Like PR or w, for now do this
                 #self._error = (self._x0 - self.x)*1e5
                 #self._error = (dsState['P'])*1e5*np.sign(self._w)
                 # Point error to opposite side of mass flow
-                self._error = (-self._w - np.sign(self._w+eps))*1e5
+
+                if self.fixedFlow:
+                    # Calculate Error based on pressure
+                    if isinstance(self.w_setter, gt.Pump):
+                        self.error = (0-dsState['P'])*1e5
+                    else:
+                        from pdb import set_trace
+                        set_trace()
+                else:
+                    # Calculate Error Based on Mass Flow
+                    from pdb import set_trace
+                    set_trace()
+                    self.error = (-self._w - np.sign(self._w+eps))*1e5
                 return
 
             # This is the last node, lets calculate error
             if inode == len(nodes) - 1:
-
                 if dsNode != DSJunc:
                     # dsNode is not dsJunc for some reason
                     # error check
@@ -988,27 +1057,26 @@ class Branch:
                     set_trace()
 
 
-                if dsState['P'] < 0:
-                    # Pressure drop is too high because massflow too high, lets decrease mass flow
-                    #self._error = (dsState['P'])*1e5*np.sign(self._w)
-                    self._error = (-self._w - np.sign(self._w+eps))*1e5
-                    print('TRIGGERED THIS', dsState['P'])
-                    return
-
-
                 if self.fixedFlow:
                     if self.penalty is not False:
-                        self._error = self.penalty
+                        self.error = self.penalty
                         return
-                    if self.fixedObject == 'Turbine':
-                        self._error = (dsState['P']/Pout - 1)*Pout
-                    else:
-                        self._error = (Pout/dsState['P'] - 1)*dsState['P']
-                else:
-                    self._error = (dsState['P']/Pout - 1)*np.sign(self._w)*Pout
-                    if self.model.debug == True:
+                    
+                    if isinstance(self.w_setter, gt.Turbine):
                         from pdb import set_trace
-                        #set_trace()
+                        set_trace()
+                        self.error = (dsState['P']/Pout - 1)*Pout
+                    elif isinstance(self.w_setter, gt.Pump):
+                        #self._error = (Pout/dsState['P'] - 1)*dsState['P']*np.sign(self.x)
+                        usState = node.US_node.thermo
+                        self.error = (Pout/usState._P - self.x)#*1e6
+                        self.error = (Pout/dsState['P'] - 1)*dsState['P']*1e2
+
+                else:
+                    self.error = (dsState['P']/Pout - 1)*np.sign(self._w)*Pout
+                if self.model.debug == True:
+                    from pdb import set_trace
+                    set_trace()
                 return
 
             if isinstance(node, (gt.flowNode, gt.Turbo)):
@@ -1035,7 +1103,11 @@ class Branch:
                     
                     # Reduce Mass Flow
                     # What if PR
-                    self._error = (-self._w - np.sign(self._w+eps))*1e5
+                    if self.fixedFlow:
+                        # Point error back to x0
+                        self.error = (self._x0 - self.x)*1e5
+                    else:
+                        self.error = (-self._w - np.sign(self._w+eps))*1e5
                     return
 
     def _getDSThermo(self, dsNode, dsState):
@@ -1088,7 +1160,7 @@ class Branch:
             self._w = self.average_w
 
         self.istate = {}
-        self._x = np.array([])
+        self.x = np.array([])
 
         for inode, node in enumerate(self.nodes):
             # Something to add, bounds from each class 
@@ -1103,63 +1175,45 @@ class Branch:
                     #from pdb import set_trace
                     #set_trace()
 
-            if isinstance(node, (gt.fixedWTurbine, gt.fixedWPump)):
+            if isinstance(node, gt.fixedFlowNode):
                 if self.fixedFlow:
                     # Fixed Flow already activated somewhere
                     from pdb import set_trace
                     set_trace()
 
-                if isinstance(node, gt.fixedWTurbine):
-                    self.fixedObject = 'Turbine'
-                else:
-                    self.fixedObject = 'Pump'
-
+                # Turn on fixedFlow flag for this branch
                 self.fixedFlow = True
                 # Set Branch Mass Flow to this component flow
                 self._w = node._w
-                self.wController = node
-
-                current_len = len(self.x)
-                self.istate[node.name] = np.arange(current_len,
-                                                   current_len + len(node.x))
-
-                self._x = np.concatenate((self.x, node.x))
-
-            elif isinstance(node, gt.fixedFlow):
-                if self.fixedFlow:
+                # Node that sets the mass flow
+                self.w_setter = node
+                # Get the node bounds
+                self.bounds = node.bounds
+                
+                if len(self.x) != 0:
+                    # There shouldn't be any other states
                     from pdb import set_trace
                     set_trace()
+                
+                #self.istate[node.name] = np.arange(current_len,
+                #                                   current_len + len(node.x))
+                #self._x = np.concatenate((self.x, node.x))
+                self.x = node.x
 
-                self.fixedFlow = True
-                # Set Branch Mass Flow to this component flow
-                self._w = node._w
-                self.wController = node
-            
+        #if len(self._x) == 0:
+        if self.fixedFlow:
+            pass
+        else:
+            # This is if no other state present, then state is massflow 
+            self.x = np.array([self._w])
 
-        if len(self._x) == 0:
-            if self.fixedFlow:
-                pass
-            else:
-                # This is if no other state present, then state is massflow 
-                self._x = np.array([self._w])
+        if len(self.x) > 1:
+        # There should only be 1 state
+            from pdb import set_trace
+            set_trace()
 
         self.initialized = True
 
-    @property
-    def x(self):
-        return self._x
-
-    @property
-    def error(self):
-
-        return self._error
-
-        # Check if US Junc = DSJunc
-        # Check if last node is heat flux or T node
-        # If T Node then DSJunc needs to be a Pressure Node
-        # Check if Tout != Tout
-
-        # IF StatefulTurbine then error is Turbine PR 
 
     @staticmethod
     def create(nodes, USJunc, DSJunc, model):
@@ -1181,14 +1235,14 @@ class Branch:
         # Update Branch State
 
         self._x0 = self.x
-        self._x = x
-
-        if len(self.istate) == 0:
-            self._w = x[0]
+        self.x = x
+        if self.fixedFlow:
+            self.w_setter.updateState(x)
+            # Get the penalty from the setter object
+            self.penalty = self.w_setter.penalty
         else:
-            for name in self.istate:
-                self.model.nodes[name].updateState(x[self.istate[name]])
-                self.penalty = self.model.nodes[name].penalty
+            from pdb import set_trace
+            set_trace()
 
         #if len(self.istate) == 0:
         #self._state0 = self._w

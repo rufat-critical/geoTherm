@@ -1,11 +1,116 @@
 import numpy as np
 import CoolProp as cp
 from pdb import set_trace
-from .utils import parseState, parseComposition
+#from .utils import parseState, parseComposition
+import re
 from .units import inputParser, addQuantityProperty, fromSI, toSI, units
 from rich.console import Console
 from rich.table import Table
 from .logger import logger
+
+## Utility functions for thermostate
+def parseState(stateDict):
+    """Check the stateDictionary for quantity code
+
+    Input:
+        stateDict: Dictionary containing 2 state variables
+
+    Return:
+        State Variable code """
+
+    if stateDict is None:
+        return None
+
+    # Creates a set using dict keys from stateDict, we'll use this to
+    # compare with quanities defined below
+    stateVars = set(stateDict)
+
+    if len(stateVars) != 2:
+        msg = 'Error: The thermodynamic state needs to be defined with exactly '
+        msg += f'2 state variables, the current stateDict is : {stateDict}'
+        raise ValueError(msg)
+    else:
+        stateVars = set(stateDict)
+
+    # These are all the property inputs that have been programmed so far
+    # These are refered to in UpdateState method in thermostate.py
+    quantities = {'TP': {'T', 'P'}, 
+                  'TS': {'T', 'S'},
+                  'HP': {'H', 'P'},
+                  'SP': {'S', 'P'},
+                  'DU': {'D', 'U'},
+                  'PU': {'P', 'U'},
+                  'DP': {'D', 'P'},
+                  'HS': {'H', 'S'},
+                  'DH': {'D', 'H'},
+                  'TQ': {'T', 'Q'},
+                  'PQ': {'P', 'Q'},
+                  'TD': {'T', 'D'}}
+
+    # Check if the set of stateVars matches any of the sets in quantities
+    for code, vars in quantities.items():
+        if stateVars == vars:
+            return code
+
+    # If we reached the end of the loop without returning then the quantity
+    # code hasn't been coded yet
+    raise ValueError(f'Invalid Thermostate Variables specified: {stateDict}')
+    
+def parseComposition(composition):
+    """Parse the composition into a dictionary containing species 
+        and quantities 
+        
+    Input:
+        composition: String, Array, Dictionary
+    
+    Returns:
+        Composition Dictionary"""
+    
+    if composition is None:
+        return None
+
+    if isinstance(composition, str):
+        # Use Regular Expression to parse composition string
+
+        # Search for composition strings in the form of:
+        # species:quantity, species: quantity
+        cRe = re.compile(r'([A-Z0-9]*):([\.0-9]*)', re.IGNORECASE)
+
+        comp = cRe.findall(composition)
+
+        # Check if length of this is 0
+        # If it is then maybe single name was specified for fluid
+        if len(comp) == 0:
+            composition = composition.split()
+            if len(composition) == 1:
+                comp = [(composition[0], 1.0)]
+            else:
+                from pdb import set_trace
+                # Something is wrong with the composition string
+                set_trace()
+
+        # Make Dictionary containing composition
+        composition = {species[0]: float(species[1])
+                       for species in comp}
+        
+    elif isinstance(composition, (np.ndarray, list)):
+        # If composition is specified as array of values then loop thru species
+        # and generate composition
+        composition = {name: composition[i] for i, name
+                        in enumerate(self.species_names)}
+    
+    elif isinstance(composition, dict):
+        # If input is a dictionary then we guchi
+        pass
+
+    # Normalize all the quantities
+    tot = sum(composition.values())
+    # Normalize by total sum
+    composition = {species:q/tot for species, q in composition.items()}
+
+    return composition
+
+
 
 class coolprop_wrapper:
     """ Wrapper for CoolProp, makes it easy to interface with thermo state """
@@ -305,7 +410,7 @@ class thermo:
                  '_density', 'viscosity', '_viscosity', 'Y', 'X', 
                  'species_names', 'TP', '_TP', 'TD', '_TD', 'TQ', '_TQ',
                  'TH', '_TH', 'TS', '_TS', 'HP', '_HP', 'HS', '_HS',
-                 'DU', '_DU', 'TPY', '_TPY', 'thermoModel', 'sound', '_sound',
+                 'DU', '_DU', 'TPY', '_TPY', 'thermo_model', 'sound', '_sound',
                  '_Pvap', '_conductivity']
 
     _units = {'T': 'TEMPERATURE',               # Temperature
@@ -332,7 +437,7 @@ class thermo:
             model (str): Model to use ('coolprop').
         """
 
-        self.thermoModel = model
+        self.thermo_model = model
 
         # Parse fluid composition
         cDict = parseComposition(fluid)
@@ -345,7 +450,7 @@ class thermo:
             stateVars = parseState(state)
 
 
-        if self.thermoModel == 'coolprop':
+        if self.thermo_model == 'coolprop':
             self.pObj = coolprop_wrapper(cDict=cDict, state=state, stateVars=stateVars)
         else:
             set_trace()
@@ -403,7 +508,7 @@ class thermo:
             'fluid': self.Ydict,
             'state': {'H': (self._H, 'J/kg'),
                       'P': (self._P, 'Pa')},
-            'model': self.thermoModel
+            'model': self.thermo_model
         }
 
     @staticmethod

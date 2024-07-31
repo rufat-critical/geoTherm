@@ -1,6 +1,6 @@
-from .baseClasses import Turbo
-from .turbine import Turbine
-from ..units import inputParser, addQuantityProperty
+from .baseClasses import Turbo, fixedFlowNode
+from ..units import addQuantityProperty
+from ..utils import dH_isentropic, pump_eta
 from ..logger import logger
 import numpy as np
 
@@ -8,39 +8,65 @@ import numpy as np
 class Pump(Turbo):
     """Pump class inheriting from Turbo."""
 
-    _displayVars = ['w', 'dP', 'dH', 'W', 'PR', 'vol_flow', 'NPSP']
+    _displayVars = ['w', 'dP', 'dH', 'W', 'PR', 'vol_flow',
+                    'specific_speed', 'NPSP', 'NSS']
     _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
               'dP': 'PRESSURE', 'vol_flow':'VOLUMETRICFLOW', 'Q':'POWER',
-              'NPSP': 'PRESSURE'}
+              'NPSP': 'PRESSURE', 'specific_speed': 'SPECIFICSPEED',
+              'NSS': 'SPECIFICSPEED'}
+    bounds = [1, 1000]
 
     def _get_dP(self, US, DS):
         """Get delta P across Pump."""
         return US._P*(self.PR-1)
-    
+
     def _get_dH(self, US, DS):
         """Get enthalpy change across Pump."""
 
-        # Generate temporary thermo
-        isentropic = US.from_state(US.state)
-        isentropic._SP = US._S, US._P*self.PR
+        if self.update_eta:
+            self.eta = pump_eta(self.phi)
 
-        return (isentropic._H - US._H)/self.eta
+        return dH_isentropic(US, US._P*self.PR)/self.eta
+
+    def update_pump_parameters(self):
+        self._NPSP = self.US_node.thermo._P - self._refThermo._Pvap
+        self._u_tip = np.sqrt(self._dH_is/self.psi)
+        self.phi = self._vol_flow/(self._D**2*self._u_tip)
+        self._NSS = (self.rotor_node.N*np.sqrt(self._vol_flow)
+                     / (self._NPSP
+                        / (9.81*self.US_node.thermo._density))**0.75)
 
     @property
     def _NPSP(self):
-        US, DS = self._getThermo()
+        return self.US_node.thermo._P - self._refThermo._Pvap
 
-        self._refThermo._TQ = US._T, 0
-        return US._P - self._refThermo._P
+    @property
+    def _u_tip(self):
+        return np.sqrt(self._dH_is/self.psi)
+
+    @property
+    def _D(self):
+        return 2*self._u_tip/self.rotor_node.omega
+    
+    @property
+    def phi(self):
+        return (self._vol_flow
+                / (self._D**2*self._u_tip))
+    
+    @property
+    def _NSS(self):
+        return (self.rotor_node.N*np.sqrt(self._vol_flow)
+                / (np.abs(self._NPSP)
+                   / (9.81*self.US_node.thermo._density))**0.75)
 
 
 @addQuantityProperty
-class fixedWPump(Pump):
+class fixedFlowPump(fixedFlowNode, Pump):
     """Pump class with fixed mass flow."""
 
     # State Bounds, defining them here for now
     # In the future can make a control class to check/update bounds
-    _bounds = [1, 100]
+    _bounds = [1, 500]
 
     @property
     def x(self):
@@ -50,7 +76,7 @@ class fixedWPump(Pump):
         Returns:
             np.array: Pressure ratio.
         """
-        return np.array([self.PR])
+        return np.array(self._x)
 
     def updateState(self, x):
         """
@@ -61,12 +87,48 @@ class fixedWPump(Pump):
         """
 
         # Update X if it is within boudns or apply penalty
-        if x < self._bounds[0]:
-            self.penalty = (self._bounds[0] - x[0] + 10)*1e8
-            self.PR = self._bounds[0]
-        elif x > self._bounds[1]:
-            self.penalty = (x[0] - self._bounds[1] - 10)*1e8
-            self.PR = self._bounds[1]
-        else:
+
+        self._x = x
+        PR = x[0]*np.diff(self._bounds)
+
+        if self._bounds[0] < PR < self._bounds[1]:
             self.penalty = False
-            self.PR = x[0]
+            self.PR = PR[0]
+        else:
+            self.penalty = (self._bounds[0] - PR - 10*np.sign(PR))*1e8
+
+    def initialize(self, model):
+        self._x = self.PR/np.diff(self._bounds)
+        return super().initialize(model)
+
+    def __init__(self, *args, **kwargs):
+        self._w_correction = 0
+        # Run init method
+        super().__init__(*args, **kwargs)
+
+    @property
+    def error(self):
+        if self.penalty is not False:
+            return self.penalty
+        else:
+        # Get Thermo States
+            #self._w_correction = (self.US_node.thermo._P/self.DS_node.thermo._P
+            #                      - self.PR)*.0001
+
+            return (self.DS_node.thermo._P/self.US_node.thermo._P
+                    - self.PR)
+    @property
+    def _w(self):
+        # Correction Term
+        #if hasattr(self, 'DS_node'):
+        #    corr = (self.DS_node.thermo._P/self.US_node.thermo._P
+        #                - self.PR)
+        #else:
+        #    corr = 0
+        #return self._w_setpoint + corr*.1
+
+        return self._w_setpoint*(1+self._w_correction)
+
+    @_w.setter
+    def _w(self, w):
+        self._w_setpoint = w

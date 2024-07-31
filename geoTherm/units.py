@@ -188,6 +188,7 @@ class unitHandler:
         """
         return self.Q_(value, input_unit).to(output_unit).magnitude
 
+
     def parseUnits(self, input_value, quantity):
         """
         Parse and convert input values to SI units.

@@ -149,6 +149,7 @@ class TBoundary(thermoNode):
             self.thermo._TD = self.thermo._T, X0
             self.penalty = (X0-x)*1e5
 
+
     def updateThermo(self, dsState):
 
         if 'P' not in dsState:
@@ -156,6 +157,10 @@ class TBoundary(thermoNode):
             set_trace()
         else:
             self.thermo._TP = self.thermo._T, dsState['P']
+
+        if self.thermo._P > 1e8:
+            from pdb import set_trace
+            #set_trace()
 
     @property
     def x(self):

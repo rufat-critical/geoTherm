@@ -2,6 +2,7 @@ from .node import Node
 import numpy as np
 from ..logger import logger
 from ..units import inputParser
+from ..utils import dH_isentropic
 
 class flowNode(Node):
     """Base class for a flow node that calculates flow in between stations."""
@@ -14,19 +15,26 @@ class flowNode(Node):
             model: The model to initialize with.
         """
 
+        # Attach reference to upstream and downstream nodes
+        self.US_node = model.nodes[self.US]
+        self.DS_node = model.nodes[self.DS]
+
+
         # Add w attribute if not defined
         if not hasattr(self, '_w'):
             self._w = 0
 
         # Initialize dP using inlet/outlet node pressures
         if not hasattr(self, '_dP'):
-            self._dP = (model.nodes[self.US].thermo._P -
-                        model.nodes[self.DS].thermo._P)
+            self._dP = (self.US_node.thermo._P -
+                        self.DS_node.thermo._P)
 
         # Initialize dH using inlet/outlet node enthalpies
         if not hasattr(self, '_dH'):
-            self._dH = (model.nodes[self.US].thermo._H -
-                        model.nodes[self.DS].thermo._H)           
+            self._dH = (self.US_node.thermo._H -
+                        self.DS_node.thermo._H)           
+
+        # Store Upstream and Downstream condi
 
         # Do rest of initialization 
         return super().initialize(model)
@@ -78,6 +86,10 @@ class flowNode(Node):
         logger.critical(f"{self.name} of type {type(self)} is missing a "
                         "_get_dP(self, US, DS) method")
 
+
+class fixedFlowNode:
+    # Node for classes where flow is fixed, fixedFlow Resistor, Pump, Turb
+    pass
 
 class statefulFlowNode(flowNode):
     """
@@ -214,25 +226,33 @@ class statefulFlowNode(flowNode):
 class Turbo(statefulFlowNode):
     """Base Turbo Class for turbines and pumps."""
 
-    _displayVars = ['w', 'dP', 'dH', 'W', 'PR', 'vol_flow']
+    _displayVars = ['w', 'dP', 'dH', 'W', 'PR', 'vol_flow', 'specific_speed']
     _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
-              'dP': 'PRESSURE', 'vol_flow':'VOLUMETRICFLOW', 'Q':'POWER'}
+              'dP': 'PRESSURE', 'vol_flow':'VOLUMETRICFLOW', 'Q':'POWER',
+              'specific_speed': 'SPECIFICSPEED'}
+    # Bounds on flow variables
+    bounds = [-1e5, 1e5]
 
     @inputParser
-    def __init__(self, name, eta,
+    def __init__(self, name,
                  US,
                  DS,
+                 rotor,
                  PR=2,
+                 eta=None,
+                 psi=None,
                  w:'MASSFLOW'=1):
         """
-        Initialize the base turbine.
+        Initialize the Turbo Node.
 
         Args:
             name (str): Name of the turbine.
             eta (float): Efficiency of the turbine.
             US (str): Upstream node name.
             DS (str): Downstream node name.
+            rotor (str): Rotor Object.
             PR (float): Pressure ratio.
+            phi (float): Head Coefficient
             w (float): Mass flow rate.
         """
         
@@ -244,10 +264,19 @@ class Turbo(statefulFlowNode):
         self.US = US
         # Downstream Station
         self.DS = DS
+        # Rotor Object
+        self.rotor = rotor
         # Pressure Ratio
         self.PR = PR
         # Mass Flow
         self._w = w
+        # Head Coefficient
+        self.psi = psi
+
+        if self.eta is None:
+            self.update_eta = True
+        else:
+            self.update_eta = False
 
         if self.PR is None:
             msg = f'No PR input specified for {self.name}, setting it to 2'
@@ -265,6 +294,12 @@ class Turbo(statefulFlowNode):
     def initialize(self, model):
         from geoTherm import thermo
         self._refThermo = thermo.from_state(model.nodes[self.US].thermo.state)
+
+        self.rotor_node = model.nodes[self.rotor]
+
+        self.US_node = model.nodes[self.US]
+        self.DS_node = model.nodes[self.DS]
+
 
         return super().initialize(model)
 
@@ -303,6 +338,19 @@ class Turbo(statefulFlowNode):
 
         # Get Upstream
         return self._w/US._density
+
+    @property
+    def _specific_speed(self):
+
+        
+        return (self.rotor_node.N*self._vol_flow**(0.5)
+                / self._dH_is**(0.75))
+
+    @property
+    def _dH_is(self):
+        return np.abs(dH_isentropic(self.US_node.thermo,
+                                    self.DS_node.thermo._P))
+
 
 class Heat(Node):
     pass

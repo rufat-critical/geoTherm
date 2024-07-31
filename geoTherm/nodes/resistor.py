@@ -1,5 +1,5 @@
 from ..units import inputParser, addQuantityProperty
-from .baseClasses import flowNode
+from .baseClasses import flowNode, fixedFlowNode
 
 
 # PUT THIS IN A LINE TO FIX MASS FLOW RATE!
@@ -7,7 +7,7 @@ from .baseClasses import flowNode
 
 
 @addQuantityProperty
-class fixedFlow(flowNode):
+class fixedFlow(flowNode, fixedFlowNode):
     """ Resistor Object where mass flow is fixed """
     pass
 

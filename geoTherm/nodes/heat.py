@@ -1277,11 +1277,11 @@ class HEX(Heat):
         
         self.hexCalcs['Q'] = np.array(self.hexCalcs['Q'])
         self.hexCalcs['shell']['Q'] = np.array(self.hexCalcs['shell']['Q'])
-        self.hexCalcs['tube']['Q'] = np.array(self.hexCalcs['tube']['Q'])
+        self.hexCalcs['tube']['Q'] = np.array(self.hexCalcs['tube']['Q'][::-1])
         self.hexCalcs['shell']['Q'][self.hexCalcs['shell']['Q'] == -1] = 0
         self.hexCalcs['tube']['Q'][self.hexCalcs['tube']['Q'] == -1] = 0
         self.hexCalcs['shell']['T'] = np.array(self.hexCalcs['shell']['T'])
-        self.hexCalcs['tube']['T'] = np.array(self.hexCalcs['tube']['T'])
+        self.hexCalcs['tube']['T'] = np.array(self.hexCalcs['tube']['T'][::-1])
         self.hexCalcs['shell']['P'] = np.array(self.hexCalcs['shell']['P'])
         self.hexCalcs['tube']['P'] = np.array(self.hexCalcs['tube']['P'])
 
