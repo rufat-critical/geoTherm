@@ -368,8 +368,6 @@ class Model(modelTable):
             self.evaluateNet(sol[0])
 
             if not self.converged:
-                from pdb import set_trace
-                set_trace()
                 def func(x):
                     return self.evaluateNet(np.array([x]))[0]
                 try:
