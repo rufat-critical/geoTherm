@@ -174,6 +174,15 @@ def pump_eta(phi):
 
     return eta
 
-#def turb_axial_eta(phi):
+def turb_axial_eta(phi, psi, psi_opt):
 
-    
+    eta_opt = 0.913 + 0.103*psi-0.0854*psi**2 + 0.0154*psi**3
+
+    phi_opt = 0.375 + 0.25*psi_opt
+
+    K = 0.375 - 0.125*psi
+
+    return eta_opt - K*(phi-phi_opt)**2
+
+def turb_radial_eta(ns):
+    return 0.87 - 1.07*(ns-0.55)**2-0.5*(ns-0.55)**3

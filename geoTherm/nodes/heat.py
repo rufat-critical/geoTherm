@@ -242,6 +242,10 @@ class HEXConnector5(statefulHeatNode):
 class staticHEX(flow):
     pass
 
+    @property
+    def _cdA(self):
+        dP = np.abs(self.US_node.thermo._P - self.DS_node.thermo._P)
+        return self._w/np.sqrt(2*self.US_node.thermo._density*dP)
 
 class QController(statefulHeatNode):
     

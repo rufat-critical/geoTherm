@@ -204,14 +204,16 @@ class coolprop_wrapper:
         else:
             raise ValueError(f"No valid input configuration for state variables: {stateVars}")
 
-
     def getProperty(self, property):
+        return self.get_property(property)
+
+    def get_property(self, property):
         """
         Get the thermodynamic property of a CoolProp object.
-        
+
         Args:
             property (str): Property name.
-        
+
         Returns:
             float: Property value.
         """
@@ -223,6 +225,16 @@ class coolprop_wrapper:
         elif property == 'phase':
             return self.phaseIndx[self.cpObj.phase()]
 
+        if property == 'viscosity':
+            if self.cpObj.fluid_names() == ['Acetone']:
+                # Coolprop doesn't have an Acetone Viscosity model so using the
+                # model from: 
+                # http://ddbonline.ddbst.de/VogelCalculation/VogelCalculationCGI.exe?component=Acetone
+                A = -3.37955
+                B = 553.403
+                C = -46.9657
+                return np.exp(A+B/(C+self.cpObj.T()))*1e-3
+
         # CoolProp name
         coolprop_name = self.pDict(property)
 
@@ -233,10 +245,10 @@ class coolprop_wrapper:
     def pDict(self, property):
         """
         Return the CoolProp name of a specific property.
-        
+
         Args:
             property (str): Property name.
-        
+
         Returns:
             str: CoolProp property name.
         """
@@ -339,7 +351,7 @@ def addThermoSetters(setterList):
                 setattr(cls, name, property(getterSI, setter))                   
 
             elif len(properties) == 2:
-                
+
                 # Setter for updating the state in SI units
                 def setterSI(self, value, name=name, properties=properties):
                     self.pObj.updateState({properties[0]: value[0], properties[1]: value[1]}, stateVars=name)
@@ -347,11 +359,11 @@ def addThermoSetters(setterList):
                 # Setter for updating the state with unit conversion
                 def setterUnit(self, value, name=name, properties=properties):
                     # Create array with converted values in SI units
-                    val = np.array(value)
+                    val = list(value)
                     for i, v in enumerate(val):
                         if properties[i] in cls._units:
                             val[i] = toSI(v, cls._units[properties[i]])
-                    
+
                     self.pObj.updateState({properties[0]: val[0], properties[1]: val[1]},
                                           stateVars=name)
 
@@ -425,6 +437,7 @@ class thermo:
               'conductivity': 'CONDUCTIVITY',   # Conductivity
               'sound': 'VELOCITY',              # Velocity
               'Pvap': 'PRESSURE'}               # Vapor Pressure
+               
 
     @inputParser
     def __init__(self, fluid='H2O', state=None, model='coolprop'):
@@ -467,6 +480,25 @@ class thermo:
         stateVars = parseState(state)
         self.pObj.updateState(state=state, stateVars=stateVars)
 
+    def update_state(self, state):
+        """
+        Update the thermodynamic state of the object.
+
+        Args:
+            state (dict): Dictionary containing thermodynamic state variables.
+        """
+        # Parse the state variables
+        stateVars = parseState(state)
+
+        state = dict(state)
+        # Convert input to SI
+        state[stateVars[0]] = toSI(state[stateVars[0]],
+                                   self._units[stateVars[0]])
+        state[stateVars[1]] = toSI(state[stateVars[1]],
+                                   self._units[stateVars[1]])
+
+        self.pObj.updateState(state=state, stateVars=stateVars)        
+
     def _updateState(self, state):
         """
         Update the thermodynamic state of the object where inputs are in SI
@@ -480,13 +512,26 @@ class thermo:
         stateVars = parseState(state)
         self.pObj.updateState(state=state, stateVars=stateVars)
 
+    def _update_state(self, state):
+        """
+        Update the thermodynamic state of the object where inputs are in SI
+
+        Args:
+            state (dict): Dictionary containing thermodynamic state variables 
+            in SI units
+        """
+        # Parse the state variables
+        stateVars = parseState(state)
+        self.pObj.updateState(state=state, stateVars=stateVars)
+
+
     def getProperty(self, property):
         """
         Get the thermodynamic property.
-        
+
         Args:
             property (str): Property name.
-        
+
         Returns:
             float: Property value.
         """   
@@ -494,7 +539,45 @@ class thermo:
         if property == 'prandtl':
             return self.prandtl
 
-        return self.pObj.getProperty(property)     
+        return self.pObj.get_property(property)     
+
+
+    def get_property(self, property):
+        """
+        Get the thermodynamic property.
+
+        Args:
+            property (str): Property name.
+
+        Returns:
+            float: Property value.
+        """
+
+        if property == 'prandtl':
+            return self.prandtl
+
+        if property in self._units:
+            return fromSI(self.pObj.get_property(property),
+                        self._units[property])
+        else:
+            return self.pObj.get_property(property)
+
+    def _get_property(self, property):
+        """
+        Get the thermodynamic property in SI units.
+
+        Args:
+            property (str): Property name.
+
+        Returns:
+            float: Property value.
+        """
+
+        if property == 'prandtl':
+            return self.prandtl
+
+        return self.pObj.get_property(property)     
+
 
     @property
     def state(self):

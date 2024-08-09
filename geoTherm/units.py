@@ -211,6 +211,8 @@ class unitHandler:
                                     input_unit=unitSystems[units.input].units[quantity],
                                     output_unit=unitSystems['SI'].units[quantity])
         elif input_value is None:
+            from pdb import set_trace
+            set_trace()
             return None
         elif isinstance(input_value, (tuple, list, np.ndarray)):
             # Handle cases where input is a tuple, list, or array with a value and a unit
@@ -218,12 +220,16 @@ class unitHandler:
                 return self.convert(input_value[0],
                                     input_unit=input_value[1],
                                     output_unit=unitSystems['SI'].units[quantity])
+            else:
+                from pdb import set_trace
+                set_trace()
         else:
             return input_value            
 
 # Create an instance of UnitHandler
 unit_handler = unitHandler()
 
+unit_converter = unit_handler.convert
 
 # Functions to handle units in/out for node classes
 def toSI(value, quantity):
@@ -252,8 +258,12 @@ def fromSI(value, quantity):
     """
     # Get the SI unit for the quantity
     SIunit = units.SIUnits[quantity]
-    outputUnit = units.outputUnits[quantity]
-    
+    try:
+        outputUnit = units.outputUnits[quantity]
+    except:
+        from pdb import set_trace
+        set_trace()
+
     # Convert the value from SI units to the desired output units
     return unit_handler.convert(value, input_unit=SIunit,
                                 output_unit=outputUnit)

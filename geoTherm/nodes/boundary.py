@@ -1,5 +1,6 @@
 from ..thermostate import thermo, addThermoAttributes
 from ..units import inputParser
+from ..logger import logger
 from .node import Node
 import numpy as np
 
@@ -63,9 +64,26 @@ class thermoNode(Node):
 
         self.penalty = False
 
+    def initialize(self, model):
+        super().initialize(model)
+
+        # Get NodeMap
+        nodeMap = self.model.nodeMap[self.name]
+
+        # Add referneces to nodes connecting to this node
+        self.US_neighbors = nodeMap['US']
+        self.US_nodes = [self.model.nodes[name] for name in nodeMap['US']]
+        self.DS_neighbors = nodeMap['DS']
+        self.DS_nodes = [self.model.nodes[name] for name in nodeMap['DS']]
+        self.hot_neighbors = nodeMap['hot']
+        self.hot_nodes = [self.model.nodes[name] for name in nodeMap['hot']]
+        self.cool_neighbors = nodeMap['cool']
+        self.cool_nodes = [self.model.nodes[name] for name in nodeMap['cool']]
+
+        
+
 class Boundary(thermoNode):
     pass
-
 
 
 class POutlet(thermoNode):
@@ -133,7 +151,7 @@ class TBoundary(thermoNode):
     """ Thermodynamic state with a specified Temperature but density
     calculated based on conservation """
 
-    _displayVars = ['P', 'T', 'H']
+    _displayVars = ['P', 'T', 'H', 'phase']
 
 
     def updateState(self, x):
@@ -176,3 +194,43 @@ class TBoundary(thermoNode):
             return self.penalty
 
         return np.array([wNet])
+    
+class Outlet(thermoNode):
+    """ Outlet Node where the state is determined by outlet properties"""
+
+    def initialize(self, model):
+        super().initialize(model)
+
+        # The outlet can only be connected Downstream to another node
+        # do some error checking to verify
+        if len(self.DS_neighbors) > 0:
+            logger.critical(f"Outlet Node '{self.name}' has nodes connected "
+                            f"downstream:\n{self.DS_neighbors}\n It should only be "
+                            "downstream of 1 flow node!""")
+
+        if len(self.US_neighbors) > 1:
+            logger.critical(f"Outlet Node '{self.name}' is connected to "
+                            f"multiple upstream nodes:\n{self.US_neighbors}\nIt should "
+                            "only be downstream of 1 flow node!")
+
+        if len(self.hot_neighbors) > 0:
+            logger.critical(f"Outlet Node '{self.name}' is connected to "
+                            f"hot upstream nodes:\n{self.hot_neighbors}\nIt should "
+                            "only be downstream of 1 flow node!")
+
+        if len(self.cool_neighbors) > 1:
+            logger.critical(f"Outlet Node '{self.name}' is connected to "
+                            f"cool upstream nodes:\n{self.cool_neighbors}\nIt should "
+                            "only be downstream of 1 flow node!")
+
+
+    def evaluate(self):
+
+        # Evaluate the upstream node
+        self.US_nodes[0].evaluate()
+
+        # Update thermo state to US node outlet state
+        outlet_state = self.US_nodes[0].get_outlet_state()
+
+        #Update Outlet State
+        self.thermo.updateState(outlet_state)

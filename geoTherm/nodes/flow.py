@@ -111,6 +111,15 @@ class flow(statefulFlowNode):
         return super().initialize(model)
 
     @property
+    def _UA(self):
+        # Calculate UA for the HEX
+        
+        dT = self.DS_node.thermo._T - self.US_node.thermo._T
+
+        return self._Q/dT
+
+
+    @property
     def _flowU(self):
         # Calculate Flow Velocity of object
         # U = mdot/(rho*A^2)

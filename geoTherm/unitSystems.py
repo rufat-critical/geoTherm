@@ -31,7 +31,8 @@ class SI:
         'THERMALRESISTANCE': 'degK/W',   # Thermal Resistance
         'CONVECTION': 'W/m**2/degK',        # Convection coeff
         'VOLUMETRICFLOW': 'm**3/s',
-        'SPECIFICSPEED': '',
+        'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
+        'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
     }
 
 @dataclass
@@ -63,7 +64,8 @@ class ENGLISH:
         'THERMALRESISTANCE': 'degR/Btu/s',  # Thermal Resistance
         'CONVECTION': 'Btu/s/ft**2/degR',   # Convection coeff
         'VOLUMETRICFLOW': 'ft**3/s',
-        'SPECIFICSPEED': 'rpm*(ft**3/sec)**(0.5)/(ft*lbf/lb)**(3/4)'
+        'SPECIFICSPEED': 'rpm*(ft**3/sec)**(0.5)/(ft*lbf/lb)**(3/4)',
+        'SPECIFICDIAMETER': 'ft*(ft*lbf/lb)**(1/4)/(ft**3/s)**(0.5)',
     }
 
 @dataclass
@@ -86,7 +88,7 @@ class MIXED:
         'SPECIFICENTROPY': 'kJ/kg/degK',   # Kilojoule per kilogram per Kelvin
         'SPECIFICHEAT': 'kJ/kg/K',         # Kilojoule per kilogram per Kelvin
         'SPECIFICPOWER': 'MW/kg',          # Megawatt per kilogram
-        'TEMPERATURE': 'degK',             # Kelvin
+        'TEMPERATURE': 'degC',             # Kelvin
         'VELOCITY': 'm/s',                 # Meter per second
         'VISCOSITY': 'Pa*s',               # Pascal-second
         'CONDUCTIVITY': 'W/m/K',           # Watts per meter-Kelvin
@@ -94,5 +96,6 @@ class MIXED:
         'THERMALRESISTANCE': 'degK/W',      # Thermal Resistance
         'CONVECTION': 'W/m**2/degK',        # Convection coeff
         'VOLUMETRICFLOW': 'm**3/s',
-        'SPECIFICSPEED': ''
+        'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
+        'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
     }

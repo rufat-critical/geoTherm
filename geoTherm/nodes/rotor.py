@@ -12,9 +12,13 @@ class Rotor(Node):
         self.N = N
         self.loads = []
 
-    @ property
-    def omega(self):
+    @property
+    def Nrad(self):
         return self.N*2*np.pi/60
+
+    def evaluate(self):
+        if 'Turb' in self.model.nodes:
+            self.N = self.model.nodes['Turb'].N
 
     def initialize(self, model):
 
@@ -25,3 +29,10 @@ class Rotor(Node):
             if hasattr(node, 'rotor'):
                 if self.name == node.rotor:
                     self.loads.append(name)
+
+class Rotor_Ns(Node):
+
+    def __init__(self, name, Ns, turbo_node):
+        # N is calculated to satisfy specific speed
+
+        pass
