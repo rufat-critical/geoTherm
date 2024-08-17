@@ -45,7 +45,8 @@ def parseState(stateDict):
                   'DH': {'D', 'H'},
                   'TQ': {'T', 'Q'},
                   'PQ': {'P', 'Q'},
-                  'TD': {'T', 'D'}}
+                  'TD': {'T', 'D'},
+                  'DS': {'D', 'S'}}
 
     # Check if the set of stateVars matches any of the sets in quantities
     for code, vars in quantities.items():
@@ -107,6 +108,7 @@ def parseComposition(composition):
     tot = sum(composition.values())
     # Normalize by total sum
     composition = {species:q/tot for species, q in composition.items()}
+
 
     return composition
 
@@ -193,7 +195,8 @@ class coolprop_wrapper:
             'DH': (cp.DmassHmass_INPUTS, ('D', 'H')),
             'TQ': (cp.QT_INPUTS, ('Q', 'T')),
             'PQ': (cp.PQ_INPUTS, ('P', 'Q')),
-            'TD': (cp.DmassT_INPUTS, ('D', 'T'))
+            'TD': (cp.DmassT_INPUTS, ('D', 'T')),
+            'DS': (cp.DmassSmass_INPUTS, ('D', 'S'))
         }
 
         # Retrieve the appropriate CoolProp input pair and variable names
@@ -234,6 +237,24 @@ class coolprop_wrapper:
                 B = 553.403
                 C = -46.9657
                 return np.exp(A+B/(C+self.cpObj.T()))*1e-3
+
+        if property == 'sound':
+            # Determine if the fluid is in the two-phase region
+            Q = self.cpObj.Q()
+
+            if 0 < Q < 1:  # Check if in the two-phase region
+                # Create a CoolProp state object for vapor/liquid properties
+                vapor = cp.AbstractState("HEOS", self.cpObj.name())
+
+                # Calculate speed of sound in the liquid phase (Q = 0)
+                vapor.update(cp.QT_INPUTS, 0.0, self.cpObj.T())
+                a_0 = vapor.speed_sound()
+
+                # Calculate speed of sound in the gas phase (Q = 1)
+                vapor.update(cp.QT_INPUTS, 1.0, self.cpObj.T())
+                a_1 = vapor.speed_sound()
+                # Perform linear interpolation based on the quality Q
+                return a_1 * Q + a_0 * (1 - Q)
 
         # CoolProp name
         coolprop_name = self.pDict(property)
@@ -304,14 +325,14 @@ def addThermoGetters(getterList):
     """
     def decorator(cls):
         for name in getterList:
-            if '_' in name:
+            if '_' in name[0]:
                 prop = name[1:]
             else:
                 prop = name
-
-            def getter(self, prop=prop): 
+            
+            def getter(self, prop=prop):
                 return self.pObj.getProperty(prop)
-            setattr(cls, name, property(getter))                
+            setattr(cls, name, property(getter))
         return cls
     return decorator
 
@@ -469,7 +490,7 @@ class thermo:
             set_trace()
 
 
-    def updateState(self, state):
+    def updateState2(self, state):
         """
         Update the thermodynamic state of the object.
 
@@ -480,7 +501,7 @@ class thermo:
         stateVars = parseState(state)
         self.pObj.updateState(state=state, stateVars=stateVars)
 
-    def update_state(self, state):
+    def update_state(self, state, composition=None, cType='Y'):
         """
         Update the thermodynamic state of the object.
 
@@ -497,6 +518,10 @@ class thermo:
         state[stateVars[1]] = toSI(state[stateVars[1]],
                                    self._units[stateVars[1]])
 
+        if composition is not None:
+            cDict = parseComposition(composition)
+            self.pObj.updateComposition(cDict, cType=cType)
+
         self.pObj.updateState(state=state, stateVars=stateVars)        
 
     def _updateState(self, state):
@@ -512,7 +537,7 @@ class thermo:
         stateVars = parseState(state)
         self.pObj.updateState(state=state, stateVars=stateVars)
 
-    def _update_state(self, state):
+    def _update_state(self, state, composition=None, cType='Y'):
         """
         Update the thermodynamic state of the object where inputs are in SI
 
@@ -522,6 +547,11 @@ class thermo:
         """
         # Parse the state variables
         stateVars = parseState(state)
+
+        if composition is not None:
+            cDict = parseComposition(composition)
+            self.pObj.updateComposition(cDict, cType=cType)
+
         self.pObj.updateState(state=state, stateVars=stateVars)
 
 

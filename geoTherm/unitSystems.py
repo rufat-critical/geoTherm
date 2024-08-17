@@ -13,6 +13,7 @@ class SI:
     units = {
         'AREA': 'm**2',                  # Square meter for area
         'DENSITY': 'kg/m**3',            # Kilogram per cubic
+        'SPECIFICVOLUME': 'm**3/kg',
         'ENERGY': 'J',                   # Joule
         'LENGTH': 'm',                   # Meter 
         'MASS': 'kg',                    # Kilogram 
@@ -33,6 +34,7 @@ class SI:
         'VOLUMETRICFLOW': 'm**3/s',
         'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
         'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
+        'ROTATIONSPEED': 'rpm',
     }
 
 @dataclass
@@ -46,6 +48,7 @@ class ENGLISH:
     units = {
         'AREA': 'in**2',                   # Square inch
         'DENSITY': 'lb/in**3',             # Pound per cubic inch
+        'SPECIFICVOLUME': 'in**3/lb',
         'ENERGY': 'Btu',                   # British thermal unit
         'LENGTH': 'in',                    # Inch
         'MASS': 'lb',                      # Pound
@@ -66,6 +69,7 @@ class ENGLISH:
         'VOLUMETRICFLOW': 'ft**3/s',
         'SPECIFICSPEED': 'rpm*(ft**3/sec)**(0.5)/(ft*lbf/lb)**(3/4)',
         'SPECIFICDIAMETER': 'ft*(ft*lbf/lb)**(1/4)/(ft**3/s)**(0.5)',
+        'ROTATIONSPEED': 'rpm',
     }
 
 @dataclass
@@ -78,6 +82,7 @@ class MIXED:
     units = {
         'AREA': 'in**2',                   # Square inch
         'DENSITY': 'kg/m**3',              # Kilogram per cubic meter
+        'SPECIFICVOLUME': 'm**3/kg',
         'ENERGY': 'MJ',                    # Megajoule
         'LENGTH': 'in',                    # Inch
         'MASS': 'lb',                      # Pound
@@ -98,4 +103,5 @@ class MIXED:
         'VOLUMETRICFLOW': 'm**3/s',
         'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
         'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
+        'ROTATIONSPEED': 'rpm',
     }

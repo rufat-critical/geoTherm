@@ -1,24 +1,24 @@
 from .node import Node
+from ..units import addQuantityProperty, inputParser
 import numpy as np
 
+@addQuantityProperty
 class Rotor(Node):
     """ Rotor Node that connects spinny components"""
     """ Speed is Constant """
 
     _displayVars = ['N', 'loads']
+    _units = {'N': 'ROTATIONSPEED'}
 
-    def __init__(self, name, N):
+    @inputParser
+    def __init__(self, name, N:'ROTATIONSPEED'):
         self.name = name
-        self.N = N
+        self._N = N
         self.loads = []
 
     @property
     def Nrad(self):
-        return self.N*2*np.pi/60
-
-    def evaluate(self):
-        if 'Turb' in self.model.nodes:
-            self.N = self.model.nodes['Turb'].N
+        return self._N*2*np.pi/60
 
     def initialize(self, model):
 

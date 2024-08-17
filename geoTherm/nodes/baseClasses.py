@@ -3,6 +3,7 @@ import numpy as np
 from ..logger import logger
 from ..units import inputParser
 from ..utils import dH_isentropic
+from ..thermostate import thermo
 
 class flowNode(Node):
     """Base class for a flow node that calculates flow in between stations."""
@@ -32,7 +33,7 @@ class flowNode(Node):
         # Initialize dH using inlet/outlet node enthalpies
         if not hasattr(self, '_dH'):
             self._dH = (self.US_node.thermo._H -
-                        self.DS_node.thermo._H)           
+                        self.DS_node.thermo._H)
 
         # Store Upstream and Downstream condi
 
@@ -100,18 +101,18 @@ class statefulFlowNode(flowNode):
     # Variable Bounds
     _bounds = [-1e5, 1e5]
 
-    def _getThermo(self):
+    def get_thermostates(self):
         """
         Get the inlet and outlet thermo states based on flow direction.
         """
 
         # Handle Backflow
         if self._w >= 0:
-            US = self.model.nodes[self.US].thermo
-            DS = self.model.nodes[self.DS].thermo
+            US = self.US_node.thermo
+            DS = self.DS_node.thermo
         else:
-            US = self.model.nodes[self.DS].thermo
-            DS = self.model.nodes[self.US].thermo
+            US = self.DS_node.thermo
+            DS = self.US_node.thermo
 
         return US, DS
 
@@ -143,7 +144,7 @@ class statefulFlowNode(flowNode):
         # {'H': Enthalpy, 'P':Pressure}
         outletState = self.getOutletState()
 
-        US, _ = self._getThermo()
+        US, _ = self.get_thermostates()
 
         # Update dP and dH
         self._dP = (outletState['P']
@@ -203,7 +204,7 @@ class statefulFlowNode(flowNode):
         outletState = self.getOutletState()
 
         # Handle reverse flow case
-        US, DS = self._getThermo()
+        US, DS = self.get_thermostates()
 
         # Get Difference in DS property and outletState property
         # via list comprehension
@@ -212,144 +213,29 @@ class statefulFlowNode(flowNode):
     def getOutletState(self):
 
         # Get US, DS Thermo
-        US, DS = self._getThermo()
+        US, DS = self.get_thermostates()
 
         # get dh and dP
-        self._dH = self._get_dH(US, DS)
-        self._dP = self._get_dP(US, DS)
+        self._dH = self._get_dH()
+        self._dP = self._get_dP()
 
         # Return outlet state
         return {'H': US._H + self._dH,
                 'P': US._P + self._dP}
 
 
-class Turbo(statefulFlowNode):
-    """Base Turbo Class for turbines and pumps."""
+    def get_outlet_state(self):
 
-    _displayVars = ['w', 'dP', 'dH', 'W', 'PR', 'vol_flow', 'specific_speed']
-    _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
-              'dP': 'PRESSURE', 'vol_flow':'VOLUMETRICFLOW', 'Q':'POWER',
-              'specific_speed': 'SPECIFICSPEED'}
-    # Bounds on flow variables
-    bounds = [-1e5, 1e5]
+        # Get US, DS Thermo
+        US, DS = self.get_thermostates()
 
-    @inputParser
-    def __init__(self, name,
-                 US,
-                 DS,
-                 rotor,
-                 PR=2,
-                 eta=None,
-                 psi=None,
-                 w:'MASSFLOW'=1):
-        """
-        Initialize the Turbo Node.
+        # get dh and dP
+        self._dH = self._get_dH()
+        self._dP = self._get_dP()
 
-        Args:
-            name (str): Name of the turbine.
-            eta (float): Efficiency of the turbine.
-            US (str): Upstream node name.
-            DS (str): Downstream node name.
-            rotor (str): Rotor Object.
-            PR (float): Pressure ratio.
-            phi (float): Head Coefficient
-            w (float): Mass flow rate.
-        """
-        
-        # Component Name
-        self.name = name
-        # Component Efficiency
-        self.eta = eta
-        # Upstream Station
-        self.US = US
-        # Downstream Station
-        self.DS = DS
-        # Rotor Object
-        self.rotor = rotor
-        # Pressure Ratio
-        self.PR = PR
-        # Mass Flow
-        self._w = w
-        # Head Coefficient
-        self.psi = psi
-
-        if self.eta is None:
-            self.update_eta = True
-        else:
-            self.update_eta = False
-
-        if self.PR is None:
-            msg = f'No PR input specified for {self.name}, setting it to 2'
-            logger.warn(msg)
-            self.PR = 1.5
-
-        if self._w is None:
-            msg = f'No w input specified for {self.name}, setting it to 1'
-            logger.warn(msg)
-            self._w = 1
-
-        # Initialize Variables
-        self._Q = 0
-
-    def initialize(self, model):
-        from geoTherm import thermo
-        self._refThermo = thermo.from_state(model.nodes[self.US].thermo.state)
-
-        self.rotor_node = model.nodes[self.rotor]
-
-        self.US_node = model.nodes[self.US]
-        self.DS_node = model.nodes[self.DS]
-
-
-        return super().initialize(model)
-
-    def getOutletState5(self):
-        """
-        Calculate the outlet state of the turbine.
-
-        Args:
-            model: The model containing all nodes.
-
-        Returns:
-            dict: Outlet state with pressure and enthalpy.
-        """
-
-        # Handle reverse flow
-        US, DS = self._getThermo()
-
-        self._dP = self._get_dP(US, DS)
-        self._dH = self._get_dH(US, DS)
-
-        self._W = -self._dH*np.abs(self._w)
-
-        return {'H': US._H + self._dH, 'P': US._P + self._dP}
-
-    @property
-    def _W(self):
-        US, DS = self._getThermo()
-        dH = self._get_dH(US, DS)
-        return -dH*np.abs(self._w)
-
-    @property
-    def _vol_flow(self):
-
-        # Get Thermo States
-        US, DS = self._getThermo()
-
-        # Get Upstream
-        return self._w/US._density
-
-    @property
-    def _specific_speed(self):
-
-        
-        return (self.rotor_node.N*self._vol_flow**(0.5)
-                / self._dH_is**(0.75))
-
-    @property
-    def _dH_is(self):
-        return np.abs(dH_isentropic(self.US_node.thermo,
-                                    self.DS_node.thermo._P))
+        # Return outlet state
+        return {'H': US._H + self._dH,
+                'P': US._P + self._dP}
 
 
 class Heat(Node):

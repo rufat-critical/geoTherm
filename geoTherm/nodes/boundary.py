@@ -233,4 +233,4 @@ class Outlet(thermoNode):
         outlet_state = self.US_nodes[0].get_outlet_state()
 
         #Update Outlet State
-        self.thermo.updateState(outlet_state)
+        self.thermo.update_state(outlet_state)

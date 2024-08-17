@@ -4,9 +4,12 @@ from scipy.optimize import fsolve
 from scipy.integrate import BDF
 from scipy.optimize._numdiff import approx_derivative
 from .nodes.node import modelTable
+from .utilities.thermo_plotter import thermoPlotter
 from .logger import logger
 from geoTherm.units import addQuantityProperty
 from geoTherm.utils import eps
+from .thermostate import thermo
+import pandas as pd
 from pdb import set_trace
 
 class Model(modelTable):
@@ -74,6 +77,11 @@ class Model(modelTable):
         for name, node in self.nodes.items():
             if hasattr(node, 'initialize'):
                 node.initialize(self)
+
+        # Loop thru nodes and call evlauate method
+        for name, node in self.nodes.items():
+            if hasattr(node, 'evaluate'):
+                node.evaluate()
 
         # Identify stateful components
         for name, node in self.nodes.items():
@@ -182,7 +190,7 @@ class Model(modelTable):
                     # If not then append it too
                     nMap[node.hot]['cool'].append(name)     
 
-            if hasattr(node, 'cool'):
+            if hasattr(node, 'cool'):            
                 # Check if it already exists in nodeMap
                 if node.cool not in nMap[name]['cool']:
                     # If not then append to nodeMap
@@ -339,7 +347,38 @@ class Model(modelTable):
             junc.evaluate()
 
         return self._netError
-  
+
+    def thermo_plot(self, plot_type='TS',
+                    isolines=None,
+                    process_lines=True):
+
+        plot_flag = True
+        for name, node in self.nodes.items():
+            if isinstance(node, (gt.thermoNode, gt.Station)):
+                if plot_flag:
+                    plot = thermoPlotter(node.thermo)
+                    plot_flag = False
+
+                plot.add_state_point(name, node.thermo)
+
+                if isolines is not None:
+                    plot.add_isoline(isolines, name)
+
+        if process_lines:
+            for name in plot.state_points:
+                DS_flow = self.nodeMap[name]['DS'][0]
+                DS_node = self.nodeMap[DS_flow]['DS'][0]
+                if isinstance(self.nodes[DS_flow], gt.Turbo):
+                    process_type = 'S'
+                else:
+                    process_type = 'P'
+                plot.add_process_line(DS_flow, name, DS_node, process_type, line_style='-')    
+                #from pdb import set_trace
+                #set_trace()
+
+
+        plot.plot(plot_type=plot_type)
+
 
     def solve(self, netSolver=True):
 
@@ -352,20 +391,22 @@ class Model(modelTable):
         from scipy.optimize import root_scalar
 
         if netSolver:
+            self.initializeSteady()
             try:
                 self.initializeSteady()
                 
                 sol = fsolve(self.evaluateNet, self._netX, full_output=True)
+
             except:
                 from pdb import set_trace
-                set_trace()
-                self.debug = True
+                #set_trace()
+                #self.debug = True
                 self.evaluateNet(self._netX)
-                set_trace()
+                #set_trace()
 
 
             #self.debug = True
-            self.evaluateNet(sol[0])
+            
 
             if not self.converged:
                 def func(x):
@@ -386,17 +427,17 @@ class Model(modelTable):
                             self.debug=True
                             self.evaluateNet(self._netX)
                             from pdb import set_trace
-                            set_trace()
+                            #set_trace()
                 
                 except:
                     print('Failed 1st conv')
                     from pdb import set_trace
-                    set_trace()
+                    #set_trace()
 
 
 
 
-        if not self.converged:
+        if not self.converged and False:
             self.debug = True
             from pdb import set_trace
             set_trace()
@@ -671,25 +712,22 @@ class Model(modelTable):
         for jname, junc in self.junctions.items():
             if not hasattr(junc, 'x'):
                 continue
-            
+
             xlen = len(junc.x)
-            
+
             current_len = len(self.__netX)
 
             self._netState[jname] = np.arange(current_len,
-                                           current_len+xlen)
+                                              current_len+xlen)
 
             self.__netX = np.concatenate((self.__netX, junc.x))       
-
 
         # Initialize Network Error Variable
         self.__netError = np.zeros(len(self.__netX))
 
-
     @property
     def _netX(self):
         return self.__netX
-
 
     @property
     def _netError(self):
@@ -1098,7 +1136,7 @@ class Branch:
                     logger.warn("Failed to update thermostate in Branch "
                                 f" evaluate call for '{dsNode}' to state: "
                                 f"{dsState}")
-                    
+
                     # Reduce Mass Flow
                     # What if PR
                     if self.fixedFlow:
@@ -1292,8 +1330,177 @@ class Branch:
             DS.updateThermo(outletState)
 
 
+class Solution:
+    """
+    Solution class for storing geoTherm Model data in a pandas DataFrame.
+
+    Attributes:
+        model (object): The model object containing nodes with attributes.
+        extras (list): List of additional data to store.
+        df (pd.DataFrame): DataFrame containing the model data.
+    """
+
+    def __init__(self, model, extras=None):
+        """
+        Initializes the Solution object and prepares the DataFrame for
+        storing data.
+
+        Args:
+            model (object): The model containing nodes with attributes.
+            extras (list, optional): List of additional data to store.
+                                     Defaults to an empty list.
+        """
+        self.model = model
+        self.initialize(extras)
+
+    def get_column_units(self):
+        """
+        Retrieves the units for each column in the DataFrame based on the 
+        attributes of the nodes and predefined units for performance metrics.
+
+        Returns:
+            units (dict): A dictionary mapping column names to their units.
+        """
+        output_units = gt.units.outputUnits
+        units = {}
+
+        for column in self.df.columns:
+            # Column represents a node attribute
+            if '.' in column:
+                name, attr = column.split('.')
+                node = self.model.nodes[name]
+                # Special handling for thermo units
+                if attr in ['P', 'T', 'H', 'S', 'Q', 'density']:
+                    quantity = thermo._units[attr]
+                    units[column] = output_units.get(quantity, '')
+                elif hasattr(node, '_units') and attr in node._units:
+                    quantity = node._units[attr]
+                    units[column] = output_units.get(quantity, '')
+                else:
+                    # Fallback for attributes without associated units
+                    units[column] = ''
+            elif column in ['Wnet', 'Qin']:
+                units[column] = output_units['POWER']
+            else:
+                units[column] = ''
+        
+        return units
+
+    def initialize(self, extras):
+        """
+        Initializes the node attributes, prepares the DataFrame with the
+        necessary columns, and pre-allocates resources for efficient data 
+        handling.
+        """
+
+        self.extras = extras if extras is not None else []
+
+        # Determine the attributes to extract for each node during
+        # initialization
+        node_attributes = {
+            name: [
+                attr for attr in [
+                    'P', 'T', 'density', 'phase', 'w', 'W', 'Q_in', 'Q_out', 
+                    'PR', 'N', 'Ns', 'Ds', 'phi', 'psi'
+                ] if hasattr(node, attr)
+            ]
+            for name, node in self.model.nodes.items()
+        }
 
 
+        dtype = {}
+        self.node_attrs = {}
+
+        # Create mappings for node data
+        for name, attrs in node_attributes.items():
+            node = self.model.nodes[name]
+            for attr in attrs:
+                # Pandas dataframe column name
+                column = f"{name}.{attr}"
+                # The corresponding node name and attribute
+                self.node_attrs[column] = {'name': name,
+                                           'attr': attr}
+                
+                # Determine the data type
+                if attr == 'phase':
+                    dtype[column] = 'str'
+                else:
+                    dtype[column] = 'float64'
+
+        # Performance metric columns
+        perf_columns = ['Wnet', 'Qin', 'eta']
+
+        for col in perf_columns:
+            dtype[col] = 'float64'
+
+        for col in extras:
+            dtype[col] = 'float64'
+
+        self.df = pd.DataFrame(
+            {col: pd.Series(dtype=d) for col, d in dtype.items()}
+            )
+        self.get_column_units()
+        # Pre-allocate the row_data dictionary for reuse
+        self.__row = {col: None for col in self.df.columns}
+
+    def save(self, extras=None):
+        """
+        Saves the current state of the model's nodes, performance metrics,
+        and extras into the DataFrame.
+
+        Args:
+            extras (list, optional): List of extra values to save in the
+                                     DataFrame. Must correspond to
+                                        `self.extras`.
+                                     Defaults to an empty list.
+        """
+        extras = extras if extras is not None else []
+
+        # Reset the pre-allocated row to NaN values
+        #self.__row.fill(np.nan)
+
+        # Extract data for each node using the pre-determined attributes
+        for column, node in self.node_attrs.items():
+            self.__row[column] = getattr(self.model.nodes[node['name']], node['attr'], None)
+
+        self.__row['Wnet'] = self.model.performance[0]
+        self.__row['Qin'] = self.model.performance[1]
+        self.__row['eta'] = self.model.performance[2]
+
+        # Fill in the extras data by index
+        for i, extra in enumerate(self.extras):
+            self.__row[extra] = extras[i]
+
+        self.df = pd.concat(
+            [self.df, pd.DataFrame([self.__row], columns=self.df.columns)],
+            ignore_index=True
+        )
+
+
+    def save_csv(self, file_path):
+        """
+        Saves the DataFrame to a CSV file with headers modified to include 
+        units.
+
+        Args:
+            file_path (str): The file path where the CSV file will be saved.
+        """
+        # Get the units for each column
+        column_units = self.get_column_units()
+
+        # Modify the headers to include units
+        modified_headers = []
+        for column in self.df.columns:
+            unit = column_units.get(column, '')
+            if unit:
+                modified_header = f"{column} [{unit}]"
+            else:
+                modified_header = column
+            modified_headers.append(modified_header)
+
+        # Save the DataFrame to CSV with modified headers
+        self.df.to_csv(file_path, header=modified_headers, index=False)
+    
     # Collection of Nodes
 
     # Evaluate

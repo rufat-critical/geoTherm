@@ -60,7 +60,10 @@ class flow(statefulFlowNode):
             from pdb import set_trace
             set_trace()
 
-    def _get_dP(self, US, DS):
+    def _get_dP(self):
+
+        
+        US, DS = self.get_thermostates()
 
         if self.update_dP:
             return dP_pipe(US,
@@ -71,7 +74,10 @@ class flow(statefulFlowNode):
         else:
             return self.__dPsetpoint
 
-    def _get_dH(self, US, DS):
+    def _get_dH(self):
+
+        
+        US, DS = self.get_thermostates()
 
         # Q
         if self._w == 0:

@@ -1,82 +1,138 @@
 import numpy as np
-from .baseClasses import Turbo, fixedFlowNode
+from .baseClasses import fixedFlowNode
+from .baseTurbo import Turbo, TurboSizer
 from ..units import addQuantityProperty, inputParser
-from ..utils import dH_isentropic
+from ..utils import dH_isentropic, turb_axial_eta, turb_radial_eta
 from ..logger import logger
+from scipy.optimize import fsolve
 
 
 @addQuantityProperty
 class Turbine(Turbo):
 
-    def __init__(self, *args, Ns=None, Ds=None, **kwargs):
-        """
-        Initialize the Turbine Node.
-
-        Args:
-            name (str): Name of the turbine.
-            eta (float): Efficiency of the turbine.
-            US (str): Upstream node name.
-            DS (str): Downstream node name.
-            rotor (str): Rotor Object.
-            PR (float): Pressure ratio.
-            phi (float): Head Coefficient
-            Ns (float): Specific Speed
-            Ds (float): Specific Diameter
-            w (float): Mass flow rate.
-        """
-
-        # Store NS and DS for Turbo 
-        self._Ns = Ns
-        self._Ds = Ds
-
-        # Do rest of initialization
-        super().__init__(self, *args, **kwargs)
-
-    def _get_dP(self, US, DS):
+    def _get_dP(self):
+        # Get Upstream Thermo
+        US,_ = self.get_thermostates()
+        
         # Get delta P across Turbine
         return US._P*(1/self.PR - 1)
-    
-    def _get_dH(self, US, DS):
+
+    def _get_dH(self):
         """Get enthalpy change across Turbine."""
 
-        return dH_isentropic(US, US._P/self.PR)*self.eta
+        return self._dH_is*self.eta
 
     @property
-    def _c_is(self):
-        # Isentropic Spouting Velocity
-        return np.sqrt(2*self._dH_is)
+    def _dH_is(self):
+
+        # Get Upstream Thermo
+        US,_ = self.get_thermostates()
+
+        # Isentropic Enthalpy across Turbo Component
+        return dH_isentropic(US, US._P/self.PR)
 
     @property
-    def _Mach_in(self):
-        return self._c_is/self.US_node.thermo.sound
+    def phi(self):
+        return self._Q_out/(self._D**2*self._U)
 
-    @property
-    def _Mach_out(self):
-        return self._c_is/self.DS_node.thermo.sound
-
-    @property
-    def _vol_flow_out(self):
-        return self._w/self.DS_node.thermo._density
-
-    @property
-    def _D(self):
-        return self._Ds*np.sqrt(self._vol_flow_out)/self._dH_is**0.25
-    
-    @property
-    def N(self):
-        return self._Ns*self._dH_is**0.75/np.sqrt(self._vol_flow_out)
-
-    @property
-    def _u_tip(self):
-        return self._D*self.rotor_node.omega/2
-    
     @property
     def psi(self):
-        return self._dH_is/self._u_tip**2
-    
-    @psi.setter
-    def psi(self, input):
-        pass
+
+        dH = self._get_dH()
+
+        return -dH/self._U**2
+
+    @property
+    def _Ns(self):
+        """ Turbine Specific Speed Dimensional in SI """
+        return self.rotor_node.N*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
+
+    @property
+    def ns(self):
+        """ Turbine Specific Speed Dimensionless """
+        return self.rotor_node.Nrad*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
+
+    @property
+    def _Ds(self):
+        """ Turbine Specific Diameter"""
+        return self._D/np.sqrt(self._Q_out)*(-self._dH_is)**0.25
+
+    @property
+    def AN2(self):
+        return self.rotor_node.N**2*self._Q_out
+
+    def _update_eta(self):
+        # Update Turbine efficiency using efficiency curves
+
+        def hunt_eta(x):
+            # Function used to find eta using fsolve
+
+            # Set eta
+            self.eta = x[0]
+
+            if self.axial:
+                eta_calc = turb_axial_eta(self.phi, self.psi, self.psi_is)
+            else:
+                eta_calc = turb_radial_eta(self.ns)
+
+            return x[0]-eta_calc
+
+        # Fsolve to find eta
+        eta = fsolve(hunt_eta, self.eta)
+
+        # Update Turbine eta and check it's converged
+        eta_root = hunt_eta(eta)
+
+        if np.abs(eta_root) > 1e-5:
+            # Eta was not updated correctly
+            # so go debug and figure out what happened
+            from pdb import set_trace
+            set_trace()
+
+    def evaluate(self):
+
+        if self.update_eta:
+           self._update_eta()
+
+        super().evaluate()
+
+
+
+class Turbine_sizer(Turbine, TurboSizer):
+    """ Turbine Class that sets shaft speed based on input Ns Ds psi or phi"""
+
+    def _update_eta(self):
+        # Update Turbine efficiency using efficiency curves
+
+        def hunt_eta(x):
+            # Function used to find eta using fsolve
+
+            # Set eta
+            self.eta = x[0]
+            # Update Rotor
+            self._update_rotor()
+            # Update Rotor Diameter
+            self._D = self._targets['Ds']*np.sqrt(self._Q_out)/(-self._dH_is)**0.25
+
+            if self.axial:
+                eta_calc = turb_axial_eta(self.phi, self.psi, self.psi_is)
+            else:
+                eta_calc = turb_radial_eta(self.ns)
+
+            return x[0]-eta_calc
+
+        # Fsolve to find eta
+        eta = fsolve(hunt_eta, self.eta)
+
+        # Update Turbine eta and check it's converged
+        eta_root = hunt_eta(eta)
+
+        if np.abs(eta_root) > 1e-5:
+            # Eta was not updated correctly
+            # so go debug and figure out what happened
+            from pdb import set_trace
+            set_trace()
+
 
 class fixedWTurbine(fixedFlowNode, Turbine):
     """ 

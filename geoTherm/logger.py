@@ -79,7 +79,7 @@ class makeLager:
         raise RuntimeError(
             "A critical error has occurred in geoTherm. Please check the log "
             "messages above for details and fix the issues before re-running "
-            "the application."
+            "geoTherm."
         )
 
 

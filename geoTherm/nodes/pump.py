@@ -1,4 +1,5 @@
-from .baseClasses import Turbo, fixedFlowNode
+from .baseClasses import fixedFlowNode
+from .baseTurbo import Turbo
 from ..units import addQuantityProperty
 from ..utils import dH_isentropic, pump_eta
 from ..logger import logger
@@ -8,25 +9,38 @@ import numpy as np
 class Pump(Turbo):
     """Pump class inheriting from Turbo."""
 
-    _displayVars = ['w', 'dP', 'dH', 'W', 'PR', 'vol_flow',
-                    'specific_speed', 'NPSP', 'NSS']
+    _displayVars = ['w', 'dP', 'dH', 'W', 'PR']#'vol_flow',
+    #                'specific_speed', 'NPSP', 'NSS']
     _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
               'dP': 'PRESSURE', 'vol_flow':'VOLUMETRICFLOW', 'Q':'POWER',
               'NPSP': 'PRESSURE', 'specific_speed': 'SPECIFICSPEED',
               'NSS': 'SPECIFICSPEED'}
     bounds = [1, 1000]
 
-    def _get_dP(self, US, DS):
+    def _get_dP(self):
         """Get delta P across Pump."""
+        
+        US, _ = self.get_thermostates()
+        
         return US._P*(self.PR-1)
 
-    def _get_dH(self, US, DS):
+    def _get_dH(self):
         """Get enthalpy change across Pump."""
 
-        if self.update_eta:
-            self.eta = pump_eta(self.phi)
+        #if self.update_eta:
+        #    self.eta = pump_eta(self.phi)
 
-        return dH_isentropic(US, US._P*self.PR)/self.eta
+        return self._dH_is/self.eta
+
+    @property
+    def _dH_is(self):
+        # Isentropic Enthalpy across Turbo Component
+
+        # Get Upstream Thermo
+        US,_ = self.get_thermostates()
+
+        return dH_isentropic(US, US._P*self.PR)
+
 
     def update_pump_parameters(self):
         self._NPSP = self.US_node.thermo._P - self._refThermo._Pvap
@@ -45,14 +59,22 @@ class Pump(Turbo):
         return np.sqrt(self._dH_is/self.psi)
 
     @property
-    def _D(self):
-        return 2*self._u_tip/self.rotor_node.omega
-    
+    def Ds(self):
+        return None
+    #@property
+    #def _D(self):
+    #    return 2*self._u_tip/self.rotor_node.omega
+
     @property
     def phi(self):
-        return (self._vol_flow
-                / (self._D**2*self._u_tip))
-    
+        return self._Q_in/(self._D**2*self._u_tip)
+
+    @property
+    def psi(self):
+        dH = self._get_dH()
+
+        return dH/self._U**2
+
     @property
     def _NSS(self):
         return (self.rotor_node.N*np.sqrt(self._vol_flow)
