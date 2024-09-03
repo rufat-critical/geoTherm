@@ -30,9 +30,13 @@ class Rotor(Node):
                 if self.name == node.rotor:
                     self.loads.append(name)
 
+
 class Rotor_Ns(Node):
 
     def __init__(self, name, Ns, turbo_node):
         # N is calculated to satisfy specific speed
 
         pass
+
+class BoundaryRotor(Rotor):
+    pass

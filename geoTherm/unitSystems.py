@@ -1,41 +1,45 @@
 from dataclasses import dataclass
 
-### UNIT Systems for geoTherm
+# UNIT Systems for geoTherm
+
 
 @dataclass
 class SI:
     """
     SI Units Class
 
-    This class defines the standard units used in the International System of Units (SI)
-    for various physical quantities.
+    This class defines the standard units used in the International System
+    of Units (SI) for various physical quantities.
     """
     units = {
-        'AREA': 'm**2',                  # Square meter for area
-        'DENSITY': 'kg/m**3',            # Kilogram per cubic
-        'SPECIFICVOLUME': 'm**3/kg',
-        'ENERGY': 'J',                   # Joule
-        'LENGTH': 'm',                   # Meter 
-        'MASS': 'kg',                    # Kilogram 
-        'MASSFLOW': 'kg/s',              # Kilogram per second
-        'POWER': 'W',                    # Watt
-        'PRESSURE': 'Pa',                # Pascal
-        'SPECIFICENERGY': 'J/kg',        # Joule per kilogram
-        'SPECIFICENTROPY': 'J/kg/degK',  # Joule per kilogram per Kelvin
-        'SPECIFICHEAT': 'J/kg/degK',     # Joule per kilogram per Kelvin
-        'SPECIFICPOWER': 'W/kg',         # Watt per kilogram
-        'TEMPERATURE': 'degK',           # Kelvin
-        'VELOCITY': 'm/s',               # Meter per second
-        'VISCOSITY': 'Pa*s',             # Pascal-second
-        'CONDUCTIVITY': 'W/m/K',         # Watts per meter-Kelvin
-        'VOLUME': 'm**3',                # Cubic meter
-        'THERMALRESISTANCE': 'degK/W',   # Thermal Resistance
-        'CONVECTION': 'W/m**2/degK',        # Convection coeff
-        'VOLUMETRICFLOW': 'm**3/s',
+        'AREA': 'm**2',                    # Square meter
+        'DENSITY': 'kg/m**3',              # Kilogram per cubic meter
+        'SPECIFICVOLUME': 'm**3/kg',       # Cubic meter per kilogram
+        'ENERGY': 'J',                     # Joule
+        'LENGTH': 'm',                     # Meter
+        'MASS': 'kg',                      # Kilogram
+        'MASSFLOW': 'kg/s',                # Kilogram per second
+        'MASSFLUX': 'kg/s/m**2',           # Kilogram per second per square
+                                           # meter
+        'POWER': 'W',                      # Watt
+        'PRESSURE': 'Pa',                  # Pascal
+        'SPECIFICENERGY': 'J/kg',          # Joule per kilogram
+        'SPECIFICENTROPY': 'J/kg/degK',    # Joule per kilogram per Kelvin
+        'SPECIFICHEAT': 'J/kg/degK',       # Joule per kilogram per Kelvin
+        'SPECIFICPOWER': 'W/kg',           # Watt per kilogram
+        'TEMPERATURE': 'degK',             # Kelvin
+        'VELOCITY': 'm/s',                 # Meter per second
+        'VISCOSITY': 'Pa*s',               # Pascal-second
+        'CONDUCTIVITY': 'W/m/K',           # Watt per meter-Kelvin
+        'VOLUME': 'm**3',                  # Cubic meter
+        'THERMALRESISTANCE': 'degK/W',     # Kelvin per Watt
+        'CONVECTION': 'W/m**2/degK',       # Watt per square meter per Kelvin
+        'VOLUMETRICFLOW': 'm**3/s',        # Cubic meter per second
         'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
         'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
-        'ROTATIONSPEED': 'rpm',
+        'ROTATIONSPEED': 'rpm',            # Revolutions per minute
     }
+
 
 @dataclass
 class ENGLISH:
@@ -48,60 +52,67 @@ class ENGLISH:
     units = {
         'AREA': 'in**2',                   # Square inch
         'DENSITY': 'lb/in**3',             # Pound per cubic inch
-        'SPECIFICVOLUME': 'in**3/lb',
+        'SPECIFICVOLUME': 'in**3/lb',      # Cubic inch per pound
         'ENERGY': 'Btu',                   # British thermal unit
         'LENGTH': 'in',                    # Inch
         'MASS': 'lb',                      # Pound
         'MASSFLOW': 'lb/s',                # Pound per second
+        'MASSFLUX': 'lbs/s/in**2',         # Pounds per second per square inch
         'POWER': 'Btu/s',                  # British thermal unit per second
         'PRESSURE': 'psi',                 # Pounds per square inch
         'SPECIFICENERGY': 'Btu/lb',        # British thermal unit per pound
-        'SPECIFICENTROPY': 'Btu/lb/degR',  # British thermal unit per pound per Rankine
-        'SPECIFICHEAT': 'Btu/lb/degR',     # British thermal unit per pound per Rankine
-        'SPECIFICPOWER': 'Btu/s/lb',       # British thermal unit per second per pound
+        'SPECIFICENTROPY': 'Btu/lb/degR',  # BTU per pound per Rankine
+        'SPECIFICHEAT': 'Btu/lb/degR',     # BTU per pound per Rankine
+        'SPECIFICPOWER': 'Btu/s/lb',       # BTU per second per pound
         'TEMPERATURE': 'degR',             # Rankine
         'VELOCITY': 'ft/s',                # Feet per second
         'VISCOSITY': 'lb/in/s',            # Pound per inch per second
-        'CONDUCTIVITY': 'Btu/hr/ft/F',     # BTU per hour per foot per Fahrenheit
+        'CONDUCTIVITY': 'Btu/hr/ft/F',     # BTU per hour per foot per
+                                           # Fahrenheit
         'VOLUME': 'in**3',                 # Cubic inch
-        'THERMALRESISTANCE': 'degR/Btu/s',  # Thermal Resistance
-        'CONVECTION': 'Btu/s/ft**2/degR',   # Convection coeff
-        'VOLUMETRICFLOW': 'ft**3/s',
-        'SPECIFICSPEED': 'rpm*(ft**3/sec)**(0.5)/(ft*lbf/lb)**(3/4)',
+        'THERMALRESISTANCE': 'degR/Btu/s',  # Rankine per BTU per second
+        'CONVECTION': 'Btu/s/ft**2/degR',  # BTU per second per square foot
+                                           # per Rankine
+        'VOLUMETRICFLOW': 'ft**3/s',       # Cubic foot per second
+        'SPECIFICSPEED': 'rpm*(ft**3/s)**(0.5)/(ft*lbf/lb)**(3/4)',
         'SPECIFICDIAMETER': 'ft*(ft*lbf/lb)**(1/4)/(ft**3/s)**(0.5)',
-        'ROTATIONSPEED': 'rpm',
+        'ROTATIONSPEED': 'rpm',            # Revolutions per minute
     }
+
 
 @dataclass
 class MIXED:
     """
     Mixed Units Class
 
-    This class defines a mix of SI and English units used for various physical quantities.
+    This class defines a mix of SI and English units used for various
+    physical quantities.
     """
     units = {
         'AREA': 'in**2',                   # Square inch
         'DENSITY': 'kg/m**3',              # Kilogram per cubic meter
-        'SPECIFICVOLUME': 'm**3/kg',
+        'SPECIFICVOLUME': 'm**3/kg',       # Cubic meter per kilogram
         'ENERGY': 'MJ',                    # Megajoule
         'LENGTH': 'in',                    # Inch
         'MASS': 'lb',                      # Pound
         'MASSFLOW': 'kg/s',                # Kilogram per second
-        'POWER': 'MW',                     # Megawatt
-        'PRESSURE': 'bar',                 # Pounds per square inch
+        'MASSFLUX': 'kg/s/m**2',           # Kilogram per second per square
+                                           # meter
+        'POWER': 'kW',                     # Kilowatt
+        'PRESSURE': 'bar',                 # Bar
         'SPECIFICENERGY': 'kJ/kg',         # Kilojoule per kilogram
         'SPECIFICENTROPY': 'kJ/kg/degK',   # Kilojoule per kilogram per Kelvin
         'SPECIFICHEAT': 'kJ/kg/K',         # Kilojoule per kilogram per Kelvin
         'SPECIFICPOWER': 'MW/kg',          # Megawatt per kilogram
-        'TEMPERATURE': 'degC',             # Kelvin
+        'TEMPERATURE': 'degC',             # Celsius
         'VELOCITY': 'm/s',                 # Meter per second
         'VISCOSITY': 'Pa*s',               # Pascal-second
-        'CONDUCTIVITY': 'W/m/K',           # Watts per meter-Kelvin
+        'CONDUCTIVITY': 'W/m/K',           # Watt per meter-Kelvin
         'VOLUME': 'in**3',                 # Cubic inch
-        'THERMALRESISTANCE': 'degK/W',      # Thermal Resistance
-        'CONVECTION': 'W/m**2/degK',        # Convection coeff
-        'VOLUMETRICFLOW': 'm**3/s',
+        'THERMALRESISTANCE': 'degK/W',     # Kelvin per Watt
+        'CONVECTION': 'W/m**2/degK',       # Watt per square meter per Kelvin
+        'VOLUMETRICFLOW': 'm**3/s',        # Cubic meter per second
         'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
         'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
-        'ROTATIONSPEED': 'rpm',
+        'ROTATIONSPEED': 'rpm',            # Revolutions per minute
     }

@@ -1,13 +1,13 @@
 import numpy as np
 import re
+import networkx as nx
 from scipy.optimize import root_scalar
 from .logger import logger
+
 from .thermostate import thermo
 
 # Get Machine precision
 eps = np.finfo(float).eps
-
-## Various Utilities/Helper Functions for geoTherm or standalone
 
 
 def dP_pipe(thermo, U, Dh, L, roughness=2.5e-6):
@@ -186,3 +186,60 @@ def turb_axial_eta(phi, psi, psi_opt):
 
 def turb_radial_eta(ns):
     return 0.87 - 1.07*(ns-0.55)**2-0.5*(ns-0.55)**3
+
+def parse_knob_string(knob_string):
+    # Parse the knob string into a component name and variable
+    
+    if isinstance(knob_string, str):
+
+        # Regular expression to match the pattern: Node.Variable
+        pattern = r"(\w+)\.(\w+)"
+        # Search for the pattern in the input string
+        match = re.search(pattern, knob_string)
+
+        if match:
+            # If a match is found, create a dictionary from the groups
+            return [match.group(1), match.group(2)]
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    else:
+        from pdb import set_trace
+        set_trace()
+
+
+    from pdb import set_trace
+    set_trace()
+
+
+def parse_component_attribute(attribute_string):
+    """
+    Parses an attribute string to extract the component name and the attribute
+    chain.
+
+    Args:
+        attribute_string (str): The attribute string in the format 
+                                'Component.Attribute' or 
+                                'Component.SubComponent.Attribute'.
+
+    Returns:
+        list: A list where the first element is the component name and the 
+              second element is the attribute chain.
+    """
+    if isinstance(attribute_string, str):
+        # Regular expression to match the pattern: Component.Attribute or 
+        # Component.SubComponent.Attribute
+        pattern = r"(\w+)\.(.+)"
+        
+        # Search for the pattern in the input string
+        match = re.search(pattern, attribute_string)
+
+        if match:
+            # Return a list where the first element is the component name 
+            # and the second is the attribute chain
+            return [match.group(1), match.group(2)]
+        else:
+            raise ValueError("Invalid attribute string format.")
+    else:
+        raise TypeError("Input should be a string.")

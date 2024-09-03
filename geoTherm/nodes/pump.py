@@ -9,19 +9,26 @@ import numpy as np
 class Pump(Turbo):
     """Pump class inheriting from Turbo."""
 
-    _displayVars = ['w', 'dP', 'dH', 'W', 'PR']#'vol_flow',
-    #                'specific_speed', 'NPSP', 'NSS']
+    _displayVars = ['w', 'dP:\u0394P', 'dH:\u0394H', 'W', 'PR', 'Q_in',
+                    'Q_out', 'Ns', 'Ds', 'D', 'Mach_in', 'Mach_out',
+                    'phi:\u03C6', 'psi:\u03C8', 'psi_is:\u03C8_is', 'U',
+                    'eta:\u03B7', 'NSS', 'NPSP']
+
     _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
-              'dP': 'PRESSURE', 'vol_flow':'VOLUMETRICFLOW', 'Q':'POWER',
-              'NPSP': 'PRESSURE', 'specific_speed': 'SPECIFICSPEED',
-              'NSS': 'SPECIFICSPEED'}
+              'dP': 'PRESSURE', 'Q_in': 'VOLUMETRICFLOW',
+              'Q_out': 'VOLUMETRICFLOW', 'Q': 'POWER',
+              'Ns': 'SPECIFICSPEED', 'Ds': 'SPECIFICDIAMETER',
+              'NSS': 'SPECIFICSPEED', 'NPSP': 'PRESSURE',
+              'D': 'LENGTH', 'U': 'VELOCITY'}
+
+    # Bounds on flow variables
     bounds = [1, 1000]
 
     def _get_dP(self):
         """Get delta P across Pump."""
-        
+
         US, _ = self.get_thermostates()
-        
+
         return US._P*(self.PR-1)
 
     def _get_dH(self):
@@ -41,29 +48,21 @@ class Pump(Turbo):
 
         return dH_isentropic(US, US._P*self.PR)
 
-
-    def update_pump_parameters(self):
-        self._NPSP = self.US_node.thermo._P - self._refThermo._Pvap
-        self._u_tip = np.sqrt(self._dH_is/self.psi)
-        self.phi = self._vol_flow/(self._D**2*self._u_tip)
-        self._NSS = (self.rotor_node.N*np.sqrt(self._vol_flow)
-                     / (self._NPSP
-                        / (9.81*self.US_node.thermo._density))**0.75)
-
     @property
     def _NPSP(self):
-        return self.US_node.thermo._P - self._refThermo._Pvap
+        try:
+            return self.US_node.thermo._P - self._ref_thermo._Pvap
+        except:
+            return 0
 
     @property
     def _u_tip(self):
         return np.sqrt(self._dH_is/self.psi)
 
     @property
-    def Ds(self):
-        return None
-    #@property
-    #def _D(self):
-    #    return 2*self._u_tip/self.rotor_node.omega
+    def _Ds(self):
+        """ Pump Specific Diameter """
+        return self._D/np.sqrt(self._Q_in)*(self._dH_is)**0.25
 
     @property
     def phi(self):
@@ -76,13 +75,17 @@ class Pump(Turbo):
         return dH/self._U**2
 
     @property
+    def _Ns(self):
+        """ Pump Specific Speed Dimensional in SI """
+        return self.rotor_node.N*np.sqrt(self._Q_in)/(self._dH_is)**(0.75)
+
+    @property
     def _NSS(self):
-        return (self.rotor_node.N*np.sqrt(self._vol_flow)
+        return (self.rotor_node.N*np.sqrt(self._Q_in)
                 / (np.abs(self._NPSP)
                    / (9.81*self.US_node.thermo._density))**0.75)
 
 
-@addQuantityProperty
 class fixedFlowPump(fixedFlowNode, Pump):
     """Pump class with fixed mass flow."""
 

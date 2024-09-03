@@ -13,19 +13,19 @@ class flow(statefulFlowNode):
     _displayVars = ['w', 'dP', 'dH', 'Q']
     _units = {'D': 'LENGTH', 'L': 'LENGTH', 'w': 'MASSFLOW',
               'roughness': 'LENGTH', 'dP': 'PRESSURE',
-              'Q': 'POWER', 'dH': 'SPECIFICENERGY', 
-              'flowU': 'VELOCITY'}
+              'Q': 'POWER', 'dH': 'SPECIFICENERGY',
+              'U': 'VELOCITY'}
 
     _bounds = [-1e5, 1e5]
 
     @inputParser
     def __init__(self, name, US, DS,
-                 w:'MASSFLOW',
-                 L:'LENGTH'=None,
-                 D:'LENGTH'=None,
-                 roughness:'LENGTH'=1e-5,
-                 dP:'PRESSURE'=None,
-                 Q: 'POWER'=0):
+                 w:'MASSFLOW',                  # noqa
+                 L:'LENGTH'=None,               # noqa
+                 D:'LENGTH'=None,               # noqa
+                 roughness:'LENGTH'=1e-5,       # noqa
+                 dP:'PRESSURE'=None,            # noqa
+                 Q: 'POWER'=0):                 # noqa
 
         self.name = name
         self.US = US
@@ -43,12 +43,11 @@ class flow(statefulFlowNode):
             if (L is None) or (D is None):
                 logger.critical(f"Connector {self.name} needs to have D and L "
                                 "specified if dP is not specified!")
-                
+
         else:
             self.update_dP = False
             self.__dPsetpoint = -dP
             self._dP = -dP
-
 
         self._Qobj = None
         if isinstance(Q, (float, int)):
@@ -62,21 +61,19 @@ class flow(statefulFlowNode):
 
     def _get_dP(self):
 
-        
-        US, DS = self.get_thermostates()
+        US, _ = self.get_thermostates()
 
         if self.update_dP:
             return dP_pipe(US,
-                          self._flowU,
-                          self._D,
-                          self._L,
-                          self._roughness)
+                           self._U,
+                           self._D,
+                           self._L,
+                           self._roughness)
         else:
             return self.__dPsetpoint
 
     def _get_dH(self):
 
-        
         US, DS = self.get_thermostates()
 
         # Q
@@ -117,16 +114,7 @@ class flow(statefulFlowNode):
         return super().initialize(model)
 
     @property
-    def _UA(self):
-        # Calculate UA for the HEX
-        
-        dT = self.DS_node.thermo._T - self.US_node.thermo._T
-
-        return self._Q/dT
-
-
-    @property
-    def _flowU(self):
+    def _U(self):
         # Calculate Flow Velocity of object
         # U = mdot/(rho*A^2)
 

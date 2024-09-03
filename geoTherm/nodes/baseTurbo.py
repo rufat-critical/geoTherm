@@ -8,13 +8,14 @@ from ..thermostate import thermo
 class Turbo(statefulFlowNode):
     """Base Turbo Class for turbines and pumps."""
 
-    _displayVars = ['w', 'dP:\u0394P', 'dH:\u0394H', 'W', 'PR', 'Q_in', 'Q_out', 'Ns', 'Ds',
-                    'D', 'Mach_in', 'Mach_out', 'phi:\u03C6',
-                    'psi:\u03C8', 'psi_is:\u03C8_is', 'U', 'eta:\u03B7']
+    _displayVars = ['w', 'dP:\u0394P', 'dH:\u0394H', 'W', 'PR', 'Q_in',
+                    'Q_out', 'Ns', 'Ds', 'D', 'Mach_in', 'Mach_out',
+                    'phi:\u03C6', 'psi:\u03C8', 'psi_is:\u03C8_is', 'U',
+                    'eta:\u03B7']
 
     _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
               'dP': 'PRESSURE', 'Q_in': 'VOLUMETRICFLOW',
-              'Q_out': 'VOLUMETRICFLOW', 'Q':'POWER', 'Ns': 'SPECIFICSPEED',
+              'Q_out': 'VOLUMETRICFLOW', 'Q': 'POWER', 'Ns': 'SPECIFICSPEED',
               'Ds': 'SPECIFICDIAMETER', 'D': 'LENGTH', 'U': 'VELOCITY'}
 
     # Bounds on flow variables
@@ -440,7 +441,7 @@ class TurboSizer(Turbo):
 
     def _update_rotor(self):
         self.rotor_node.N = self._targets['Ns']*(-self._dH_is)**0.75/np.sqrt(self._Q_out)
-
+    
     @property
     def _Ns(self):
         """ Turbine Specific Speed Dimensional in SI """

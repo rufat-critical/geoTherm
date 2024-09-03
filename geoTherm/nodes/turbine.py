@@ -1,9 +1,8 @@
 import numpy as np
 from .baseClasses import fixedFlowNode
 from .baseTurbo import Turbo, TurboSizer
-from ..units import addQuantityProperty, inputParser
+from ..units import addQuantityProperty
 from ..utils import dH_isentropic, turb_axial_eta, turb_radial_eta
-from ..logger import logger
 from scipy.optimize import fsolve
 
 
@@ -12,8 +11,8 @@ class Turbine(Turbo):
 
     def _get_dP(self):
         # Get Upstream Thermo
-        US,_ = self.get_thermostates()
-        
+        US, _ = self.get_thermostates()
+
         # Get delta P across Turbine
         return US._P*(1/self.PR - 1)
 
@@ -26,7 +25,7 @@ class Turbine(Turbo):
     def _dH_is(self):
 
         # Get Upstream Thermo
-        US,_ = self.get_thermostates()
+        US, _ = self.get_thermostates()
 
         # Isentropic Enthalpy across Turbo Component
         return dH_isentropic(US, US._P/self.PR)
@@ -92,10 +91,9 @@ class Turbine(Turbo):
     def evaluate(self):
 
         if self.update_eta:
-           self._update_eta()
+            self._update_eta()
 
         super().evaluate()
-
 
 
 class Turbine_sizer(Turbine, TurboSizer):
@@ -112,7 +110,8 @@ class Turbine_sizer(Turbine, TurboSizer):
             # Update Rotor
             self._update_rotor()
             # Update Rotor Diameter
-            self._D = self._targets['Ds']*np.sqrt(self._Q_out)/(-self._dH_is)**0.25
+            self._D = (self._targets['Ds']*np.sqrt(self._Q_out)
+                       / (-self._dH_is)**0.25)
 
             if self.axial:
                 eta_calc = turb_axial_eta(self.phi, self.psi, self.psi_is)
@@ -134,8 +133,8 @@ class Turbine_sizer(Turbine, TurboSizer):
             set_trace()
 
 
-class fixedWTurbine(fixedFlowNode, Turbine):
-    """ 
+class fixedFlowTurbine(fixedFlowNode, Turbine):
+    """
     Turbine class where mass flow is fixed to initialization value.
     """
 
@@ -171,8 +170,10 @@ class fixedWTurbine(fixedFlowNode, Turbine):
         else:
             self.penalty = False
             self.PR = x[0]
-    
+
     @property
-    def error(self):
-        from pdb import set_trace
-        set_trace()
+    def xdot(self):
+        if self.penalty is not False:
+            return self.penalty
+        else:
+            return (self.US_node.thermo._P/self.DS_node.thermo._P - self.PR)

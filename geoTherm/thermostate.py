@@ -1,39 +1,34 @@
 import numpy as np
 import CoolProp as cp
-from pdb import set_trace
-#from .utils import parseState, parseComposition
-import re
 from .units import inputParser, addQuantityProperty, fromSI, toSI, units
 from rich.console import Console
 from rich.table import Table
 from .logger import logger
+import re
 
-## Utility functions for thermostate
+
+# Utility functions for thermostate
 def parseState(stateDict):
-    """Check the stateDictionary for quantity code
+    """Check the stateDictionary for quantity code.
 
-    Input:
-        stateDict: Dictionary containing 2 state variables
+    Args:
+        stateDict (dict): Dictionary containing 2 state variables.
 
-    Return:
-        State Variable code """
+    Returns:
+        str: State Variable code.
+    """
 
-    if stateDict is None:
-        return None
+    if not stateDict or len(stateDict) != 2:
+        logger.critical("The thermodynamic state must be defined with exactly "
+                        "2 state variables. the current stateDict is : "
+                        f"'{stateDict}'")
 
     # Creates a set using dict keys from stateDict, we'll use this to
     # compare with quanities defined below
     stateVars = set(stateDict)
 
-    if len(stateVars) != 2:
-        msg = 'Error: The thermodynamic state needs to be defined with exactly '
-        msg += f'2 state variables, the current stateDict is : {stateDict}'
-        raise ValueError(msg)
-    else:
-        stateVars = set(stateDict)
-
     # These are all the property inputs that have been programmed so far
-    # These are refered to in UpdateState method in thermostate.py
+    # These are refered to in update_state method in thermostate.py
     quantities = {'TP': {'T', 'P'}, 
                   'TS': {'T', 'S'},
                   'HP': {'H', 'P'},
@@ -55,18 +50,18 @@ def parseState(stateDict):
 
     # If we reached the end of the loop without returning then the quantity
     # code hasn't been coded yet
-    raise ValueError(f'Invalid Thermostate Variables specified: {stateDict}')
-    
+    logger.critical(f'Invalid Thermostate Variables specified: {stateDict}')
+
+
 def parseComposition(composition):
-    """Parse the composition into a dictionary containing species 
-        and quantities 
-        
-    Input:
-        composition: String, Array, Dictionary
-    
+    """Parse the composition into a dictionary containing species and quantities.
+
+    Args:
+        composition (str, list, dict): Fluid composition input.
+
     Returns:
-        Composition Dictionary"""
-    
+        dict: Composition dictionary.
+    """
     if composition is None:
         return None
 
@@ -111,7 +106,6 @@ def parseComposition(composition):
 
 
     return composition
-
 
 
 class coolprop_wrapper:
@@ -225,6 +219,10 @@ class coolprop_wrapper:
             vapor = cp.AbstractState("HEOS", self.cpObj.name())
             vapor.update(cp.QT_INPUTS, 0.0, self.cpObj.T())
             return float(vapor.p())
+        elif property == 'Tvap':
+            vapor = cp.AbstractState("HEOS", self.cpObj.name())
+            vapor.update(cp.PQ_INPUTS, self.cpObj.p(), 0)
+            return float(vapor.T())
         elif property == 'phase':
             return self.phaseIndx[self.cpObj.phase()]
 
@@ -281,6 +279,7 @@ class coolprop_wrapper:
             'U': 'umass',
             'cp': 'cpmass',
             'cv': 'cvmass',
+            'D': 'rhomass',
             'density': 'rhomass',
             'viscosity': 'viscosity',
             'Y': 'get_mass_fractions',
@@ -295,41 +294,20 @@ class coolprop_wrapper:
 
 
 def addThermoAttributes(cls):
-    """
-    Decorator to add thermodynamic attributes to a class.
-    
-    Args:
-        cls (class): Class to which attributes are added.
-    
-    Returns:
-        class: Class with added attributes.
-    """
-    propertyList = ['T', 'P', 'Q', 'H', 'phase']
+    """Decorator to add thermodynamic attributes to a class."""
+    propertyList = ['T', 'P', 'Q', 'H', 'phase', 'density']
     for name in propertyList:
-        def getter(self, name=name):  # Default argument to bind the current name
+        def getter(self, name=name):
             return getattr(self.thermo, name)
         setattr(cls, name, property(getter))
     return cls
 
 
-#@addQuantityProperty
 def addThermoGetters(getterList):
-    """
-    Decorator to add thermodynamic properties to a class.
-    
-    Args:
-        propertyList (list): List of property names to add.
-    
-    Returns:
-        function: Decorator function.
-    """
+    """Decorator to add thermodynamic properties to a class."""
     def decorator(cls):
         for name in getterList:
-            if '_' in name[0]:
-                prop = name[1:]
-            else:
-                prop = name
-            
+            prop = name[1:] if name.startswith('_') else name
             def getter(self, prop=prop):
                 return self.pObj.getProperty(prop)
             setattr(cls, name, property(getter))
@@ -338,15 +316,7 @@ def addThermoGetters(getterList):
 
 
 def addThermoSetters(setterList):
-    """
-    Decorator to add thermodynamic setters to a class.
-    
-    Args:
-        setterList (list): List of setter names to add.
-    
-    Returns:
-        function: Decorator function.
-    """
+    """Decorator to add thermodynamic setters to a class."""
     def decorator(cls):
         for name in setterList:
             properties = [prop for prop in name]
@@ -384,7 +354,6 @@ def addThermoSetters(setterList):
                     for i, v in enumerate(val):
                         if properties[i] in cls._units:
                             val[i] = toSI(v, cls._units[properties[i]])
-
                     self.pObj.updateState({properties[0]: val[0], properties[1]: val[1]},
                                           stateVars=name)
 
@@ -410,22 +379,23 @@ def addThermoSetters(setterList):
                     for i, v in enumerate(val):
                         if properties[i] in cls._units:
                             val[i] = toSI(v, cls._units[properties[i]])
-                    
+
                     self.pObj.updateState({properties[0]: val[0], properties[1]: val[1]},
                                           stateVars=name[:2])
-                                    
+
                 # Apply the getters and setters for state and composition (3 properties)
                 setattr(cls, f'_{name}', property(getterSI, setterSI))
                 setattr(cls, name, property(getterUnit, setterUnit))          
-            
+
         return cls
     return decorator
+
 
 # Add thermo properties, the _ means they have a unit that's described in units
 # class
 thermoGetters = ['_T', '_P', 'Q', '_H', '_S', '_U', '_cp', '_cv', '_density',
                  '_viscosity', 'species_names', 'phase', '_sound', '_Pvap',
-                 '_conductivity']
+                 '_Tvap', '_conductivity', '_D']
 
 thermoSetters = ['TP', 'TS', 'HP', 'SP', 'DU', 'PU', 'DP', 'HS',
                  'DH', 'TQ', 'PQ', 'TD','TPY', 'X', 'Y']
@@ -444,7 +414,7 @@ class thermo:
                  'species_names', 'TP', '_TP', 'TD', '_TD', 'TQ', '_TQ',
                  'TH', '_TH', 'TS', '_TS', 'HP', '_HP', 'HS', '_HS',
                  'DU', '_DU', 'TPY', '_TPY', 'thermo_model', 'sound', '_sound',
-                 '_Pvap', '_conductivity']
+                 '_Pvap', '_Tvap', '_conductivity']
 
     _units = {'T': 'TEMPERATURE',               # Temperature
               'P': 'PRESSURE',                  # Pressure
@@ -457,7 +427,8 @@ class thermo:
               'viscosity': 'VISCOSITY',         # Viscosity
               'conductivity': 'CONDUCTIVITY',   # Conductivity
               'sound': 'VELOCITY',              # Velocity
-              'Pvap': 'PRESSURE'}               # Vapor Pressure
+              'Pvap': 'PRESSURE',               # Vapor Pressure
+              'Tvap': 'TEMPERATURE'}            # Vapor Temperature
                
 
     @inputParser
@@ -524,7 +495,7 @@ class thermo:
 
         self.pObj.updateState(state=state, stateVars=stateVars)        
 
-    def _updateState(self, state):
+    def _update_state(self, state):
         """
         Update the thermodynamic state of the object where inputs are in SI
 
@@ -652,17 +623,22 @@ class thermo:
         table.add_column("Units")
 
         table.add_row('TEMPERATURE', f'{self.T:0.5g}',
-                      units.outputUnits['TEMPERATURE'])
+                      units.output_units['TEMPERATURE'])
         table.add_row('PRESSURE', f'{self.P:0.5g}',
-                      units.outputUnits['PRESSURE'])
-        table.add_row('VAPOR P', f'{self.Pvap:0.5g}',
-                      units.outputUnits['PRESSURE'])
+                      units.output_units['PRESSURE'])
+        if (self.phase == 'supercritical_gas'
+                or self.phase =='supercritical_liquid'):
+            table.add_row('VAPOR P', 'supercritical')
+        else:
+            table.add_row('VAPOR P', f'{self.Pvap:0.5g}',
+                          units.output_units['PRESSURE'])
+                               
         table.add_row('DENSITY', f'{self.density:0.5g}',
-                      units.outputUnits['DENSITY'])
+                      units.output_units['DENSITY'])
         table.add_row('Cp', f'{self.cp:0.5g}',
-                      units.outputUnits['SPECIFICHEAT'])
+                      units.output_units['SPECIFICHEAT'])
         table.add_row('Viscosity', f'{self.viscosity:0.5g}',
-                      units.outputUnits['VISCOSITY'])        
+                      units.output_units['VISCOSITY'])        
         table.add_row('Fluid', str(self.Ydict), '')
         table.add_row('PHASE', self.phase, '')
 

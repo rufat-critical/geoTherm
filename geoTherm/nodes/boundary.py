@@ -1,92 +1,13 @@
-from ..thermostate import thermo, addThermoAttributes
+from .baseClasses import ThermoNode
 from ..units import inputParser
 from ..logger import logger
-from .node import Node
 import numpy as np
 
 
-@addThermoAttributes
-class thermoNode(Node):
-    """ Thermodynamic state that has a constant state """
-
-    _displayVars = ['P', 'T', 'phase']
-
-    @inputParser
-    def __init__(self, name, fluid,
-                 P:'PRESSURE'=None,             # noqa
-                 T:'TEMPERATURE'=None,          # noqa
-                 H:'SPECIFICENTHALPY'=None,     # noqa
-                 S:'SPECIFICENTROPY'=None,      # noqa
-                 Q=None,
-                 state=None):
-        """ Initialize a constant thermodynamic state Boundary via fluid
-        name and thermodynamic state
-
-        Args:
-            name (str): Node Name
-            fluid (str): Fluid name
-            P (float, optional): Pressure
-            T (float, optional): Temperature 
-            H (float, optional): Enthalpy
-            S (float, optional): Entropy
-            Q (float, optional): Fluid Quality
-            state (dict, Optional): Dictionary with thermodynamic state
-            thermoObj (thermoObj, Optional): instance of thermo Object"""
-
-        # Store name
-        self.name = name
-
-        # Check if state or P,T,H... have been defined
-        if state is not None:
-            pass
-        else:
-            # Generate State Dictionary
-            state = {'P':P, 'T': T, 'H': H, 'S': S, 'Q': Q}
-            # Trim the state by removing entries with None Variables
-            state = {var:val for var, val in state.items() if val is not None}
-            
-            if len(state) == 0:
-                # If the state dict is 0 then set the state to None
-                # thermostate will use default initializiation values
-                state = None
-
-        # If fluid is a string then this is the composition
-        if isinstance(fluid, str):
-            # Generate the thermo object
-            self.thermo = thermo(fluid, state=state)
-        elif isinstance(fluid, thermo):
-            # If thermo object is specified for fluid then use that
-            # thermo object for calcs
-            self.thermo = fluid
-
-            if state is not None:
-                self.thermo._updateState(state)
-
-        self.penalty = False
-
-    def initialize(self, model):
-        super().initialize(model)
-
-        # Get NodeMap
-        nodeMap = self.model.nodeMap[self.name]
-
-        # Add referneces to nodes connecting to this node
-        self.US_neighbors = nodeMap['US']
-        self.US_nodes = [self.model.nodes[name] for name in nodeMap['US']]
-        self.DS_neighbors = nodeMap['DS']
-        self.DS_nodes = [self.model.nodes[name] for name in nodeMap['DS']]
-        self.hot_neighbors = nodeMap['hot']
-        self.hot_nodes = [self.model.nodes[name] for name in nodeMap['hot']]
-        self.cool_neighbors = nodeMap['cool']
-        self.cool_nodes = [self.model.nodes[name] for name in nodeMap['cool']]
-
-        
-
-class Boundary(thermoNode):
+class Boundary(ThermoNode):
     pass
 
-
-class POutlet(thermoNode):
+class POutlet(ThermoNode):
 
     def evaluate(self):
 
@@ -110,7 +31,8 @@ class POutlet(thermoNode):
 
         super().initialize(model)
 
-class PBoundary(thermoNode):
+
+class PBoundary(ThermoNode):
     """ Thermodynamic state with a specified Pressure but energy
     calculated based on conservation """
 
@@ -147,7 +69,7 @@ class PBoundary(thermoNode):
         return np.array([Hnet+Qnet+Wnet])
 
 
-class TBoundary(thermoNode):
+class TBoundary(ThermoNode):
     """ Thermodynamic state with a specified Temperature but density
     calculated based on conservation """
 
@@ -168,7 +90,7 @@ class TBoundary(thermoNode):
             self.penalty = (X0-x)*1e5
 
 
-    def updateThermo(self, dsState):
+    def update_thermo(self, dsState):
 
         if 'P' not in dsState:
             from pdb import set_trace
@@ -195,7 +117,7 @@ class TBoundary(thermoNode):
 
         return np.array([wNet])
     
-class Outlet(thermoNode):
+class Outlet(ThermoNode):
     """ Outlet Node where the state is determined by outlet properties"""
 
     def initialize(self, model):
@@ -222,7 +144,6 @@ class Outlet(thermoNode):
             logger.critical(f"Outlet Node '{self.name}' is connected to "
                             f"cool upstream nodes:\n{self.cool_neighbors}\nIt should "
                             "only be downstream of 1 flow node!")
-
 
     def evaluate(self):
 

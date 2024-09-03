@@ -1,7 +1,9 @@
 from .node import Node
-from .boundary import Boundary, TBoundary
+from .boundary import Boundary
+from .baseClasses import fixedFlowNode
 import numpy as np
 import re
+
 
 class Balance(Node):
 
@@ -51,16 +53,10 @@ class Balance(Node):
         self.knob_node = model.nodes[name]
         self.knob_var = var
 
-        # Get Feedback Value
-        self.scale = 1
-        self.scale = 1/self.knob_val
-
-
         name, var = self._parseVariable(self.feedback)
 
         self.feedback_node = model.nodes[name]
         self.feedback_var = var
-
 
     @property
     def feedback_val(self):
@@ -68,13 +64,12 @@ class Balance(Node):
 
     @property
     def knob_val(self):
-        return getattr(self.knob_node, self.knob_var)*self.scale
+        return getattr(self.knob_node, self.knob_var)
 
     @property
     def error(self):
 
-        if (self.knob_node.penalty is not False
-            or self.penalty is not False):
+        if self.penalty is not False:
             return np.array([self.penalty])
 
         return (self.setpoint - self.feedback_val)*self.gain
@@ -83,28 +78,34 @@ class Balance(Node):
     def x(self):
         return np.array([self.knob_val])
 
+    def update_state(self, x):
+        self.updateState(x)
+
     def updateState(self, x):
 
         self._x = x
-
-        if x[0]<self.knob_min*self.scale:
-            self.penalty = (self.knob_min - x[0] + 1)*1e8
+        print('x1', x)
+        if x[0] < self.knob_min:
+            self.penalty = (self.knob_min - x[0] + 10)*1e8
             return
-        elif x[0]>self.knob_max*self.scale:
-            self.penalty = (self.knob_max - x[0] + 1)*1e8
+        elif x[0] > self.knob_max:
+            self.penalty = (self.knob_max - x[0] - 10)*1e8
             return
         else:
-            self.penalty = False 
-
+            self.penalty = False
 
         if isinstance(self.knob_node, Boundary):
             if self.knob_var == 'T':
                 self.knob_node.thermo._TP = x[0], self.knob_node.thermo._P
             elif self.knob_var == 'P':
-                self.knob_node.thermo._TP = self.knob_node.thermo._T, x[0]/self.scale
+                self.knob_node.thermo._TP = self.knob_node.thermo._T, x[0]
             else:
                 from pdb import set_trace
                 set_trace()
+        elif isinstance(self.knob_node, fixedFlowNode):
+            print('x2', x)
+            self.knob_node.w = x[0]
+        
         else:
             from pdb import set_trace
             set_trace()
@@ -128,7 +129,7 @@ class wBalance(Balance):
             setattr(self.model.nodes[self.control], '_w', x[0])
             self.penalty = False
         else:
-            self.penalty = (self._bounds[0] - x[0] -10*np.sign(x))*1e8
+            self.penalty = (self._bounds[0] - x[0] - 10*np.sign(x))*1e8
 
 
     @property

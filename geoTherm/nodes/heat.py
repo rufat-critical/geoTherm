@@ -503,10 +503,10 @@ class HEX(Heat):
 
         L0 = UA/(self.model['wall']._UA*self.n_tubes)
         # Update to thermo state
-        self.model['cool'].updateThermo({'H': cool_outlet._H,
+        self.model['cool'].update_thermo({'H': cool_outlet._H,
                                          'P': cool_outlet._P})
 
-        self.model['hot'].updateThermo({'H': hot_outlet._H,
+        self.model['hot'].update_thermo({'H': hot_outlet._H,
                                         'P': hot_outlet._P})       
 
 

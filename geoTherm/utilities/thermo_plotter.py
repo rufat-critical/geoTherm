@@ -341,10 +341,10 @@ class thermoPlotter:
 
                 if line['val'] is not None:
                     # SI Value
-                    _iso_val = unit_handler.parseUnits(line['val'], q)
+                    _iso_val = unit_handler.parse_units(line['val'], q)
                     # Output Value
-                    iso_val = unit_handler.convert(_iso_val, units.SIUnits[q],
-                                                   units.outputUnits[q])
+                    iso_val = unit_handler.convert(_iso_val, units.SI_units[q],
+                                                   units.output_units[q])
                     label = f"{iso_prop} = {line['val']}"
                     color = colors[len(self.iso_dat)]
                     # Do Unit Conversion here
@@ -653,13 +653,13 @@ class thermoPlotter:
     def labels(self):
         """Return axis labels with units."""
 
-        return {'T': f"Temperature [{units.outputUnits['TEMPERATURE']}]",
-                'P': f"Pressure [{units.outputUnits['PRESSURE']}]",
-                'H': f"Enthalpy [{units.outputUnits['SPECIFICENERGY']}]",
-                'S': f"Entropy [{units.outputUnits['SPECIFICENTROPY']}]",
-                'D': f"Density [{units.outputUnits['DENSITY']}]",
+        return {'T': f"Temperature [{units.output_units['TEMPERATURE']}]",
+                'P': f"Pressure [{units.output_units['PRESSURE']}]",
+                'H': f"Enthalpy [{units.output_units['SPECIFICENERGY']}]",
+                'S': f"Entropy [{units.output_units['SPECIFICENTROPY']}]",
+                'D': f"Density [{units.output_units['DENSITY']}]",
                 'v': ("Specific Volume "
-                      f"[{units.outputUnits['SPECIFICVOLUME']}]")}
+                      f"[{units.output_units['SPECIFICVOLUME']}]")}
 
     @property
     def quantities(self):
