@@ -1,9 +1,6 @@
 from rich.console import Console
 from rich.table import Table
-import numpy as np
-from geoTherm.logger import logger
-from geoTherm.units import inputParser
-from geoTherm.utils import dPpipe
+#from ..logger import logger
 
 
 class modelTable:
@@ -60,7 +57,7 @@ class modelTable:
         
         # Get Performance metrics
         Wnet, Qin, eta = self.performance
-        pText = f'Wnet: {Wnet:.05f} | Qin: {Qin:.05f} | eta: {eta:.05f}\n'
+        pText = f'Wnet: {Wnet:.05f} | Qin: {Qin:.05f} | \u03B7: {eta:.05f}\n'
         pTable = Table.grid()
         pTable.add_row(pText)
         console = Console(**kwargs)
@@ -159,17 +156,23 @@ class Node:
         # Iterate over each display variable in the node
         for dVar in self._displayVars:
             # Get the value of the display variable
-            var = getattr(self, dVar)
+            if ':' in dVar:
+                var, dVar = dVar.split(':')
+            else:
+                var = dVar
+
+            val = getattr(self, var)
+
             # Format the variable depending on its type
-            if isinstance(var, (int, float)):
+            if isinstance(val, (int, float)):
                 # Format numeric variables with 5 significant digits
-                Vars.append(f"{dVar}:{var:0.5g}")
+                Vars.append(f"{dVar}:{val:0.5g}")
             else:
                 # Format non-numeric variables as is
-                Vars.append(f"{dVar}: {var}")
-        
+                Vars.append(f"{dVar}: {val}")
+
         # Join the formatted variables into a single string
-        return ' '.join(Vars)
+        return ' |'.join(Vars)
 
     def evaluate(self):
         pass

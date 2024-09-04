@@ -1,8 +1,8 @@
 from .node import Node
-from .baseClass import flow
-from geoTherm.units import inputParser, addQuantityProperty
-from geoTherm.utils import dPpipe
-from geoTherm.logger import logger
+from .flow import flow
+from ..units import inputParser, addQuantityProperty
+from ..utils import dP_pipe
+from ..logger import logger
 import numpy as np
 
 

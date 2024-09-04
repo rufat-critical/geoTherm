@@ -1,12 +1,12 @@
-from geoTherm.thermostate import thermo, addThermoAttributes
-from geoTherm.units import inputParser
-from geoTherm.logger import logger
+from ..thermostate import thermo, addThermoAttributes
+from ..units import inputParser
+from ..logger import logger
 from .node import Node
 import numpy as np
 
 
 @addThermoAttributes
-class Station(Node):
+class Station5(Node):
     """ Station Node where there the thermodynamic state is defined"""
 
     _displayVars = ['P', 'T', 'H', 'phase']
@@ -46,7 +46,7 @@ class Station(Node):
             state = {'P':P, 'T': T, 'H': H, 'S': S, 'Q': Q}
             # Trim the state by removing entries with None Variables
             state = {var:val for var, val in state.items() if val is not None}
-            
+
             if len(state) == 0:
                 # If the state dict is 0 then set the state to None
                 # thermostate will use default initializiation values
@@ -62,7 +62,7 @@ class Station(Node):
             self.thermo = fluid
 
             if state is not None:
-                self.thermo._updateState(state)
+                self.thermo._update_state(state)
 
         # Penalty in case an out of bounds state is specified
         # i.e if step length is too large in Fsolve then it 
@@ -75,8 +75,8 @@ class Station(Node):
         return np.array([self.thermo._density,
                          self.thermo._U])
 
-    @property    
-    def error(self):
+    @property
+    def xdot(self):
         # Get Fluxes
 
         wNet, Hnet, Wnet, Qnet = self.model.getFlux(self)
@@ -85,7 +85,6 @@ class Station(Node):
             return self.penalty
 
         return np.array([wNet, Hnet + Wnet + Qnet])
-
 
     def updateState(self, x):
 
@@ -98,16 +97,6 @@ class Station(Node):
             msg = f'Failed to update thermostate for {self.name} to:\n'
             msg += f"D, U:{x}, resetting to D0, U0: {X0}"
             self.thermo._DU = X0
-            self.penalty = (X0 - x)*1e5 
+            self.penalty = (X0 - x)*1e5
 
-    def updateThermo(self, state):
-        """ Update the station thermodynamic state
-        
-        Args:
-            state (dict): Dictionary defining the thermodynamic state """
-        
-        try:
-            self.thermo.updateState(state)
-            return False
-        except:
-            return True
+

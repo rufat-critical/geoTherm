@@ -4,10 +4,63 @@ from scipy.optimize import fsolve
 from scipy.integrate import BDF
 from scipy.optimize._numdiff import approx_derivative
 from .nodes.node import modelTable
+from .utilities.thermo_plotter import thermoPlotter
 from .logger import logger
-from geoTherm.units import addQuantityProperty
-from geoTherm.utils import eps
+from .units import addQuantityProperty
+from .utils import eps, parse_component_attribute
+from .utilities.network_graph import make_dot_diagram, make_graphml_diagram
+from .thermostate import thermo
+import pandas as pd
+from solvers.cvode import CVode_solver
 from pdb import set_trace
+
+
+class Conditioner:
+
+    def __init__(self, model):
+        # Initialize Model Conditioner
+
+        self.model = model
+
+        self.initialize()
+
+    def initialize(self):
+        self.getScaling()
+
+    # Scalings
+    def getScaling(self):
+        self.x_scale = np.ones(len(self.model.x))
+        self.x_func = {'x':[], 'xi': {}, 'xdot':{}}
+
+        # Do loopy for statefuls
+        for name in self.model.statefuls:
+            # Get node object
+            node = self.model.nodes[name]
+
+            # Get state variable index
+            indx = self.model.istate[name]
+
+            # Scalings
+            self.x_scale[indx] = 1
+
+    def scale_x(self, x):
+        return x/self.x_scale
+
+    def unscale_x(self, x):
+        return x*self.x_scale
+
+    def conditioner(self, func):
+        def wrapper(x):
+            x_scaled = self.scale_x(x)
+            xdot_scaled = func(x_scaled)
+
+            return self.unscale_x(xdot_scaled)
+        return wrapper
+        
+# Bounds
+# min-max 
+# 
+
 
 class Model(modelTable):
     """ geoTherm System Model """
@@ -44,7 +97,6 @@ class Model(modelTable):
             logger.warn('Failed to Initialize Model')
             self.initialized = False
 
-
     def __getitem__(self, nodeName):
         # Return Node if model is indexed by node name
         if nodeName in self.nodes:
@@ -52,13 +104,51 @@ class Model(modelTable):
         else:
             raise ValueError(f'{nodeName} has not been defined')
 
-    def initialize(self):
+    def get_node_attribute(self, attribute_string):
+        """
+        Retrieves the value of a specified attribute from a node in the
+        model using the attribute string.
+
+        Args:
+            attribute_string (str): The attribute string in the format
+                                    'Node.Attribute' or
+                                    'Node.SubComponent.Attribute'.
+
+        Returns:
+            Any: The value of the specified attribute.
+
+        Raises:
+            AttributeError: If the attribute does not exist in the Node.
+        """
+
+        # Parse the attribute string to get the node name and attribute chain
+        name, attribute_chain = parse_component_attribute(attribute_string)
+
+        # Retrieve the node from the model
+        component = self.nodes.get(name)
+        
+        if component is None:
+            raise AttributeError(f"Node '{component}' not found in the model.")
+
+        # Traverse through the attribute chain to get the final attribute value
+        try:
+            for attr in attribute_chain.split('.'):
+                component = getattr(component, attr)
+            return component
+        except AttributeError as e:
+            raise AttributeError(
+                f"Attribute '{attribute_chain}' not found in Node "
+                f"'{name}'."
+            ) from e
+
+    def initialize(self, t=0):
         """Initialize the model and nodes"""
 
         # Initialize variables for tracking statefuls
         self.statefuls = []
         self.istate = {}
         self.__nstates = 0
+        self.t = t
 
         # Initialize State Vector (as private variable)
         self.__x = np.array([])
@@ -74,6 +164,11 @@ class Model(modelTable):
         for name, node in self.nodes.items():
             if hasattr(node, 'initialize'):
                 node.initialize(self)
+
+        # Loop thru nodes and call evlauate method
+        for name, node in self.nodes.items():
+            if hasattr(node, 'evaluate'):
+                node.evaluate()
 
         # Identify stateful components
         for name, node in self.nodes.items():
@@ -91,7 +186,7 @@ class Model(modelTable):
             self.__error = np.zeros(len(self.__x))
 
         # Run error checker
-        if self.errorChecker():
+        if self._error_checker():
             raise ValueError("Errors Found, Fix the Model!")
 
         self.initialized = True
@@ -104,7 +199,8 @@ class Model(modelTable):
         for name, indx in self.istate.items():
             self.__x[indx] = self.nodes[name].x
 
-    def errorChecker(self):
+
+    def _error_checker(self):
         """Check the model for potential errors"""
 
         # These caused me some headache in building/debugging
@@ -122,6 +218,10 @@ class Model(modelTable):
                 else:
                     thermoID[id(node.thermo)] = name
 
+        # Check that outlet has fixed flow upstream
+
+        # Check that boundary and fixed flow are not in series
+
         return error
 
     def updateState(self, x):
@@ -132,16 +232,30 @@ class Model(modelTable):
         for name, istate in self.istate.items():
             self.nodes[name].updateState(x[istate])
 
+        for name, node in self.nodes.items():
+            node.evaluate()
+
+    def update_state(self, x):
+        """Update the component states in the model"""
+        self.__x[:] = x
+
+        # Update Component states
+        for name, istate in self.istate.items():
+            self.nodes[name].updateState(x[istate])
+
+        for name, node in self.nodes.items():
+            node.evaluate()
+
     @property                
     def x(self):
         """Get the state vector"""
         return self.__x
 
     @property
-    def error(self):
+    def xdot(self):
         """Get the error vector"""
         for name, istate in self.istate.items():
-            self.__error[istate] = self.nodes[name].error
+            self.__error[istate] = self.nodes[name].xdot
 
         return self.__error
 
@@ -182,7 +296,7 @@ class Model(modelTable):
                     # If not then append it too
                     nMap[node.hot]['cool'].append(name)     
 
-            if hasattr(node, 'cool'):
+            if hasattr(node, 'cool'):            
                 # Check if it already exists in nodeMap
                 if node.cool not in nMap[name]['cool']:
                     # If not then append to nodeMap
@@ -195,8 +309,11 @@ class Model(modelTable):
         return nMap
 
 
-    def evaluate(self, x):
+    def evaluate(self, t, x):
         """Evaluate the model with given state vector x"""
+
+        # Update time
+        self.t = t
 
         # First update the model and component states
         self.updateState(x)
@@ -207,8 +324,10 @@ class Model(modelTable):
                 node.evaluate()
 
         # Return the error
-        return self.error
+        return self.xdot
 
+    def steady_evaluate(self, x, t=0):
+        return self.evaluate(t, x)
 
     def _netJac(self, x):
         # Evaluate the network Jacobian
@@ -223,7 +342,7 @@ class Model(modelTable):
                               f0=f0)
 
         # Revert state back to OG state
-        self._updateNet(x0)
+        self._update_network_state(x0)
 
         return J
 
@@ -327,10 +446,9 @@ class Model(modelTable):
 
     # Save results
 
-    def evaluateNet(self, x):
+    def _evaluate_network(self, x):
 
-        self._updateNet(x)
-
+        self._update_network_state(x)
 
         for _,branch in self.branches.items():
             branch.evaluate()
@@ -338,11 +456,72 @@ class Model(modelTable):
         for _,junc in self.junctions.items():
             junc.evaluate()
 
-
         return self._netError
-  
 
-    def solve(self, netSolver=True):
+    def thermo_plot(self, plot_type='TS',
+                    isolines=None,
+                    process_lines=True,
+                    x_scale='linear'):
+
+        plot_flag = True
+        for name, node in self.nodes.items():
+            if isinstance(node, (gt.ThermoNode, gt.Station)):
+                if plot_flag:
+                    plot = thermoPlotter(node.thermo)
+                    plot_flag = False
+
+                plot.add_state_point(name, node.thermo)
+
+                if isolines is not None:
+                    plot.add_isoline(isolines, name)
+
+        if process_lines:
+            for name in plot.state_points:
+                DS_flow = self.nodeMap[name]['DS'][0]
+                DS_node = self.nodeMap[DS_flow]['DS'][0]
+                if isinstance(self.nodes[DS_flow], gt.Turbo):
+                    process_type = 'S'
+                else:
+                    process_type = 'P'
+                plot.add_process_line(DS_flow, name, DS_node, process_type, line_style='-')    
+                #from pdb import set_trace
+                #set_trace()
+
+
+        plot.plot(plot_type=plot_type, xscale=x_scale)
+
+
+    def sim(self, t_span, x0=None, max_step=None, solver='CVODE'):
+
+        # Initialize if not
+        if not self.initialized:
+            self.initialize()
+
+        self.initialize()
+        if x0 is None:
+            x0 = np.copy(self.x)
+
+        # Generate Solution Object        
+        sol = Solution(self, extras=['t'])
+        # Save current time
+        sol.save([t_span[0]])
+        if solver == 'CVODE':
+            # Get t and x from Cvode
+            t, x = CVode_solver(self.evaluate, x0, t_span)
+            for i, _ in enumerate(t):
+                self.evaluate(t[i], x[i])
+                sol.save([t[i], self.xdot[0], self.xdot[1], self.x[0]])
+        else:
+            # Create BDF integrator
+            integrator = BDF(self.evaluate, t_span[0], x0, t_span[1],max_step=1e-7, rtol=1e-5)
+
+            while integrator.t < t_span[1]:
+                integrator.step()
+                sol.save([integrator.t])
+
+        return sol
+
+    def solve_steady(self, netSolver=True):
 
         # Branch Nodes
         # Set mass flow
@@ -350,38 +529,93 @@ class Model(modelTable):
         # update
         # Error to update mass flow
 
+        # Initialize the model if it's not initialized
+        if not self.initialized:
+            self.initialize()
+
+        # Check if this is a stateless model
+        if len(self.x) == 0:
+            # We don't need to solve anything
+            return self.x
+
+
+        from scipy.optimize import root_scalar
+
+
         if netSolver:
             self.initializeSteady()
-            sol = fsolve(self.evaluateNet, self._netX, full_output=True)
-            self.evaluateNet(sol[0])
+            # Try Fsolve with Network Solver
+            sol = fsolve(self._evaluate_network, self._netX, full_output=True)
+            # Update to network state
+            self._evaluate_network(sol[0])
+            
 
             if not self.converged:
                 from pdb import set_trace
                 set_trace()
-            
-            return
+                def func(x):
+                    return self.evaluateNet(np.array([x]))[0]
+                try:
+                    print('TRYING Root Scalar')
+                    sol2 = root_scalar(func,x0=sol[0][0])
+                    self.evaluateNet(np.array([sol2.root]))
+                    
+                    if not self.converged:
+                        # Try bounded problem
+                        try:
+                            print('Trying Bisection')
+                            sol3 = root_scalar(func,bracket=[0, 1])
+                            self.evaluateNet(np.array([sol3.root]))
+                        except:
+                            print('failed bisection')
+                            self.debug=True
+                            self.evaluateNet(self._netX)
+                            from pdb import set_trace
+                            #set_trace()
+                
+                except:
+                    print('Failed 1st conv')
+                    from pdb import set_trace
+                    #set_trace()
 
 
+        conditioner = Conditioner(self)
+        conditioned = conditioner.conditioner(self.steady_evaluate)
+        sol = fsolve(conditioned, self.x, full_output=True)
 
-        sol = fsolve(self.evaluate, self.x)
-        # Update State to Sol
-        # Add Update State Method and update that way
-        self.evaluate(sol)
+        if not self.converged:
+            from pdb import set_trace
+            set_trace()
+        else:
+            self.steady_evaluate(conditioner.unscale_x(sol[0]))
 
-    def sim(self):
-        
-        integrator = BDF(lambda t,x: self.evaluate(x), 0, self.x, 1e5)
+    def draw(self, file_path='geoTherm_model_diagram.svg', auto_open=True):
+        """
+        Generates a DOT plot for the model's node network and saves it as an SVG
+        file. Optionally, the plot can be opened automatically in a web browser.
 
-        while integrator.t < .1:
-            try:
-                integrator.step()
-            except:
-                from pdb import set_trace
-                set_trace()
-        from pdb import set_trace
-        set_trace()
+        Args:
+            model (Model): The geoTherm model containing nodes and their
+                        connections.
+            file_path (str): The path to save the generated SVG file.
+                            Defaults to 'plot.svg'.
+            auto_open (bool): Whether to automatically open the SVG file after
+                            creation. Defaults to True.
+        """
+        make_dot_diagram(self, file_path='plot.svg', auto_open=auto_open)
 
+    def make_graphml_diagram(self, file_path='geoTherm_model_diagram.graphml'):
+        """
+        Generates a GraphML file for the model's node network and saves it to
+        the specified file path.
 
+        Args:
+            model (Model): The geoTherm model containing nodes and their
+                        connections.
+            file_path (str): The path to save the generated GraphML file.
+                            Defaults to 'plot.graphml'.
+        """
+        make_graphml_diagram(self, file_path)
 
     def evaluateNetwork(self, x):
         # Evaluate the network 
@@ -436,7 +670,7 @@ class Model(modelTable):
 
             # Get the DS node
             DS = self.nodes[self.nodeMap[name]['DS'][0]]
-            DS.updateThermo(outletState)
+            DS.update_thermo(outletState)
 
     def _getBranchesAndJunctions(self, nodeMap):
         """
@@ -482,7 +716,7 @@ class Model(modelTable):
             # Get the node instance 
             node = self.nodes[nodeName]
             
-            if isinstance(node, gt.Boundary):
+            if isinstance(node, (gt.Boundary, gt.hexVolume)):
                 return True
             if nodeMap[nodeName]['hot'] or nodeMap[nodeName]['cool']:
                 if (len(nodeMap[nodeName]['US']) == 0 and
@@ -491,7 +725,7 @@ class Model(modelTable):
                 
                 # Check these cases
                 # hot or cool only has hot/cool connector and no flow
-                print('CHECK JUNCTION CLASSIFIER WHEN SOBER!')
+                print('CHECK JUNCTION CLASSIFIER!')
                 # If hot or cool in upstream then we ok
                 return False
             
@@ -549,9 +783,13 @@ class Model(modelTable):
                     downstreamJunction = traceBranch(nodeMap, nodeName, currentBranch, remainingNodes)
                     branches[branchCounter] = currentBranch
                     junctions[junctionName]['DS'].append(branchCounter)
-                    junctions[downstreamJunction]['US'].append(branchCounter)
-                    branchConnections[branchCounter] = {'US': junctionName, 'DS': downstreamJunction, 'hot': [], 'cool': []}
-                    branchCounter += 1
+                    try:
+                        junctions[downstreamJunction]['US'].append(branchCounter)
+                        branchConnections[branchCounter] = {'US': junctionName, 'DS': downstreamJunction, 'hot': [], 'cool': []}
+                        branchCounter += 1
+                    except:
+                        from pdb import set_trace
+                        set_trace()
 
         if len(remainingNodes) != 0:
             # Some node wasn't classified properly
@@ -562,7 +800,9 @@ class Model(modelTable):
 
     def initializeSteady(self):
 
-        self.initialize()
+
+        if not self.initialized:
+            self.initialize()
 
         (branch, junction,
          branchConnections,
@@ -591,50 +831,47 @@ class Model(modelTable):
             if not branch.initialized:
                 from pdb import set_trace
                 set_trace()
-        
+
         for jname, junction in self.junctions.items():
             if not junction.initialized:
                 from pdb import set_trace
                 set_trace()
-        
+
         self._netState = {}
         self.__netX = np.array([])
 
         for bname, branch in self.branches.items():
             if len(branch.x) == 0:
                 continue
-            
+
             xlen = len(branch.x)
-            
+
             current_len = len(self.__netX)
 
             self._netState[bname] = np.arange(current_len,
                                               current_len+xlen)
 
             self.__netX = np.concatenate((self.__netX, branch.x))
-  
+
         for jname, junc in self.junctions.items():
             if not hasattr(junc, 'x'):
                 continue
-            
+
             xlen = len(junc.x)
-            
+
             current_len = len(self.__netX)
 
             self._netState[jname] = np.arange(current_len,
-                                           current_len+xlen)
+                                              current_len+xlen)
 
             self.__netX = np.concatenate((self.__netX, junc.x))       
-
 
         # Initialize Network Error Variable
         self.__netError = np.zeros(len(self.__netX))
 
-
     @property
     def _netX(self):
         return self.__netX
-
 
     @property
     def _netError(self):
@@ -644,20 +881,17 @@ class Model(modelTable):
             if name in self.branches:
                 self.__netError[istate] = self.branches[name].error
             else:
-                self.__netError[istate] = self.junctions[name].error
+                self.__netError[istate] = self.junctions[name].xdot
         
         return self.__netError
 
 
-    def _updateNet(self, x):
+    def _update_network_state(self, x):
         for net, indx in self._netState.items():
             if net in self.branches:
                 self.branches[net].updateState(x[indx])
             else:
                 self.junctions[net].updateState(x[indx])
-
-
-        
 
 
     def getFlux(self, node):
@@ -714,7 +948,11 @@ class Model(modelTable):
 
         # Sum the heat in/out of the node
         for name in nodeMap['hot']:
-            Qnet += self.nodes[name]._Q
+            try:
+                Qnet += self.nodes[name]._Q
+            except:
+                from pdb import set_trace
+                set_trace()
 
         for name in nodeMap['cool']:
             Qnet -= self.nodes[name]._Q
@@ -728,8 +966,10 @@ class Model(modelTable):
         # Reinitialize model x using component states
         self.__init_x()
 
+        self.update_state(self.x)
+
         # Get the error
-        if all(abs(self.error/(self.x + eps)<1e-3)):
+        if all(abs(self.xdot/(self.x + eps))<1e-2):
             return True
         else:
             return False
@@ -742,7 +982,7 @@ class Model(modelTable):
         Wnet = 0.
         Qin = 0.
         for name, node in self.nodes.items():
-            if isinstance(node, (gt.thermoNode, gt.Station)):
+            if isinstance(node, (gt.ThermoNode, gt.Station)):
                 continue
 
             if hasattr(node, 'Q'):
@@ -758,7 +998,7 @@ class Model(modelTable):
         else:
             eta = Wnet/Qin*1e2
 
-        return Wnet, Qin, eta
+        return np.array([Wnet, Qin, eta])
 
     # Performance Calc
         # Loop thru all components with W and add positive/negative power
@@ -797,7 +1037,7 @@ class Junction:
 
 
     def initialize(self):
-        if isinstance(self.node, gt.Boundary):
+        if isinstance(self.node, (gt.Boundary)):
             pass
         elif hasattr(self.node, 'x'):
             # Add properties and method if self.node has attribute 'x'
@@ -810,15 +1050,15 @@ class Junction:
         def get_x(self):
             return self.node.x
 
-        def get_error(self):
-            return self.node.error
+        def get_xdot(self):
+            return self.node.xdot
 
         def update_state(self, x):
             self.node.updateState(x)
 
         # Dynamically add properties and methods
         setattr(self.__class__, 'x', property(get_x))
-        setattr(self.__class__, 'error', property(get_error))
+        setattr(self.__class__, 'xdot', property(get_xdot))
         setattr(self.__class__, 'updateState', update_state)
 
 
@@ -830,7 +1070,7 @@ class Junction:
 class Branch:
 
     _units = {'w': 'MASSFLOW'}
-    
+
     def __init__(self, nodes, USJunc, DSJunc, model, w=None):
         """
         Initialize a Branch instance.
@@ -846,14 +1086,19 @@ class Branch:
         self.USJunc = USJunc
         self.DSJunc = DSJunc
         self.model = model
+        # Mass Flow for all the nodes in the branch
         self._w = w
-        self.initialized = False
         # Flag to specify if mass flow is constant
         self.fixedFlow = False
-        self.backFlow = True
+        # Backflow flag
+        self.backFlow = False
         # Node for controlling mass flow
-        self.wController = None
+        self.w_setter = None
         self.penalty = False
+
+        self.initialized = False
+        # Bounds (for massflow if not fixedFlow)
+        self.bounds = [-np.inf, np.inf]
 
         # Convert node names to instances if necessary
         if isinstance(self.nodes[0], str):
@@ -878,10 +1123,10 @@ class Branch:
             self.DSJunc = model.nodes[DSJunc]
          
         # Try to initialize the Branch
-        try:
-            self.initialize()
-        except:
-            set_trace()
+        #try:
+        self.initialize()
+        #except:
+        #    set_trace()
 
     @property
     def average_w(self):
@@ -891,10 +1136,10 @@ class Branch:
         n_w = 0
 
         for node in self.nodes:
-            if hasattr(node, '_w'):
+            if isinstance(node, gt.flowNode):
                 Wnet += node._w
                 n_w += 1
-        
+
         return float(Wnet/n_w)
 
     def evaluate(self):
@@ -905,89 +1150,138 @@ class Branch:
 
         # If we have fixedflow then update mass flow
         if self.fixedFlow:
-            self._w = self.wController._w
+            self._w = self.w_setter._w
 
         # Reverse order if w is negative
         if self._w < 0:
-            # Check if backflow is allowed
+            # Check if backflow is enabled
             if self.backFlow:
+                # Reverse node order
                 nodes = nodes[::-1]
+                # dP will be calculated and compared to this Pressure
                 Pout = self.USJunc.thermo._P
+                # Downstream Junction
                 DSJunc = self.USJunc.name
             else:
-                from pdb import set_trace
-                set_trace()
+                self.error = (-self._w + 1)*1e5
+                return
         else:
             Pout = self.DSJunc.thermo._P
             DSJunc = self.DSJunc.name
 
+        # Check for penalty
+        if self.penalty is not False:
+            self.error = self.penalty
+            return
+
+        if self.fixedFlow:
+            # Check Error
+
+            if self.x <0:
+                from pdb import set_trace
+                set_trace()
+                self._error = (-self.x + 10)**2*1e6
+                return
+        else:
+            from pdb import set_trace
+            #set_trace()
 
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
             # Evaluate the node
             node.evaluate()
 
-            if isinstance(node, gt.Station):
-                # We are setting the station nodes using flow
-                # nodes
-                # The branch should be organized as:
+            if isinstance(node, (gt.ThermoNode)):
+                # We're working with either a thermoNode or Station node.
+                # The expected pattern of connections is:
                 # flowNode => Station => flowNode
-                # Check this pattern 
+                # The following logic checks and enforces this pattern.
 
-                # Bitwise comparison
-                # ChatGPT told me about this!
+                # Perform a bitwise AND operation to check if 'inode' is even.
+                # '0x1' is the hexadecimal representation of the binary value '0001'.
+                # If 'inode & 0x1' results in 0, 'inode' is even, otherwise it's odd.
+                # If 'inode' is even, trigger the debugger to inspect the state.
                 if not inode & 0x1:
                     from pdb import set_trace
                     set_trace()
 
+                # Skip the rest of the loop iteration for this node
                 continue
 
             if isinstance(node, gt.TBoundary):
-                print('NEED TO REFACTOR')
+                #print('NEED TO REFACTOR')
                 continue
             
             # The next nodes should be flowNodes
 
             # Set the mass flow and get the downstream node 
             # and downstream state
-            dsNode, dsState = node._setFlow(self._w)
+            try:
+                dsNode, dsState = node._setFlow(self._w)
+            except:
+                from pdb import set_trace
+                set_trace()
 
             if dsState['P'] < 0:
+                # Pressure drop is too high because massflow too high, lets decrease mass flow
                 # Apply penalty
                 # Maybe set this as seperate method for different cases
                 # Like PR or w, for now do this
                 #self._error = (self._x0 - self.x)*1e5
                 #self._error = (dsState['P'])*1e5*np.sign(self._w)
                 # Point error to opposite side of mass flow
-                self._error = (-self._w - np.sign(self._w+eps))*1e5
+
+                if self.fixedFlow:
+                    # Calculate Error based on pressure
+                    if isinstance(self.w_setter, gt.Pump):
+                        self.error = (0-dsState['P'])*1e5
+                    else:
+                        from pdb import set_trace
+                        set_trace()
+                else:
+                    # Calculate Error Based on Mass Flow
+                    print('Low Pressure Error', self._w)
+                    self.error = (dsState['P'])*1e5
+                    #self.error = (-self._w - np.sign(self._w+eps))*1e5
                 return
 
             # This is the last node, lets calculate error
             if inode == len(nodes) - 1:
-
                 if dsNode != DSJunc:
                     # dsNode is not dsJunc for some reason
                     # error check
                     from pdb import set_trace
                     set_trace()
 
-                if dsState['P'] < 0:
-                    # Pressure drop is too high because massflow too high, lets decrease mass flow
-                    #self._error = (dsState['P'])*1e5*np.sign(self._w)
-                    self._error = (-self._w - np.sign(self._w+eps))*1e5
-                    print('TRIGGERED THIS', dsState['P'])
-                    return
 
                 if self.fixedFlow:
                     if self.penalty is not False:
-                        self._error = self.penalty
+                        self.error = self.penalty
                         return
-                    if self.fixedObject == 'Turbine':
-                        self._error = (dsState['P']/Pout - 1)*Pout
-                    else:
-                        self._error = (Pout/dsState['P'] - 1)*dsState['P']
+                    
+                    if isinstance(self.w_setter, gt.Turbine):
+                        from pdb import set_trace
+                        #set_trace()
+                        self.error = (dsState['P']/Pout - 1)*Pout
+                    elif isinstance(self.w_setter, gt.Pump):
+                        #self._error = (Pout/dsState['P'] - 1)*dsState['P']*np.sign(self.x)
+                        usState = node.US_node.thermo
+                        self.error = (Pout/usState._P - self.x)#*1e6
+                        self.error = (Pout/dsState['P'] - 1)*dsState['P']*1e2
+
                 else:
-                    self._error = (dsState['P']/Pout - 1)*np.sign(self._w)*Pout
+                    #self.error = (dsState['P']/Pout - 1)*Pout*np.abs((dsState['P']/Pout - 1))**1.3
+                    
+                    self.error = np.abs(Pout - dsState['P'])**1.3+(dsState['P']-Pout)*10#*Pout#*np.abs((dsState['P']/Pout - 1))**1.5
+                    #self.error = np.abs(Pout-dsState['P'])**1.2
+                    from pdb import set_trace
+                    #set_trace()
+                    #print(self.error, self._w, dsState['P']- Pout)
+                    from pdb import set_trace
+                    #set_trace()
+                if self.model.debug == True:
+                    from pdb import set_trace
+                    set_trace()
                 return
 
             if isinstance(node, (gt.flowNode, gt.Turbo)):
@@ -1002,19 +1296,23 @@ class Branch:
                 # Update thermo for dsNode
 
                 if isinstance(nodes[inode+1], (gt.TBoundary, gt.PBoundary)):
-                    print('REFACTOR AND MAKE THIS NEATER!')
-                    error = self.model.nodes[dsNode].updateThermo(dsState)
+                    #print('REFACTOR AND MAKE THIS NEATER!')
+                    error = self.model.nodes[dsNode].update_thermo(dsState)
                 else:
-                    error = self.model.nodes[dsNode].updateThermo(dsState)
+                    error = self.model.nodes[dsNode].update_thermo(dsState)
 
                 if error:
                     logger.warn("Failed to update thermostate in Branch "
                                 f" evaluate call for '{dsNode}' to state: "
                                 f"{dsState}")
-                    
+
                     # Reduce Mass Flow
                     # What if PR
-                    self._error = (-self._w - np.sign(self._w+eps))*1e5
+                    if self.fixedFlow:
+                        # Point error back to x0
+                        self.error = (self._x0 - self.x)*1e5
+                    else:
+                        self.error = (-self._w - np.sign(self._w+eps))*1e5
                     return
 
     def _getDSThermo(self, dsNode, dsState):
@@ -1028,8 +1326,10 @@ class Branch:
         if len(nodeMap['cool']) > 0:
             # There shouldn't be any cool nodes
             # debug if there are
+            from pdb import set_trace
             set_trace()
-        
+            print('Check Line 1037ish')
+
         for hotNode in nodeMap['hot']:
             node = self.model.nodes[hotNode]
             
@@ -1037,9 +1337,20 @@ class Branch:
                 continue
             
             if 'H' in dsState:
-                dsState['H'] += node._Q/abs(self._w)
+                try:
+                    dsState['H'] += node._Q/abs(self._w)
+                except:
+                    from pdb import set_trace
+                    set_trace()
             else:
                 set_trace()
+
+        for coolNode in nodeMap['cool']:
+            node = self.model.nodes[coolNode]
+
+            dsState['H'] -= node._Q/abs(self._w)
+            #from pdb import set_trace
+            #set_trace()
 
         return dsState
 
@@ -1054,7 +1365,7 @@ class Branch:
             self._w = self.average_w
 
         self.istate = {}
-        self._x = np.array([])
+        self.x = np.array([])
 
         for inode, node in enumerate(self.nodes):
             # Something to add, bounds from each class 
@@ -1065,65 +1376,49 @@ class Branch:
                 nMap = self.model.nodeMap[node.name]
 
                 if len(nMap['cool']) > 0:
-                    set_trace()
+                    print('Check Line 1073ish')
+                    #from pdb import set_trace
+                    #set_trace()
 
-            if isinstance(node, (gt.fixedWTurbine, gt.fixedWPump)):
+            if isinstance(node, gt.fixedFlowNode):
                 if self.fixedFlow:
                     # Fixed Flow already activated somewhere
                     from pdb import set_trace
                     set_trace()
 
-                if isinstance(node, gt.fixedWTurbine):
-                    self.fixedObject = 'Turbine'
-                else:
-                    self.fixedObject = 'Pump'
-
+                # Turn on fixedFlow flag for this branch
                 self.fixedFlow = True
                 # Set Branch Mass Flow to this component flow
                 self._w = node._w
-                self.wController = node
-
-                current_len = len(self.x)
-                self.istate[node.name] = np.arange(current_len,
-                                                   current_len + len(node.x))
-
-                self._x = np.concatenate((self.x, node.x))
-
-            elif isinstance(node, gt.fixedFlow):
-                if self.fixedFlow:
+                # Node that sets the mass flow
+                self.w_setter = node
+                # Get the node bounds
+                self.bounds = node.bounds
+                
+                if len(self.x) != 0:
+                    # There shouldn't be any other states
                     from pdb import set_trace
                     set_trace()
+                
+                #self.istate[node.name] = np.arange(current_len,
+                #                                   current_len + len(node.x))
+                #self._x = np.concatenate((self.x, node.x))
+                self.x = node.x
 
-                self.fixedFlow = True
-                # Set Branch Mass Flow to this component flow
-                self._w = node._w
-                self.wController = node
+        #if len(self._x) == 0:
+        if self.fixedFlow:
+            pass
+        else:
+            # This is if no other state present, then state is massflow 
+            self.x = np.array([self._w])
 
-        if len(self._x) == 0:
-            if self.fixedFlow:
-                pass
-            else:
-                # This is if no other state present, then state is massflow 
-                self._x = np.array([self._w])
+        if len(self.x) > 1:
+        # There should only be 1 state
+            from pdb import set_trace
+            set_trace()
 
         self.initialized = True
 
-
-    @property
-    def x(self):
-        return self._x
-
-    @property
-    def error(self):
-
-        return self._error
-
-        # Check if US Junc = DSJunc
-        # Check if last node is heat flux or T node
-        # If T Node then DSJunc needs to be a Pressure Node
-        # Check if Tout != Tout
-
-        # IF StatefulTurbine then error is Turbine PR 
 
     @staticmethod
     def create(nodes, USJunc, DSJunc, model):
@@ -1145,14 +1440,15 @@ class Branch:
         # Update Branch State
 
         self._x0 = self.x
-        self._x = x
-
-        if len(self.istate) == 0:
-            self._w = x[0]
+        self.x = x
+        if self.fixedFlow:
+            self.w_setter.updateState(x)
+            # Get the penalty from the setter object
+            self.penalty = self.w_setter.penalty
         else:
-            for name in self.istate:
-                self.model.nodes[name].updateState(x[self.istate[name]])
-                self.penalty = self.model.nodes[name].penalty
+            self._w = x[0]
+            #from pdb import set_trace
+            #set_trace()
 
         #if len(self.istate) == 0:
         #self._state0 = self._w
@@ -1201,11 +1497,224 @@ class Branch:
             # Get the Downstream node Station
             # Update the thermo state
             DS = self.nodes[i+1]
-            DS.updateThermo(outletState)
+            DS.update_thermo(outletState)
 
 
+class Solution:
+    """
+    Solution class for storing geoTherm Model data in a pandas DataFrame.
+
+    Attributes:
+        model (object): The model object containing nodes with attributes.
+        extras (list): List of additional data to store.
+        df (pd.DataFrame): DataFrame containing the model data.
+    """
+
+    def __init__(self, model, extras=None):
+        """
+        Initializes the Solution object and prepares the DataFrame for
+        storing data.
+
+        Args:
+            model (object): The model containing nodes with attributes.
+            extras (list, optional): List of additional data to store.
+                                     Defaults to an empty list.
+        """
+        self.model = model
+        self.extras = extras if extras is not None else []
+        self.initialize()
+
+    def get_column_units(self):
+        """
+        Retrieves the units for each column in the DataFrame based on the 
+        attributes of the nodes and predefined units for performance metrics.
+
+        Returns:
+            units (dict): A dictionary mapping column names to their units.
+        """
+        output_units = gt.units.output_units
+        units = {}
+
+        for column in self.df.columns:
+            # Column represents a node attribute
+            if '.' in column:
+                name, attr = column.split('.')
+                node = self.model.nodes[name]
+                # Special handling for thermo units
+                if attr in ['P', 'T', 'H', 'U', 'S', 'Q', 'density']:
+                    quantity = thermo._units[attr]
+                    units[column] = output_units.get(quantity, '')
+                elif hasattr(node, '_units') and attr in node._units:
+                    quantity = node._units[attr]
+                    units[column] = output_units.get(quantity, '')
+                else:
+                    # Fallback for attributes without associated units
+                    units[column] = ''
+            elif column in ['Wnet', 'Qin']:
+                units[column] = output_units['POWER']
+            else:
+                units[column] = ''
+
+        return units
+
+    def initialize(self):
+        """
+        Initializes the node attributes, prepares the DataFrame with the
+        necessary columns, and pre-allocates resources for efficient data 
+        handling.
+        """
+
+        attributes_to_check = [
+            'P', 'T', 'H', 'U', 'density', 'phase', 'w', 'W', 'area', 'Q_in', 'Q_out',
+            'PR', 'N', 'Ns', 'Ds', 'phi', 'psi', 'x', 'xdot',
+        ]
+
+        dtype = {}
+        self.node_attrs = {}
 
 
+        # Iterate over each node in the model and get the attributes
+        for name, node in self.model.nodes.items():
+            for attr in attributes_to_check:
+                if not hasattr(node, attr):
+                    continue
+
+                attr_val = getattr(node, attr)
+                column = f"{name}.{attr}"
+                
+
+                if isinstance(attr_val, (float, int)):
+                    dtype[column] = 'float64'
+                    self.node_attrs[column] = {
+                        'name': name, 'attr': attr, 'length': None,
+                        'index': None
+                    }
+                elif isinstance(attr_val, str):
+                    dtype[column] = 'str'
+                    self.node_attrs[column] = {
+                        'name': name, 'attr': attr, 'length': None,
+                        'index': None
+                    }
+                elif isinstance(attr_val, np.ndarray):
+                    length = len(attr_val)
+                    for i in range(length):
+                        col_name = f"{column}[{i}]"
+                        dtype[col_name] = 'float64'
+                        self.node_attrs[col_name] = {
+                            'name': name, 'attr': attr, 'index': i
+                        }
+                else:
+                    raise TypeError(
+                        f"Unsupported data type for attribute {attr}"
+                        )
+
+        # Performance metric columns
+        for col in ['Wnet', 'Qin', 'eta']:
+            dtype[col] = 'float64'
+
+        # Store state and xdot for the model
+        for i in range(0, len(self.model.x)):
+            dtype[f'x[{i}]'] = 'float64'
+            dtype[f'xdot[{i}]'] = 'float64'
+
+        for col in self.extras:
+            dtype[col] = 'float64'
+
+        # Initialize the DataFrame and pre-allocate the row data
+        self.df = pd.DataFrame({col: pd.Series(dtype=d)
+                                for col, d in dtype.items()})
+        self.__row = {col: None for col in self.df.columns}
+        # Check what unit system data is being saved in
+        self.unit_system = gt.units.output_units
+
+    def save(self, extras=None):
+        """
+        Saves the current state of the model's nodes, performance metrics,
+        and extras into the DataFrame.
+
+        Args:
+            extras (list, optional): List of extra values to save in the
+                                     DataFrame. Must correspond to
+                                     `self.extras`.
+        """
+        extras = extras if extras is not None else []
+
+        # Reset the pre-allocated row to NaN values
+        self.__row = {key: np.nan for key in self.__row.keys()}
+
+        # Extract data for each node using the pre-determined attributes
+        for column, attr_properties in self.node_attrs.items():
+            node = self.model.nodes[attr_properties['name']]
+            if attr_properties['index']:
+                # Handle array data
+                self.__row[column] = getattr(
+                    node, attr_properties['attr']
+                    )[attr_properties['index']]
+            else:
+                # Handle scalar and string data
+                self.__row[column] = getattr(
+                    node, attr_properties['attr'], np.nan
+                    )
+
+        self.__row['Wnet'] = self.model.performance[0]
+        self.__row['Qin'] = self.model.performance[1]
+        self.__row['eta'] = self.model.performance[2]
+
+        # Store state and xdot for the model
+        x = self.model.x
+        xdot = self.model.xdot
+
+        for i, xi in enumerate(x):
+            self.__row[f'x[{i}]'] = xi
+            self.__row[f'xdot[{i}]'] = xdot[i]
+
+        # Fill in the extras data by index
+        for i, extra in enumerate(self.extras):
+            self.__row[extra] = extras[i]
+
+        self.df = pd.concat([
+            self.df, pd.DataFrame([self.__row], columns=self.df.columns)
+            ],
+            ignore_index=True
+        )
+
+    def __getitem__(self, item):
+        """
+        Allows slicing of the Solution object by column name using the
+        DataFrame's slicing.
+
+        Args:
+            item (str or list of str): The column name(s) to slice.
+
+        Returns:
+            pd.DataFrame or pd.Series: The sliced DataFrame or Series.
+        """
+        return self.df[item]
+
+    def save_csv(self, file_path):
+        """
+        Saves the DataFrame to a CSV file with headers modified to include
+        units.
+
+        Args:
+            file_path (str): The file path where the CSV file will be saved.
+        """
+        # Get the units for each column
+        column_units = self.get_column_units()
+
+        # Modify the headers to include units
+        modified_headers = []
+        for column in self.df.columns:
+            unit = column_units.get(column, '')
+            if unit:
+                modified_header = f"{column} [{unit}]"
+            else:
+                modified_header = column
+            modified_headers.append(modified_header)
+
+        # Save the DataFrame to CSV with modified headers
+        self.df.to_csv(file_path, header=modified_headers, index=False)
+    
     # Collection of Nodes
 
     # Evaluate

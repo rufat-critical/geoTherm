@@ -1,12 +1,59 @@
-from geoTherm.units import inputParser, addQuantityProperty
-from .baseClass import flowNode
+from ..units import inputParser, addQuantityProperty
+from .baseClasses import flowNode, fixedFlowNode
+from ..flow_funcs import (_w_incomp, _dP_incomp, _w_isen, _dP_isen,
+                          _w_comp, _dP_comp)
 
-
-# PUT THIS IN A LINE TO FIX MASS FLOW RATE!
-# USE THIS TO THROTTLE FLOW AND EVALUATE PROPERTIES
 
 @addQuantityProperty
-class fixedFlow(flowNode):
+class resistor(flowNode):
+    """ Resistor where mass flow is calculated based on
+    flow func"""
+
+    _displayVars = ['w', 'area', 'dP']
+    _units = {'w': 'MASSFLOW', 'area': 'AREA', 'dP': 'PRESSURE'}
+
+    @inputParser
+    def __init__(self, name, US, DS, area: 'AREA', flow_func='isentropic'):  # noqa
+        self.name = name
+        self.US = US
+        self.DS = DS
+        self.flow_func = flow_func
+        self._area = area
+
+    def initialize(self, model):
+        super().initialize(model)
+
+        if self.flow_func == 'isentropic':
+            self._flow_func = _w_isen
+            self._dP_func = _dP_isen
+        elif self.flow_func == 'incomp':
+            self._flow_func = _w_incomp
+            self._dP_func = _dP_incomp
+        elif self.flow_func == 'comp':
+            self._flow_func = _w_comp
+            self._dP_func = _dP_comp
+
+    def evaluate(self):
+
+        # Evaluate flow func to get flow rate
+        self._w = self._flow_func(self.US_node.thermo,
+                                  self.DS_node.thermo,
+                                  self._area)
+
+    def getOutletState(self):
+        # The enthalpy is equal but pressure drop is present
+
+        # Get US, DS Thermo
+        US, _ = self._getThermo()
+
+        self._dP = self._dP_func(US, self._w/self._area)
+
+        return {'H': US._H,
+                'P': US._P + self._dP}
+
+
+@addQuantityProperty
+class fixedFlow(flowNode, fixedFlowNode):
     """ Resistor Object where mass flow is fixed """
     pass
 
@@ -15,7 +62,7 @@ class fixedFlow(flowNode):
 
     @inputParser
     def __init__(self, name, US, DS,
-                w:'MASSFLOW'):
+                 w:'MASSFLOW'):  # noqa
 
         self.name = name
         self.US = US

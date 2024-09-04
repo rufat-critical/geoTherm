@@ -1,21 +1,28 @@
 from .node import Node
-from .boundary import TBoundary
+from .boundary import Boundary
+from .baseClasses import fixedFlowNode
 import numpy as np
 import re
 
+
 class Balance(Node):
 
-    _displayVars = ['control', 'x']
+    _displayVars = ['knob', 'x', 'error']
 
-    def __init__(self, name, control, feedback, setpoint, delta=0):
+    def __init__(self, name, knob, feedback, setpoint, gain=0.2,
+                 knob_min=-np.inf, knob_max=np.inf):
 
         self.name = name
-        self.control = control
-        self.feedback = self._parseVariable(feedback)
-        self.setpoint = self._parseVariable(setpoint)
-        self.delta = delta
+        self.knob = knob
+        self.feedback = feedback
+        self.setpoint = setpoint
+        self.gain = gain
+
+        self.knob_min = knob_min
+        self.knob_max = knob_max
 
         self.penalty = False
+        self.scale = 1
 
     def _parseVariable(self, var):
         # Parse the variable string into a component name and variable
@@ -38,38 +45,98 @@ class Balance(Node):
             from pdb import set_trace
             set_trace()
 
+    def initialize(self, model):
+
+        self.model = model
+        name, var = self._parseVariable(self.knob)
+
+        self.knob_node = model.nodes[name]
+        self.knob_var = var
+
+        name, var = self._parseVariable(self.feedback)
+
+        self.feedback_node = model.nodes[name]
+        self.feedback_var = var
+
+    @property
+    def feedback_val(self):
+        return getattr(self.feedback_node, self.feedback_var)
+
+    @property
+    def knob_val(self):
+        return getattr(self.knob_node, self.knob_var)
+
     @property
     def error(self):
 
         if self.penalty is not False:
             return np.array([self.penalty])
 
-        feedback = getattr(self.model.nodes[self.feedback[0]],
-                            self.feedback[1])
-        setpoint = getattr(self.model.nodes[self.setpoint[0]],
-                            self.setpoint[1])
+        return (self.setpoint - self.feedback_val)*self.gain
 
-        return (feedback - (setpoint + self.delta))*1e3
+    @property
+    def x(self):
+        return np.array([self.knob_val])
 
+    def update_state(self, x):
+        self.updateState(x)
+
+    def updateState(self, x):
+
+        self._x = x
+        print('x1', x)
+        if x[0] < self.knob_min:
+            self.penalty = (self.knob_min - x[0] + 10)*1e8
+            return
+        elif x[0] > self.knob_max:
+            self.penalty = (self.knob_max - x[0] - 10)*1e8
+            return
+        else:
+            self.penalty = False
+
+        if isinstance(self.knob_node, Boundary):
+            if self.knob_var == 'T':
+                self.knob_node.thermo._TP = x[0], self.knob_node.thermo._P
+            elif self.knob_var == 'P':
+                self.knob_node.thermo._TP = self.knob_node.thermo._T, x[0]
+            else:
+                from pdb import set_trace
+                set_trace()
+        elif isinstance(self.knob_node, fixedFlowNode):
+            print('x2', x)
+            self.knob_node.w = x[0]
+        
+        else:
+            from pdb import set_trace
+            set_trace()
 
 
 class wBalance(Balance):
 
-    _bounds = [-1e3, 1e3]
+    _bounds = [0, 1e3]
 
+    def initialize(self, model):
+        self._x = 0
+        return super().initialize(model)
+    
     def updateState(self, x):
-        if self._bounds[0] < x[0] < self._bounds[1]:
+
+        self._x = np.copy(x)
+        
+        x = x*np.diff(self._bounds)
+
+        if self._bounds[0] < x < self._bounds[1]:
             setattr(self.model.nodes[self.control], '_w', x[0])
             self.penalty = False
         else:
-            if x < self._bounds[0]:
-                self.penalty = (self._bounds[0] - x[0] + 10)*1e5
-            else:
-                self.penalty = (x[0] - self._bounds[1] - 10)*1e5
+            self.penalty = (self._bounds[0] - x[0] - 10*np.sign(x))*1e8
+
 
     @property
     def x(self):
-        return np.array([getattr(self.model.nodes[self.control], '_w')])
+        x = getattr(self.model.nodes[self.control], '_w')
+
+        return x/np.diff(self._bounds)
 
 
 class TBalance(Balance):
