@@ -6,8 +6,13 @@ def create_pre_push_hook():
     # Detect the operating system
     system_type = platform.system()
 
+    # Determine the project's root directory
+    project_root = os.getcwd()
+
     if system_type == "Windows":
-        hook_content = """@echo off
+        hook_content = f"""@echo off
+REM Navigate to the project's root directory
+cd /d {project_root}
 REM Run the Python test script
 python run_tests.py
 IF %ERRORLEVEL% NEQ 0 (
@@ -17,7 +22,9 @@ IF %ERRORLEVEL% NEQ 0 (
 """
         hook_filename = 'pre-push.bat'
     else:
-        hook_content = """#!/bin/bash
+        hook_content = f"""#!/bin/bash
+# Navigate to the project's root directory
+cd "{project_root}"
 # Run the Python test script
 python3 run_tests.py
 if [ $? -ne 0 ]; then
@@ -28,7 +35,7 @@ fi
         hook_filename = 'pre-push'
 
     # Define the hook path
-    git_hooks_dir = os.path.join(os.getcwd(), '.git', 'hooks')
+    git_hooks_dir = os.path.join(project_root, '.git', 'hooks')
     pre_push_hook_path = os.path.join(git_hooks_dir, hook_filename)
 
     # Create the hooks directory if it doesn't exist
