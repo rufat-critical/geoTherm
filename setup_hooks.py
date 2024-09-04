@@ -5,7 +5,6 @@ import stat
 # This line will be dynamically updated by the custom install command
 python_path = r"C:\Users\rufat\anaconda3\envs\geotherm-stable\python"
 
-
 def create_pre_push_hook():
     # Detect the operating system
     system_type = platform.system()
