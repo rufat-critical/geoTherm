@@ -1,25 +1,9 @@
 import os
 import platform
 import stat
-import sys
 
-def get_python_path():
-    """
-    Detect the path to the Python executable.
-    If running inside an Anaconda environment, use the environment's Python.
-    """
-    # Check if we're in an Anaconda environment
-    conda_prefix = os.environ.get('CONDA_PREFIX')
-    if conda_prefix:
-        # Construct the path to the Python executable in the Anaconda environment
-        python_path = os.path.join(conda_prefix, 'python.exe') if platform.system() == 'Windows' else os.path.join(conda_prefix, 'bin', 'python')
-        print(f"Detected Anaconda environment. Using Python executable at: {python_path}")
-    else:
-        # Fall back to the default Python executable
-        python_path = sys.executable
-        print(f"No Anaconda environment detected. Using default Python executable: {python_path}")
-
-    return python_path
+# This line will be dynamically updated by the custom install command
+python_path = r"C:\Users\rufat\anaconda3\envs\geotherm-stable\python"
 
 def create_pre_push_hook():
     # Detect the operating system
@@ -28,15 +12,13 @@ def create_pre_push_hook():
     # Determine the project's root directory
     project_root = os.getcwd()
 
-    # Get the correct Python executable path
-    python_path = get_python_path()
-
     if system_type == "Windows":
         hook_content = f"""@echo off
 REM Navigate to the project's root directory
 cd /d {project_root}
 REM Run the Python test script using the detected Python executable
 "{python_path}" run_tests.py
+REM Check if the test script failed
 IF %ERRORLEVEL% NEQ 0 (
     echo Push aborted due to failed tests.
     exit /b 1
@@ -49,6 +31,7 @@ IF %ERRORLEVEL% NEQ 0 (
 cd "{project_root}"
 # Run the Python test script using the detected Python executable
 "{python_path}" run_tests.py
+# Check if the test script failed
 if [ $? -ne 0 ]; then
     echo "Push aborted due to failed tests."
     exit 1
