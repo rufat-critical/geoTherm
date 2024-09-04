@@ -3,7 +3,6 @@ import platform
 import stat
 import sys
 
-
 def get_python_path():
     """
     Detect the path to the Python executable.
