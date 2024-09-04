@@ -14,11 +14,14 @@ setup(
     package_data={},
     install_requires=[
         'CoolProp',
-        'scipy',
+        'scipy==1.14',
         'matplotlib',
-        'numpy',
+        'numpy==2.0',
         'rich',
         'pint',
-        'pytest'
+        'pytest',
+        'pyyed',
+        'plantuml',
+        'pandas==2.2.2',
     ],
 )

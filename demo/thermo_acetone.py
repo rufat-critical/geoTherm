@@ -21,9 +21,9 @@ acetone.add_process_line('expansion','3','4','S')
 acetone.add_process_line('cooling','4','1','P')
 
 
-import mplcursors
-import plotly.tools as tls
-mplcursors.cursor(hover=True)
+#import mplcursors
+#import plotly.tools as tls
+#mplcursors.cursor(hover=True)
 
 # Make TS plot
 fig = acetone.plot('TS', show=False)

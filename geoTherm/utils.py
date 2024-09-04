@@ -1,6 +1,5 @@
 import numpy as np
 import re
-import networkx as nx
 from scipy.optimize import root_scalar
 from .logger import logger
 
