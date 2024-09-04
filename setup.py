@@ -1,10 +1,18 @@
 from setuptools import setup, find_packages
+import os
+from setuptools.command.develop import develop
 
+
+# Custom command class to run the hook setup script
+class DevelopWithHooks(develop):
+    def run(self):
+        os.system('python setup_hooks.py')
+        super().run()
 
 setup(
     name="geoTherm",
     version="1.0.0",
-    packages = find_packages(),
+    packages=find_packages(),
     include_package_data=True,
     author="Rufat Kulakhmetov",
     author_email="rufat@criticalenergy.co",
@@ -24,4 +32,7 @@ setup(
         'plantuml',
         'pandas==2.2.2',
     ],
+    cmdclass={
+        'develop': DevelopWithHooks,
+    }
 )
