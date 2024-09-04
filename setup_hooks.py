@@ -2,6 +2,7 @@ import os
 import platform
 import stat
 
+
 # This line will be dynamically updated by the custom install command
 python_path = r"C:\Users\rufat\anaconda3\envs\geotherm-stable\python"
 
