@@ -2,6 +2,7 @@ import os
 import platform
 import stat
 
+
 def create_pre_push_hook():
     # Detect the operating system
     system_type = platform.system()
