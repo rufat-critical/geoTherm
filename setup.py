@@ -1,40 +1,42 @@
 from setuptools import setup, find_packages
 import os
-from setuptools.command.develop import develop
+import sys
 
-# Custom command to detect Python interpreter and update setup_hooks.py
-class CustomDevelopCommand(develop):
-    def run(self):
-        # Detect the current Python interpreter path
-        python_path = os.path.abspath(os.path.realpath(os.path.join(os.__file__, '..', '..', 'python')))
-        
-        # Update the setup_hooks.py with the detected Python path
-        update_setup_hooks(python_path)
-
-        # Run the standard setuptools develop command
-        super().run()
-
-def update_setup_hooks(python_path):
-    """Updates setup_hooks.py with the detected Python interpreter path."""
-    setup_hooks_path = os.path.join(os.getcwd(), 'setup_hooks.py')
+def create_git_hook():
+    """
+    Create a pre-commit git hook to run tests before committing code.
+    """
+    git_hooks_dir = os.path.join(os.getcwd(), '.git', 'hooks')
+    pre_commit_path = os.path.join(git_hooks_dir, 'pre-commit')
     
-    # Read the current content of setup_hooks.py
-    with open(setup_hooks_path, 'r') as file:
-        setup_hooks_content = file.readlines()
+    # Check if .git directory exists
+    if not os.path.exists(git_hooks_dir):
+        print("Not a git repository. Skipping git hook installation.")
+        return
 
-    # Replace the placeholder or previous Python path with the new one
-    updated_content = []
-    for line in setup_hooks_content:
-        if line.strip().startswith('python_path ='):
-            updated_content.append(f'python_path = r"{python_path}"\n')
-        else:
-            updated_content.append(line)
+    # Get the path of the Python interpreter used for pip installation
+    python_executable = sys.executable
 
-    # Write the updated content back to setup_hooks.py
-    with open(setup_hooks_path, 'w') as file:
-        file.writelines(updated_content)
-    
-    print(f"Updated setup_hooks.py with Python path: {python_path}")
+    hook_content = f"""#!/bin/bash
+"{python_executable}" -m pytest
+if [ $? -ne 0 ]; then
+  echo "Tests failed. Aborting commit."
+  exit 1
+fi
+"""
+
+    # Create the git hooks directory if it doesn't exist
+    os.makedirs(git_hooks_dir, exist_ok=True)
+
+    # Write the pre-commit hook
+    with open(pre_commit_path, 'w') as hook_file:
+        hook_file.write(hook_content)
+
+    # Make the hook executable
+    os.chmod(pre_commit_path, 0o775)
+    print("Pre-commit hook created at .git/hooks/pre-commit")
+
+create_git_hook()
 
 setup(
     name="geoTherm",
@@ -59,7 +61,4 @@ setup(
         'plantuml',
         'pandas==2.2.2',
     ],
-    cmdclass={
-        'develop': CustomDevelopCommand,
-    }
 )
