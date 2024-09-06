@@ -132,9 +132,9 @@ class coolprop_wrapper:
 
         # Update state based on input or use default 
         if state is not None:
-            self.updateState(state, stateVars)
+            self.update_state(state, stateVars)
         else:
-            self.updateState(state={'T': 300, 'P': 101325}, stateVars='TP')
+            self.update_state(state={'T': 300, 'P': 101325}, stateVars='TP')
 
         # Generate dictionary with phase index
         self.phaseIndx = {
@@ -168,7 +168,7 @@ class coolprop_wrapper:
             raise ValueError(f'Invalid cType specified: {cType}, specify only X or Y')
 
 
-    def updateState(self, state, stateVars):
+    def update_state(self, state, stateVars):
         """
         Update the state of the CoolProp object.
         
@@ -345,7 +345,7 @@ def addThermoSetters(setterList):
 
                 # Setter for updating the state in SI units
                 def setterSI(self, value, name=name, properties=properties):
-                    self.pObj.updateState({properties[0]: value[0], properties[1]: value[1]}, stateVars=name)
+                    self.pObj.update_state({properties[0]: value[0], properties[1]: value[1]}, stateVars=name)
 
                 # Setter for updating the state with unit conversion
                 def setterUnit(self, value, name=name, properties=properties):
@@ -354,7 +354,7 @@ def addThermoSetters(setterList):
                     for i, v in enumerate(val):
                         if properties[i] in cls._units:
                             val[i] = toSI(v, cls._units[properties[i]])
-                    self.pObj.updateState({properties[0]: val[0], properties[1]: val[1]},
+                    self.pObj.update_state({properties[0]: val[0], properties[1]: val[1]},
                                           stateVars=name)
 
                 # Apply the getters and setters for state variables (2 properties)
@@ -366,7 +366,7 @@ def addThermoSetters(setterList):
                 def setterSI(self, value, name=name, properties=properties):
                     cDict = parseComposition(value[2])
                     self.pObj.updateComposition(cDict, cType=properties[2])    
-                    self.pObj.updateState({properties[0]: value[0], properties[1]: value[1]}, stateVars=name[:2])
+                    self.pObj.update_state({properties[0]: value[0], properties[1]: value[1]}, stateVars=name[:2])
 
                 # Setter for updating both state and composition with unit conversion
                 def setterUnit(self, value, name=name, properties=properties):
@@ -380,7 +380,7 @@ def addThermoSetters(setterList):
                         if properties[i] in cls._units:
                             val[i] = toSI(v, cls._units[properties[i]])
 
-                    self.pObj.updateState({properties[0]: val[0], properties[1]: val[1]},
+                    self.pObj.update_state({properties[0]: val[0], properties[1]: val[1]},
                                           stateVars=name[:2])
 
                 # Apply the getters and setters for state and composition (3 properties)
@@ -461,7 +461,7 @@ class thermo:
             set_trace()
 
 
-    def updateState2(self, state):
+    def update_state2(self, state):
         """
         Update the thermodynamic state of the object.
 
@@ -470,7 +470,7 @@ class thermo:
         """
         # Parse the state variables
         stateVars = parseState(state)
-        self.pObj.updateState(state=state, stateVars=stateVars)
+        self.pObj.update_state(state=state, stateVars=stateVars)
 
     def update_state(self, state, composition=None, cType='Y'):
         """
@@ -493,7 +493,7 @@ class thermo:
             cDict = parseComposition(composition)
             self.pObj.updateComposition(cDict, cType=cType)
 
-        self.pObj.updateState(state=state, stateVars=stateVars)        
+        self.pObj.update_state(state=state, stateVars=stateVars)        
 
     def _update_state(self, state):
         """
@@ -506,7 +506,7 @@ class thermo:
 
         # Parse the state variables
         stateVars = parseState(state)
-        self.pObj.updateState(state=state, stateVars=stateVars)
+        self.pObj.update_state(state=state, stateVars=stateVars)
 
     def _update_state(self, state, composition=None, cType='Y'):
         """
@@ -523,7 +523,7 @@ class thermo:
             cDict = parseComposition(composition)
             self.pObj.updateComposition(cDict, cType=cType)
 
-        self.pObj.updateState(state=state, stateVars=stateVars)
+        self.pObj.update_state(state=state, stateVars=stateVars)
 
 
     def getProperty(self, property):

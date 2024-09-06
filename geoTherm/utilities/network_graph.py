@@ -25,7 +25,7 @@ def generate_dot_code(model):
 
     # Get Nodes and Node Map from the model
     nodes = model.nodes
-    node_map = model.nodeMap
+    node_map = model.node_map
     # Get the output units
     u = units.output_units
 
@@ -158,7 +158,7 @@ def make_graphml_diagram(model, file_path):
 
     # Get Nodes and Node Map from the model
     nodes = model.nodes
-    node_map = model.nodeMap
+    node_map = model.node_map
     # Get the output units
     u = units.output_units
 

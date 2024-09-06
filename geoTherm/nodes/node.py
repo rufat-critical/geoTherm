@@ -52,8 +52,8 @@ class modelTable:
             #table.add_row(f'[bold]{name}','2','3','4')
             table.add_row(f'{name}',
                           node._generateParamStr(),
-                          ','.join(self.nodeMap[name]['US']),
-                          ','.join(self.nodeMap[name]['DS']))
+                          ','.join(self.node_map[name]['US']),
+                          ','.join(self.node_map[name]['DS']))
         
         # Get Performance metrics
         Wnet, Qin, eta = self.performance

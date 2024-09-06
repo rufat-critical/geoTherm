@@ -139,7 +139,7 @@ class Heatsistor2(Node):
         # get the overall UA
         self._Qtarget = self._UA*(self.hotNode.thermo._T - self.coolNode.thermo._T) 
 
-    def updateState(self, Q):
+    def update_state(self, Q):
 
         if Q <0 and False:
             self._Q = 0
@@ -228,7 +228,7 @@ class HEXConnector5(statefulHeatNode):
         # Do rest of initialization 
         return super().initialize(model)
 
-    def updateState(self, x):
+    def update_state(self, x):
         self._Q = x[0]
 
         self._hexQ._Q = x[0]
@@ -1319,7 +1319,7 @@ class HEX(Heat):
         self.getInlet(sol[0])
 
 
-    def updateState(self, x):
+    def update_state(self, x):
 
         self._Q = x[0]*1e5
         self.shell_node._Q = x[0]*1e5

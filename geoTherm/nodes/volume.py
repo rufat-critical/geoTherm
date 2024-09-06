@@ -51,7 +51,7 @@ class Station(ThermoNode):
 
         return np.array([wNet, Hnet + Wnet + Qnet])
 
-    def updateState(self, x):
+    def update_state(self, x):
         """
         Update the state of the station node based on the provided state
         vector.
@@ -129,7 +129,7 @@ class Volume(Station):
         self._mass = self.thermo._density*self._volume
         self._U = self.thermo._U*self._mass
 
-    def updateState(self, x):
+    def update_state(self, x):
         """
         Update the state of the Volume node based on mass and internal energy.
 
@@ -263,7 +263,7 @@ class flowVol(Node):
             state (dict): Dictionary defining the thermodynamic state """
         
         try:
-            self.thermo.updateState(state)
+            self.thermo.update_state(state)
             return False
         except:
             return True
@@ -341,11 +341,11 @@ class hexVolume(Node):
 
     def initialize(self, model):
         
-        nodeMap = model.nodeMap[self.name]
+        node_map = model.node_map[self.name]
 
         # Get Upstream and downstream nodes
-        self.US_flow_node = model.nodes[nodeMap['US'][0]]
-        self.DS_flow_node = model.nodes[nodeMap['DS'][0]]
+        self.US_flow_node = model.nodes[node_map['US'][0]]
+        self.DS_flow_node = model.nodes[node_map['DS'][0]]
 
         self._w = (self.US_flow_node._w
                    + self.DS_flow_node._w)/2

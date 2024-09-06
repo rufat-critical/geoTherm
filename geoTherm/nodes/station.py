@@ -86,7 +86,7 @@ class Station5(Node):
 
         return np.array([wNet, Hnet + Wnet + Qnet])
 
-    def updateState(self, x):
+    def update_state(self, x):
 
         # Get the initial state
         X0 = self.x

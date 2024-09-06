@@ -79,9 +79,9 @@ class Balance(Node):
         return np.array([self.knob_val])
 
     def update_state(self, x):
-        self.updateState(x)
+        self.update_state(x)
 
-    def updateState(self, x):
+    def update_state(self, x):
 
         self._x = x
         print('x1', x)
@@ -119,7 +119,7 @@ class wBalance(Balance):
         self._x = 0
         return super().initialize(model)
     
-    def updateState(self, x):
+    def update_state(self, x):
 
         self._x = np.copy(x)
         
@@ -144,7 +144,7 @@ class TBalance(Balance):
 
     _bounds = [0, 2000]
 
-    def updateState(self, x):
+    def update_state(self, x):
         #updateThermo(new x)
 
         if self._bounds[0] < x[0] < self._bounds[1]:
@@ -194,7 +194,7 @@ class massBalance(Node):
     def x(self):
         return np.array([self.mnode._w])
 
-    def updateState(self, x):
+    def update_state(self, x):
 
         if x<0:
             self.penalty = (0 -x[0]+10)*1e5

@@ -152,7 +152,7 @@ class fixedFlowTurbine(fixedFlowNode, Turbine):
         """
         return np.array([self.PR])
 
-    def updateState(self, x):
+    def update_state(self, x):
         """
         Update the state of the turbine.
 

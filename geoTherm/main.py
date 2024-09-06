@@ -3,7 +3,6 @@ import geoTherm as gt
 from scipy.optimize import fsolve
 from scipy.integrate import BDF
 from scipy.optimize._numdiff import approx_derivative
-from scipy.optimize import approx_fprime
 from .nodes.node import modelTable
 from .utilities.thermo_plotter import thermoPlotter
 from .logger import logger
@@ -13,7 +12,6 @@ from .utilities.network_graph import make_dot_diagram, make_graphml_diagram
 from .thermostate import thermo
 import pandas as pd
 from solvers.cvode import CVode_solver
-from pdb import set_trace
 
 
 class Conditioner:
@@ -59,12 +57,12 @@ class Conditioner:
 
     def _network_scaling(self):
         self.x_func = {'x':[], 'xi': {}, 'xdot':{}}
-        self.x_scale = np.ones(len(self.model.net['x']))
+        self.x_scale = np.ones(len(self.model.network.x))
 
         # Do loopy for statefuls
-        for name, indx in self.model.net['istate'].items():
+        for name, indx in self.model.network.istate.items():
             
-            if name in self.model.net['branches']:
+            if name in self.model.network.branches:
                 self.x_scale[indx] *=1
             else:
                 from pdb import set_trace
@@ -199,8 +197,8 @@ class Model(modelTable):
         for name, node in self.nodes.items():
             node.model = self
 
-        # Generate nodeMap
-        self.nodeMap = self._generateNodeMap()
+        # Generate node_map
+        self.node_map = self._generatenode_map()
 
         # Loop thru nodes and call initialization method if defined
         for name, node in self.nodes.items():
@@ -266,13 +264,13 @@ class Model(modelTable):
 
         return error
 
-    def updateState(self, x):
+    def update_state(self, x):
         """Update the component states in the model"""
         self.__x[:] = x
 
         # Update Component states
         for name, istate in self.istate.items():
-            self.nodes[name].updateState(x[istate])
+            self.nodes[name].update_state(x[istate])
 
         for name, node in self.nodes.items():
             node.evaluate()
@@ -283,7 +281,7 @@ class Model(modelTable):
 
         # Update Component states
         for name, istate in self.istate.items():
-            self.nodes[name].updateState(x[istate])
+            self.nodes[name].update_state(x[istate])
 
         for name, node in self.nodes.items():
             node.evaluate()
@@ -299,9 +297,9 @@ class Model(modelTable):
         for name, istate in self.istate.items():
             self.__error[istate] = self.nodes[name].xdot
 
-        return self.__error
+        return np.copy(self.__error)
 
-    def _generateNodeMap(self):
+    def _generatenode_map(self):
         """ Generate a nodal connectivity map for the defined
             nodes """
 
@@ -313,11 +311,11 @@ class Model(modelTable):
         for name, node in self.nodes.items():
             # Check if US defined in node
             if hasattr(node, 'US'):
-                # Check if it already exists in nodeMap
+                # Check if it already exists in node_map
                 if node.US not in nMap[name]['US']:
-                    # If not then append to nodeMap
+                    # If not then append to node_map
                     nMap[name]['US'].append(node.US)
-                # Check if downstream node exsits in nodeMap
+                # Check if downstream node exsits in node_map
                 if node.DS not in nMap[name]['DS']:
                     # If not then append it too
                     nMap[name]['DS'].append(node.DS)
@@ -329,21 +327,21 @@ class Model(modelTable):
                     nMap[node.DS]['US'].append(name)
 
             if hasattr(node, 'hot'):
-                # Check if it already exists in nodeMap
+                # Check if it already exists in node_map
                 if node.hot not in nMap[name]['hot']:
-                    # If not then append to nodeMap
+                    # If not then append to node_map
                     nMap[name]['hot'].append(node.hot)                
-                # Check if cool node exists in nodeMap
+                # Check if cool node exists in node_map
                 if node.hot not in nMap[node.hot]['cool']:
                     # If not then append it too
                     nMap[node.hot]['cool'].append(name)     
 
             if hasattr(node, 'cool'):            
-                # Check if it already exists in nodeMap
+                # Check if it already exists in node_map
                 if node.cool not in nMap[name]['cool']:
-                    # If not then append to nodeMap
+                    # If not then append to node_map
                     nMap[name]['cool'].append(node.cool)                
-                # Check if cool node exists in nodeMap
+                # Check if cool node exists in node_map
                 if node.cool not in nMap[node.cool]['hot']:
                     # If not then append it too
                     nMap[node.cool]['hot'].append(name)                         
@@ -358,7 +356,7 @@ class Model(modelTable):
         self.t = t
 
         # First update the model and component states
-        self.updateState(x)
+        self.update_state(x)
 
         # Evaluate the nodes
         for name, node in self.nodes.items():
@@ -478,7 +476,7 @@ class Model(modelTable):
 
     # Initialize
 
-        # Generate nodeMap
+        # Generate node_map
 
     # solveSystem
 
@@ -487,24 +485,6 @@ class Model(modelTable):
     # Plot performance data
 
     # Save results
-
-    def evaluate_network(self, x):
-
-        self.update_network(x)
-
-        for _,branch in self.net['branches'].items():
-            branch.evaluate()
-
-        for _,junc in self.net['junctions'].items():
-            junc.evaluate()
-
-        for name, istate in self.net['istate'].items():
-            if name in self.net['branches']:
-                self.net['xdot'][istate] = self.net['branches'][name].error
-            else:
-                self.net['xdot'][istate] = self.net['junctions'][name].xdot
-        
-        return np.copy(self.net['xdot'])
 
     def thermo_plot(self, plot_type='TS',
                     isolines=None,
@@ -525,8 +505,8 @@ class Model(modelTable):
 
         if process_lines:
             for name in plot.state_points:
-                DS_flow = self.nodeMap[name]['DS'][0]
-                DS_node = self.nodeMap[DS_flow]['DS'][0]
+                DS_flow = self.node_map[name]['DS'][0]
+                DS_node = self.node_map[DS_flow]['DS'][0]
                 if isinstance(self.nodes[DS_flow], gt.Turbo):
                     process_type = 'S'
                 else:
@@ -588,20 +568,25 @@ class Model(modelTable):
 
         if netSolver:
             # Initialize the network solver
-            self.initialize_network()
+            #self.initialize_network()
+
+            self.network = Network(self)
 
             conditioner = Conditioner(self, 'network')
-            conditioned = conditioner.conditioner(self.evaluate_network)
+            #conditioned = conditioner.conditioner(self.evaluate_network)
+            conditioned = conditioner.conditioner(self.network.evaluate)
             # Try Fsolve with Network Solver
             #sol = fsolve(self._evaluate_network, self._netX, full_output=True)
-            x_scaled = conditioner.scale_x(self.net['x'])
+            x_scaled = conditioner.scale_x(self.network.x)
             sol = fsolve(conditioned, x_scaled, full_output=True)
             #sol = fsolve(self.evaluate_network, self.net['x'], full_output=True)
             x = conditioner.unscale_x(sol[0])
             # Update to network state
-            self.evaluate_network(sol[0])
+            #self.evaluate_network(sol[0])
+            self.network.evaluate(sol[0])
             
-
+            from pdb import set_trace
+            #set_trace()
             if not self.converged:
                 from scipy.optimize import root_scalar
 
@@ -678,254 +663,26 @@ class Model(modelTable):
         """
         make_graphml_diagram(self, file_path)
 
-        
-    def _getBranchesAndJunctions(self, nodeMap):
-        """
-        Find all the branches and junctions in a geoTherm node map.
-
-        Args:
-            nodeMap (dict): A dictionary representing the node map of the geoTherm system.
-
-        Returns:
-            tuple: A tuple containing:
-                - branches (dict): A dictionary of branches.
-                - junctions (dict): A dictionary of junctions.
-                - branchConnections (dict): A dictionary mapping branches to their upstream and downstream junctions.
-                - nodeClassification (dict): A dictionary mapping nodes to their corresponding branch or junction.
-        """
-
-        # List of all nodes to be processed
-        remainingNodes = list(nodeMap.keys())
-        # Dictionaries to store junctions and branches
-        junctions = {}
-        branches = {}
-        # Branch identifier
-        branchCounter = 0
-        # Dictionary to map branches to their upstream and downstream junctions
-        branchConnections = {}
-        # Dictionary to map nodes to their corresponding branch or junction
-        nodeClassification = {}
-
-        def isJunction(nodeName):
-            """
-            Determine if a node is a junction.
-
-            Junctions are boundary nodes, nodes with more than one inlet or outlet, 
-            or nodes with a heat connection (hot or cool).
-
-            Args:
-                nodeName (str): The name of the node.
-
-            Returns:
-                bool: True if the node is a junction, False otherwise.
-            """
             
-            # Get the node instance 
-            node = self.nodes[nodeName]
-            
-            if isinstance(node, (gt.Boundary, gt.hexVolume)):
-                return True
-            if nodeMap[nodeName]['hot'] or nodeMap[nodeName]['cool']:
-                if (len(nodeMap[nodeName]['US']) == 0 and
-                    len(nodeMap[nodeName]['DS']) == 0):
-                    return True
-                
-                # Check these cases
-                # hot or cool only has hot/cool connector and no flow
-                print('CHECK JUNCTION CLASSIFIER!')
-                # If hot or cool in upstream then we ok
-                return False
-            
-            # If these conditions are false then this is branch node
-            return (len(nodeMap[nodeName]['US']) !=1 or
-                    len(nodeMap[nodeName]['DS']) !=1 or
-                    len(nodeMap[nodeName]['hot']) !=0 or
-                    len(nodeMap[nodeName]['cool']) !=0)
-
-        # Identify all junction nodes
-        for nodeName in remainingNodes:
-            if isJunction(nodeName):
-                junctions[nodeName] = {'US': [], 'DS': [], 'hot': [], 'cool': []}
-                nodeClassification[nodeName] = nodeName
-
-        # Remove junction nodes from remainingNodes list
-        remainingNodes = [node for node in remainingNodes if node not in junctions]
-
-        def traceBranch(nodeMap, currentNode, currentBranch, remainingNodes):
-            """
-            Recursively trace a branch starting from the current node.
-
-            Args:
-                nodeMap (dict): The node map of the geoTherm system.
-                currentNode (str): The current node to trace from.
-                currentBranch (list): The list to store the nodes in the current branch.
-                remainingNodes (list): The list of all remaining nodes to process.
-
-            Returns:
-                str: The name of the downstream junction node.
-            """
-            if currentNode not in remainingNodes:
-                return currentNode
-                
-            currentBranch.append(currentNode)
-            remainingNodes.remove(currentNode)
-            nodeClassification[currentNode] = branchCounter
-
-            DSnode = nodeMap[currentNode]['DS']
-            if DSnode:
-                return traceBranch(nodeMap, DSnode[0], currentBranch, remainingNodes)
-
-
-
-        # Identify all branches and their connections to junctions
-        for junctionName in junctions:
-            downstreamNodes = nodeMap[junctionName]['DS']
-            for nodeName in downstreamNodes:
-                currentBranch = []
-                if isJunction(nodeName):
-                    # This condition should not occur because we start tracing from junctions
-                    from pdb import set_trace
-                    set_trace()
-                else:
-                    downstreamJunction = traceBranch(nodeMap, nodeName, currentBranch, remainingNodes)
-                    branches[branchCounter] = currentBranch
-                    junctions[junctionName]['DS'].append(branchCounter)
-                    try:
-                        junctions[downstreamJunction]['US'].append(branchCounter)
-                        branchConnections[branchCounter] = {'US': junctionName, 'DS': downstreamJunction, 'hot': [], 'cool': []}
-                        branchCounter += 1
-                    except:
-                        from pdb import set_trace
-                        set_trace()
-
-        if len(remainingNodes) != 0:
-            # Some node wasn't classified properly
-            from pdb import set_trace
-            set_trace()
-
-        return branches, junctions, branchConnections, nodeClassification
-
-    def initialize_network(self):
-
-
-        if not self.initialized:
-            self.initialize()
-
-        (branch, junction,
-         branchConnections,
-         nodeClassification) = self._getBranchesAndJunctions(self.nodeMap)
-
-        self.net = {'branches': dict(branch),
-                    'junctions': dict(junction),
-                    'istate': {},
-                    'x': [],
-                    'xdot': []}
-        
-        for B, nodes in branch.items():
-            
-            self.net['branches'][B] = Branch.create(nodes=nodes,
-                                                    USJunc=branchConnections[B]['US'],
-                                                    DSJunc=branchConnections[B]['DS'],
-                                                    model=self)
-        
-
-        for J, JMap in junction.items():
-            usBranches = [self.net['branches'][ibranch] for ibranch in JMap['US']]
-            dsBranches = [self.net['branches'][ibranch] for ibranch in JMap['DS']]
-
-
-            self.net['junctions'][J] = Junction(node=self.nodes[J],
-                                                usBranches=usBranches,
-                                                dsBranches=dsBranches,
-                                                model=self)
-
-
-        # Initialize Branches and Junctions if not initialized
-        for bname, branch in self.net['branches'].items():
-            if not branch.initialized:
-                from pdb import set_trace
-                set_trace()
-
-        for jname, junction in self.net['junctions'].items():
-            if not junction.initialized:
-                from pdb import set_trace
-                set_trace()
-
-        for bname, branch in self.net['branches'].items():
-            if len(branch.x) == 0:
-                continue
-
-            xlen = len(branch.x)
-
-            current_len = len(self.net['x'])
-
-            
-            self.net['istate'][bname] = np.arange(current_len,
-                                              current_len+xlen)
-
-            self.net['x'] = np.concatenate((self.net['x'], branch.x))
-
-        for jname, junc in self.net['junctions'].items():
-            if not hasattr(junc, 'x'):
-                continue
-
-            xlen = len(junc.x)
-
-            current_len = len(self.net['x'])
-
-            self.net['istate'][jname] = np.arange(current_len,
-                                              current_len+xlen)
-
-            
-            self.net['x'] = np.concatenate((self.net['x'], junc.x))    
-
-        # Initialize Network Error Variable
-        self.net['xdot'] = np.zeros(len(self.net['x']))
-
-    #@property
-    #def _netX(self):
-    #    return self.net['x']
-
-    # @property
-    # def _netError(self):
-    #     # I need to evaluate nodes first maybe
-    #     # do this a more efficient way
-    #     for name, istate in self.net['istate'].items():
-    #         if name in self.net['branches']:
-    #             self.net['xdot'][istate] = self.net['branches'][name].error
-    #         else:
-    #             self.net['xdot'][istate] = self.net['junctions'][name].xdot
-        
-    #     return np.copy(self.net['xdot'])
-
-
-    def update_network(self, x):
-        for name, istate in self.net['istate'].items():
-            if name in self.net['branches']:
-                self.net['branches'][name].updateState(x[istate])
-            else:
-                self.net['junctions'][name].updateState(x[istate])
-
-
     def getFlux(self, node):
         # Calculate mass/energy flux into/out of a node
         # At Steady state mass/energy should be = 0
 
-        # Get nodeMap for this node
-        nodeMap = self.nodeMap[node.name]
+        # Get node_map for this node
+        node_map = self.node_map[node.name]
 
         wNet = 0
         Hnet = 0
         Wnet = 0
         Qnet = 0
 
-        for name in nodeMap['US']:
+        for name in node_map['US']:
 
             # Get the Flow Node
             flowNode = self.nodes[name]
 
             # Get the upstream Station Thermo State
-            usNode = self.nodes[self.nodeMap[name]['US'][0]].thermo
+            usNode = self.nodes[self.node_map[name]['US'][0]].thermo
 
             # Sum Mass Flow
             wNet += self.nodes[name]._w 
@@ -939,12 +696,12 @@ class Model(modelTable):
                 # Outflow Energy (flowNode w is negative so this subtracts)
                 Hnet += flowNode._w*node.thermo._H
 
-        for name in nodeMap['DS']:
+        for name in node_map['DS']:
 
             # Get the Flow Node
             flowNode = self.nodes[name]
             # Get the dowstream Station Thermo State
-            dsNode = self.nodes[self.nodeMap[name]['DS'][0]].thermo
+            dsNode = self.nodes[self.node_map[name]['DS'][0]].thermo
 
             # Subtract massflow out, if outflow is negative
             # then that means backflow and wnet gets more positive
@@ -960,14 +717,14 @@ class Model(modelTable):
                 Wnet -= flowNode._w*flowNode._dH
 
         # Sum the heat in/out of the node
-        for name in nodeMap['hot']:
+        for name in node_map['hot']:
             try:
                 Qnet += self.nodes[name]._Q
             except:
                 from pdb import set_trace
                 set_trace()
 
-        for name in nodeMap['cool']:
+        for name in node_map['cool']:
             Qnet -= self.nodes[name]._Q
 
         return wNet, Hnet, Wnet, Qnet
@@ -1019,19 +776,315 @@ class Model(modelTable):
         # Eta = Qin
         # dP loss in pipe/heat exchanger
 
-
     def Carnot_eta(self):
         # Calculate Carnot Efficiency
         pass
 
 
+class Network:
+    """
+    Network Solver for geoTherm.
+
+    This class is responsible for managing and solving the network of
+    branches and junctions in the geoTherm model. It initializes the network
+    topology, updates states, and evaluates the model to compute the results.
+    """
+
+    def __init__(self, model):
+        """
+        Initialize the Network solver with a given model.
+
+        Args:
+            model (Model): The geoTherm model containing nodes, branches, 
+                           and junctions.
+        """
+        self.model = model
+        self.initialize()
+
+    def initialize(self):
+        """
+        Initialize the network by setting up branches and junctions.
+
+        This method identifies all the branches and junctions in the model,
+        and prepares them for simulation by creating corresponding objects
+        and setting their initial states.
+        """
+
+        # Ensure model is initialized
+        if not self.model.initialized:
+            self.model.initialize()
+
+        # Get the branches and junctions from the model's node map
+        (branches, junctions, branch_connections,
+         node_classification) = self._identify_branches_and_junctions(
+            self.model.node_map
+        )
+        # Store branches and junctions
+        self.branches = dict(branches)
+        self.junctions = dict(junctions)
+        self.istate = {}  # Index for state variables
+        self.__x = []  # State vector
+
+        # Initialize branches
+        for branch_id, nodes in branches.items():
+            # Create branch objects
+            self.branches[branch_id] = Branch(
+                nodes=nodes,
+                US_junction=branch_connections[branch_id]['US'],
+                DS_junction=branch_connections[branch_id]['DS'],
+                model=self.model
+            )
+
+        # Initialize junctions
+        for junction_id, junction_map in junctions.items():
+            upstream_branches = [self.branches[branch_id] for branch_id
+                                 in junction_map['US']]
+            downstream_branches = [self.branches[branch_id] for branch_id
+                                   in junction_map['DS']]
+
+            self.junctions[junction_id] = Junction(
+                node=self.model.nodes[junction_id],
+                US_branches=upstream_branches,
+                DS_branches=downstream_branches,
+                model=self.model
+            )
+
+        # Initialize Branches and Junctions if not initialized
+        for branch_name, branch in self.branches.items():
+            if not branch.initialized:
+                from pdb import set_trace
+                set_trace()
+
+        for junction_name, junction in self.junctions.items():
+            if not junction.initialized:
+                from pdb import set_trace
+                set_trace()
+
+        # Initialize state vector for branches
+        for branch_name, branch in self.branches.items():
+            if len(branch.x) == 0:
+                continue
+
+            state_length = len(branch.x)
+            current_length = len(self.__x)
+            self.istate[branch_name] = np.arange(current_length,
+                                                 current_length + state_length)
+            self.__x = np.concatenate((self.__x, branch.x))
+
+        # Initialize state vector for junctions
+        for junc_name, junction in self.junctions.items():
+            if not hasattr(junction, 'x'):
+                continue
+
+            state_length = len(junction.x)
+            current_length = len(self.__x)
+            self.istate[junc_name] = np.arange(current_length,
+                                               current_length + state_length)
+            self.__x = np.concatenate((self.__x, junction.x))
+
+    def _identify_branches_and_junctions(self, node_map):
+        """
+        Identify all branches and junctions in the geoTherm node map.
+
+        Args:
+            node_map (dict): A dictionary representing the node map of the
+                             geoTherm system.
+
+        Returns:
+            tuple: A tuple containing:
+                - branches (dict): A dictionary of branches.
+                - junctions (dict): A dictionary of junctions.
+                - branch_connections (dict): A dictionary mapping branches
+                  to their upstream and downstream junctions.
+                - node_classification (dict): A dictionary mapping nodes to
+                  their corresponding branch or junction.
+        """
+
+        # Initialize data structures
+        remaining_nodes = list(node_map.keys())  # Nodes to be processed
+        junctions = {}  # Dictionary of junctions
+        branches = {}  # Dictionary of branches
+        branch_counter = 0  # Identifier for branches
+        branch_connections = {}  # Map branches to their connections
+        node_classification = {}  # Map nodes to their classification
+
+        # Helper function to determine if a node is a junction
+        def is_junction(node_name):
+            """
+            Determine if a node is a junction.
+
+            Junctions are boundary nodes, nodes with more than one inlet or
+            outlet, or nodes with a heat connection (hot or cool).
+
+            Args:
+                node_name (str): The name of the node.
+
+            Returns:
+                bool: True if the node is a junction, False otherwise.
+            """
+            node = self.model.nodes[node_name]
+
+            if isinstance(node, (gt.Boundary)):
+                return True
+            if node_map[node_name]['hot'] or node_map[node_name]['cool']:
+                if (len(node_map[node_name]['US']) == 0 and
+                        len(node_map[node_name]['DS']) == 0):
+                    return True
+                return False
+
+            return (len(node_map[node_name]['US']) != 1 or
+                    len(node_map[node_name]['DS']) != 1 or
+                    len(node_map[node_name]['hot']) != 0 or
+                    len(node_map[node_name]['cool']) != 0)
+
+        # Identify all junction nodes
+        for node_name in remaining_nodes:
+            if is_junction(node_name):
+                junctions[node_name] = {'US': [], 'DS': [],
+                                        'hot': [], 'cool': []}
+                node_classification[node_name] = node_name
+
+        # Remove junction nodes from remaining_nodes list
+        remaining_nodes = [node for node in remaining_nodes
+                           if node not in junctions]
+
+        # Helper function to trace branches starting from a node
+        def trace_branch(node_map, current_node, current_branch,
+                         remaining_nodes):
+            """
+            Recursively trace a branch starting from the current node.
+
+            Args:
+                node_map (dict): The node map of the geoTherm system.
+                current_node (str): The current node to trace from.
+                current_branch (list): The list to store the nodes in the 
+                                      current branch.
+                remaining_nodes (list): The list of all remaining nodes to 
+                                       process.
+
+            Returns:
+                str: The name of the downstream junction node.
+            """
+            if current_node not in remaining_nodes:
+                return current_node
+
+            current_branch.append(current_node)
+            remaining_nodes.remove(current_node)
+            node_classification[current_node] = branch_counter
+
+            downstream_node = node_map[current_node]['DS']
+            if downstream_node:
+                return trace_branch(node_map, downstream_node[0],
+                                    current_branch,
+                                    remaining_nodes)
+
+        # Identify branches and their connections
+        for junction_name in junctions:
+            downstream_nodes = node_map[junction_name]['DS']
+            for node_name in downstream_nodes:
+                current_branch = []
+                if is_junction(node_name):
+                    from pdb import set_trace
+                    set_trace()  # This should not occur
+                else:
+                    downstream_junction = trace_branch(node_map, node_name,
+                                                       current_branch,
+                                                       remaining_nodes)
+                    branches[branch_counter] = current_branch
+                    junctions[junction_name]['DS'].append(branch_counter)
+                    try:
+                        junctions[downstream_junction]['US'].append(
+                            branch_counter)
+                        branch_connections[branch_counter] = {
+                            'US': junction_name,
+                            'DS': downstream_junction,
+                            'hot': [], 'cool': []
+                        }
+                        branch_counter += 1
+                    except Exception:
+                        from pdb import set_trace
+                        set_trace()
+
+        if len(remaining_nodes) != 0:
+            from pdb import set_trace
+            set_trace()  # Some nodes were not classified correctly
+
+        return branches, junctions, branch_connections, node_classification
+
+    def update_state(self, x):
+        """
+        Update the state vector for the network.
+
+        Args:
+            x (array): The new state vector to update.
+        """
+        self.__x = x
+
+        # Update Network
+        for name, istate in self.istate.items():
+            if name in self.branches:
+                self.branches[name].update_state(x[istate])
+            else:
+                self.junctions[name].update_state(x[istate])
+
+    def evaluate(self, x):
+        """
+        Evaluate the network by updating and computing branch and junction
+        states.
+
+        Args:
+            x (array): The state vector to evaluate.
+
+        Returns:
+            np.array: The derivative of the state vector (xdot).
+        """
+        self.update_state(x)
+
+        # Evaluate branches and junctions
+        for _, branch in self.branches.items():
+            branch.evaluate()
+
+        for _, junction in self.junctions.items():
+            junction.evaluate()
+
+        return self.xdot
+
+    @property
+    def xdot(self):
+        """
+        Compute and return the derivative of the state vector.
+
+        Returns:
+            np.array: The derivative of the state vector (xdot).
+        """
+        xdot = []
+
+        for name, _ in self.istate.items():
+            if name in self.branches:
+                xdot.append(self.branches[name].error)
+            else:
+                xdot.append(self.junctions[name].xdot)
+
+        return np.array(xdot)
+
+    @property
+    def x(self):
+        """
+        Get the current state vector.
+
+        Returns:
+            np.array: The current state vector.
+        """
+        return self.__x
+
+
 class Junction:
     # Junction 
 
-    def __init__(self, node, usBranches, dsBranches, model):
+    def __init__(self, node, US_branches, DS_branches, model):
         self.node = node
-        self.usBranches = usBranches
-        self.dsBranches = dsBranches
+        self.usBranches = US_branches
+        self.dsBranches = DS_branches
         self.model = model
         self.initialized = False
 
@@ -1067,12 +1120,12 @@ class Junction:
             return self.node.xdot
 
         def update_state(self, x):
-            self.node.updateState(x)
+            self.node.update_state(x)
 
         # Dynamically add properties and methods
         setattr(self.__class__, 'x', property(get_x))
         setattr(self.__class__, 'xdot', property(get_xdot))
-        setattr(self.__class__, 'updateState', update_state)
+        setattr(self.__class__, 'update_state', update_state)
 
 
     def evaluate(self):
@@ -1084,7 +1137,7 @@ class Branch:
 
     _units = {'w': 'MASSFLOW'}
 
-    def __init__(self, nodes, USJunc, DSJunc, model, w=None):
+    def __init__(self, nodes, US_junction, DS_junction, model, w=None):
         """
         Initialize a Branch instance.
 
@@ -1096,8 +1149,8 @@ class Branch:
             w (float, optional): Branch Mass Flow Rate with a default value of 0.
         """
         self.nodes = nodes
-        self.USJunc = USJunc
-        self.DSJunc = DSJunc
+        self.USJunc = US_junction
+        self.DSJunc = DS_junction
         self.model = model
         # Mass Flow for all the nodes in the branch
         self._w = w
@@ -1129,11 +1182,11 @@ class Branch:
 
         if isinstance(self.USJunc, str):
             # Get Upstream Junction instance
-            self.USJunc = model.nodes[USJunc]
+            self.USJunc = model.nodes[US_junction]
 
         if isinstance(self.DSJunc, str):
             # Get Downstream Junction instance
-            self.DSJunc = model.nodes[DSJunc]
+            self.DSJunc = model.nodes[DS_junction]
          
         # Try to initialize the Branch
         #try:
@@ -1332,19 +1385,19 @@ class Branch:
         # Pressure for downstream thermo should be set by flowNode object. This 
         # Calculation handles energy transfer
         
-        nodeMap = self.model.nodeMap[dsNode]
+        node_map = self.model.node_map[dsNode]
 
-        if len(nodeMap['cool']) > 0:
+        if len(node_map['cool']) > 0:
             # There shouldn't be any cool nodes
             # debug if there are
             from pdb import set_trace
             set_trace()
             print('Check Line 1037ish')
 
-        for hotNode in nodeMap['hot']:
+        for hotNode in node_map['hot']:
             node = self.model.nodes[hotNode]
             
-            if hotNode in nodeMap['US']:
+            if hotNode in node_map['US']:
                 continue
             
             if 'H' in dsState:
@@ -1356,7 +1409,7 @@ class Branch:
             else:
                 set_trace()
 
-        for coolNode in nodeMap['cool']:
+        for coolNode in node_map['cool']:
             node = self.model.nodes[coolNode]
 
             dsState['H'] -= node._Q/abs(self._w)
@@ -1383,8 +1436,8 @@ class Branch:
             # If mass flow is above/below bounds then apply penalty
 
             if isinstance(node, (gt.Station)):
-                # Check the nodeMap if there are heat nodes
-                nMap = self.model.nodeMap[node.name]
+                # Check the node_map if there are heat nodes
+                nMap = self.model.node_map[node.name]
 
                 if len(nMap['cool']) > 0:
                     print('Check Line 1073ish')
@@ -1447,13 +1500,13 @@ class Branch:
         """
         return Branch(nodes, USJunc, DSJunc, model)
 
-    def updateState(self, x):
+    def update_state(self, x):
         # Update Branch State
 
         self._x0 = self.x
         self.x = x
         if self.fixedFlow:
-            self.w_setter.updateState(x)
+            self.w_setter.update_state(x)
             # Get the penalty from the setter object
             self.penalty = self.w_setter.penalty
         else:
@@ -1493,7 +1546,7 @@ class Branch:
                                  gt.Boundary)):
                 continue
 
-            node.updateState(self._w)
+            node.update_state(self._w)
             
 
             # Get outlet state

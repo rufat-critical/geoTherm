@@ -103,7 +103,7 @@ class fixedFlowPump(fixedFlowNode, Pump):
         """
         return np.array(self._x)
 
-    def updateState(self, x):
+    def update_state(self, x):
         """
         Update the state of the Pump.
 

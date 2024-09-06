@@ -19,15 +19,15 @@ class POutlet(ThermoNode):
 
     def initialize(self, model):
 
-        # Get nodeMap
-        nodeMap = model.nodeMap[self.name]
+        # Get node_map
+        node_map = model.node_map[self.name]
 
-        if (len(nodeMap['US']) != 1
-            or len(nodeMap['DS']) != 0):
+        if (len(node_map['US']) != 1
+            or len(node_map['DS']) != 0):
             from pdb import set_trace
             set_trace()
 
-        self.flowNode = model.nodes[nodeMap['US'][0]]
+        self.flowNode = model.nodes[node_map['US'][0]]
 
         super().initialize(model)
 
@@ -39,7 +39,7 @@ class PBoundary(ThermoNode):
     _displayVars = ['P', 'T']
 
 
-    def updateState(self, x):
+    def update_state(self, x):
         
         # Get the initial state
         X0 = self.x
@@ -76,7 +76,7 @@ class TBoundary(ThermoNode):
     _displayVars = ['P', 'T', 'H', 'phase']
 
 
-    def updateState(self, x):
+    def update_state(self, x):
         
         # Get the initial state
         X0 = self.x

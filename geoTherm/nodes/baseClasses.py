@@ -67,9 +67,9 @@ class flowNode(Node):
 
         # Get Downstream Node
         if self._w >= 0:
-            dsNode = self.model.nodeMap[self.name]['DS'][0]
+            dsNode = self.model.node_map[self.name]['DS'][0]
         else:
-            dsNode = self.model.nodeMap[self.name]['US'][0]
+            dsNode = self.model.node_map[self.name]['US'][0]
 
         # Get the Outlet State
         dsState = self.getOutletState()
@@ -177,7 +177,7 @@ class statefulFlowNode(flowNode):
 
         return np.array([self._w])
 
-    def updateState(self, x):
+    def update_state(self, x):
         """
         Update the state of the node.
 
@@ -259,7 +259,7 @@ class statefulHeatNode(Node):
     def x(self):
         return np.array([self._Q])
 
-    def updateState(self, x):
+    def update_state(self, x):
         self._Q = x[0]
 
 
@@ -340,17 +340,17 @@ class ThermoNode(Node):
         super().initialize(model)
 
         # Retrieve the node map for this node from the model
-        nodeMap = self.model.nodeMap[self.name]
+        node_map = self.model.node_map[self.name]
 
         # Initialize neighbor connections
-        self.US_neighbors = nodeMap['US']
-        self.US_nodes = [self.model.nodes[name] for name in nodeMap['US']]
-        self.DS_neighbors = nodeMap['DS']
-        self.DS_nodes = [self.model.nodes[name] for name in nodeMap['DS']]
-        self.hot_neighbors = nodeMap['hot']
-        self.hot_nodes = [self.model.nodes[name] for name in nodeMap['hot']]
-        self.cool_neighbors = nodeMap['cool']
-        self.cool_nodes = [self.model.nodes[name] for name in nodeMap['cool']]
+        self.US_neighbors = node_map['US']
+        self.US_nodes = [self.model.nodes[name] for name in node_map['US']]
+        self.DS_neighbors = node_map['DS']
+        self.DS_nodes = [self.model.nodes[name] for name in node_map['DS']]
+        self.hot_neighbors = node_map['hot']
+        self.hot_nodes = [self.model.nodes[name] for name in node_map['hot']]
+        self.cool_neighbors = node_map['cool']
+        self.cool_nodes = [self.model.nodes[name] for name in node_map['cool']]
 
     def update_thermo(self, state):
         """
@@ -381,11 +381,11 @@ class ThermoNode(Node):
         """
         # Average mass flow from node objects
 
-        # Get the nodeMap
-        nMap = self.model.nodeMap[self.name]
+        # Get the node map
+        node_map = self.model.node_map[self.name]
 
         # Get the average flow from inlet/outlet flowNodes
-        w_avg = sum(self.model.nodes[name]._w for name in nMap['US']) + \
-            sum(self.model.nodes[name]._w for name in nMap['DS'])
+        w_avg = sum(self.model.nodes[name]._w for name in node_map['US']) + \
+            sum(self.model.nodes[name]._w for name in node_map['DS'])
 
         return w_avg/2

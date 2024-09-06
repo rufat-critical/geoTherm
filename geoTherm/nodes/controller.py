@@ -146,7 +146,7 @@ class Balance(BaseController):
         """
         return np.array([self.knob_val])
 
-    def updateState(self, x):
+    def update_state(self, x):
         self.update_state(x)
 
     def update_state(self, x):
