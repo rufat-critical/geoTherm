@@ -795,7 +795,7 @@ class Network:
         Initialize the Network solver with a given model.
 
         Args:
-            model (Model): The geoTherm model containing nodes, branches, 
+            model (Model): The geoTherm model containing nodes, branches,
                            and junctions.
         """
         self.model = model
@@ -829,6 +829,7 @@ class Network:
         for branch_id, nodes in branches.items():
             # Create branch objects
             self.branches[branch_id] = Branch(
+                name=branch_id,
                 nodes=nodes,
                 US_junction=branch_connections[branch_id]['US'],
                 DS_junction=branch_connections[branch_id]['DS'],
@@ -957,9 +958,9 @@ class Network:
             Args:
                 node_map (dict): The node map of the geoTherm system.
                 current_node (str): The current node to trace from.
-                current_branch (list): The list to store the nodes in the 
+                current_branch (list): The list to store the nodes in the
                                       current branch.
-                remaining_nodes (list): The list of all remaining nodes to 
+                remaining_nodes (list): The list of all remaining nodes to
                                        process.
 
             Returns:
@@ -1079,30 +1080,37 @@ class Network:
 
 
 class Junction:
-    # Junction 
+    """
+    Represents a junction in the geoTherm model network.
+
+    Junctions are points where multiple branches meet, allowing the solver
+    to handle mass and energy conservation across these points.
+    """
 
     def __init__(self, node, US_branches, DS_branches, model):
+        """
+        Initialize a Junction instance.
+
+        Args:
+            node (Node): The node associated with the junction.
+            upstream_branches (list): List of upstream branches connected
+                                      to the junction.
+            downstream_branches (list): List of downstream branches connected
+                                        to the junction.
+            model (Model): The geoTherm model.
+        """
         self.node = node
-        self.usBranches = US_branches
-        self.dsBranches = DS_branches
+        self.US_branches = US_branches
+        self.DS_branches = DS_branches
         self.model = model
         self.initialized = False
 
-        try:
-            self.initialize()
-        except:
-            from pdb import set_trace
-            set_trace()
-    
-    @staticmethod
-    def create(name, usBranches, dsBranches, model):
-        return Junction(name=name,
-                        usBranches=usBranches,
-                        dsBranches=dsBranches,
-                        model=model)
-
+        self.initialize()
 
     def initialize(self):
+        """
+        Initialize the Junction by adding dynamic properties if necessary.
+        """
         if isinstance(self.node, (gt.Boundary)):
             pass
         elif hasattr(self.node, 'x'):
@@ -1112,7 +1120,9 @@ class Junction:
         self.initialized = True
 
     def __add_dynamic_properties(self):
-        # Add property 'x' to the instance
+        """
+        Dynamically add x, xdot, update_state properties
+        """
         def get_x(self):
             return self.node.x
 
@@ -1127,17 +1137,25 @@ class Junction:
         setattr(self.__class__, 'xdot', property(get_xdot))
         setattr(self.__class__, 'update_state', update_state)
 
-
     def evaluate(self):
+        """
+        Evaluate the junction by calling its associated node's evaluate method.
+        """
         self.node.evaluate()
 
 
 @addQuantityProperty
 class Branch:
+    """
+    Represents a branch in the geoTherm model network.
+
+    Branches are segments that connect different nodes in the network,
+    facilitating flow and heat transfer between them.
+    """
 
     _units = {'w': 'MASSFLOW'}
 
-    def __init__(self, nodes, US_junction, DS_junction, model, w=None):
+    def __init__(self, name, nodes, US_junction, DS_junction, model, w=None):
         """
         Initialize a Branch instance.
 
@@ -1146,11 +1164,27 @@ class Branch:
             USJunc (str or instance): Upstream junction name or instance.
             DSJunc (str or instance): Downstream junction name or instance.
             model (object): The model containing all nodes and junctions.
-            w (float, optional): Branch Mass Flow Rate with a default value of 0.
+            w (float, optional): Branch Mass Flow Rate with a default
+                                 value of 0.
         """
+        self.branch_name = name
         self.nodes = nodes
-        self.USJunc = US_junction
-        self.DSJunc = DS_junction
+
+        if isinstance(US_junction, str):
+            self.USJunc = model.nodes[US_junction]
+            self.US_junction = model.nodes[US_junction]
+        else:
+            self.USJunc = US_junction
+            self.US_junction = US_junction
+
+        if isinstance(DS_junction, str):
+            self.DSJunc = model.nodes[DS_junction]
+            self.DS_junction = model.nodes[DS_junction]
+        else:
+            self.DSJunc = DS_junction
+            self.DS_junction = DS_junction
+
+
         self.model = model
         # Mass Flow for all the nodes in the branch
         self._w = w
@@ -1159,7 +1193,7 @@ class Branch:
         # Backflow flag
         self.backFlow = False
         # Node for controlling mass flow
-        self.w_setter = None
+        self.flow_setter_node = None
         self.penalty = False
 
         self.initialized = False
@@ -1170,11 +1204,6 @@ class Branch:
         if isinstance(self.nodes[0], str):
             self.nodes = [model.nodes[name] for name in self.nodes]
 
-        # Convert junction names to instances if necessary
-        if isinstance(self.USJunc, str):
-            self.USJunc = model.nodes[self.USJunc]
-        if isinstance(self.DSJunc, str):
-            self.DSJunc = model.nodes[self.DSJunc]
 
         if isinstance(self.nodes[0], str):
             # Get Node Instance
@@ -1196,31 +1225,39 @@ class Branch:
 
     @property
     def average_w(self):
-        # Get the average w in all components
+        """
+        Calculate and return the average mass flow in all components.
+
+        Returns:
+            float: The average mass flow rate.
+        """
 
         Wnet = 0
-        n_w = 0
+        flow_elements = 0
 
         for node in self.nodes:
             if isinstance(node, gt.flowNode):
                 Wnet += node._w
-                n_w += 1
+                flow_elements += 1
 
-        return float(Wnet/n_w)
+        return float(Wnet/flow_elements)
 
     def evaluate(self):
-        # Loop and update nodes in branch
+        """
+        Evaluate the branch by updating nodes and calculating errors.
 
-        # Get nodes
+        This method checks the flow and state of each node in the branch,
+        reverses order for backflow, and computes errors if constraints
+        are violated.
+        """
         nodes = self.nodes
 
-        # If we have fixedflow then update mass flow
+        # Update mass flow if fixed flow is enabled
         if self.fixedFlow:
-            self._w = self.w_setter._w
+            self._w = self.flow_setter_node._w
 
         # Reverse order if w is negative
         if self._w < 0:
-            # Check if backflow is enabled
             if self.backFlow:
                 # Reverse node order
                 nodes = nodes[::-1]
@@ -1228,29 +1265,20 @@ class Branch:
                 Pout = self.USJunc.thermo._P
                 # Downstream Junction
                 DSJunc = self.USJunc.name
+                DS_junction = self.US_junction.name
             else:
                 self.error = (-self._w + 1)*1e5
                 return
         else:
             Pout = self.DSJunc.thermo._P
             DSJunc = self.DSJunc.name
+            DS_junction = self.DS_junction.name
 
         # Check for penalty
         if self.penalty is not False:
             self.error = self.penalty
             return
 
-        if self.fixedFlow:
-            # Check Error
-
-            if self.x <0:
-                from pdb import set_trace
-                set_trace()
-                self._error = (-self.x + 10)**2*1e6
-                return
-        else:
-            from pdb import set_trace
-            #set_trace()
 
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
@@ -1264,9 +1292,10 @@ class Branch:
                 # The following logic checks and enforces this pattern.
 
                 # Perform a bitwise AND operation to check if 'inode' is even.
-                # '0x1' is the hexadecimal representation of the binary value '0001'.
-                # If 'inode & 0x1' results in 0, 'inode' is even, otherwise it's odd.
-                # If 'inode' is even, trigger the debugger to inspect the state.
+                # '0x1' is the hexadecimal representation of the binary value
+                # '0001'. If 'inode & 0x1' results in 0, 'inode' is even,
+                # otherwise it's odd. If 'inode' is even, trigger the debugger
+                # to inspect the state.
                 if not inode & 0x1:
                     from pdb import set_trace
                     set_trace()
@@ -1275,75 +1304,62 @@ class Branch:
                 continue
 
             if isinstance(node, gt.TBoundary):
-                #print('NEED TO REFACTOR')
                 continue
-            
-            # The next nodes should be flowNodes
 
-            # Set the mass flow and get the downstream node 
-            # and downstream state
+            # Update the downstream state
             try:
                 dsNode, dsState = node._setFlow(self._w)
-            except:
+            except Exception:
                 from pdb import set_trace
                 set_trace()
 
             if dsState['P'] < 0:
-                # Pressure drop is too high because massflow too high, lets decrease mass flow
-                # Apply penalty
+                # Pressure drop is too high because massflow too high,
+                # lets decrease mass flow by applying penalty
                 # Maybe set this as seperate method for different cases
-                # Like PR or w, for now do this
-                #self._error = (self._x0 - self.x)*1e5
-                #self._error = (dsState['P'])*1e5*np.sign(self._w)
-                # Point error to opposite side of mass flow
 
                 if self.fixedFlow:
                     # Calculate Error based on pressure
-                    if isinstance(self.w_setter, gt.Pump):
+                    if isinstance(self.flow_setter_node, gt.Pump):
                         self.error = (0-dsState['P'])*1e5
                     else:
                         from pdb import set_trace
                         set_trace()
                 else:
-                    # Calculate Error Based on Mass Flow
-                    print('Low Pressure Error', self._w)
+                    logger.info("Pressure <0 detected in Branch "
+                                f"'{self.branch_name}' for mass flow of: "
+                                f"{self._w}")
+                    # This is negative so use error to decrease mass flow
                     self.error = (dsState['P'])*1e5
-                    #self.error = (-self._w - np.sign(self._w+eps))*1e5
                 return
 
-            # This is the last node, lets calculate error
+            # Last node error check
             if inode == len(nodes) - 1:
-                if dsNode != DSJunc:
+                if dsNode != DS_junction:
                     # dsNode is not dsJunc for some reason
                     # error check
                     from pdb import set_trace
                     set_trace()
 
-
                 if self.fixedFlow:
                     if self.penalty is not False:
                         self.error = self.penalty
                         return
-                    
-                    if isinstance(self.w_setter, gt.Turbine):
-                        from pdb import set_trace
-                        #set_trace()
+
+                    if isinstance(self.flow_setter_node, gt.Turbine):
                         self.error = (dsState['P']/Pout - 1)*Pout
-                    elif isinstance(self.w_setter, gt.Pump):
+                    elif isinstance(self.flow_setter_node, gt.Pump):
                         #self._error = (Pout/dsState['P'] - 1)*dsState['P']*np.sign(self.x)
                         usState = node.US_node.thermo
                         self.error = (Pout/usState._P - self.x)#*1e6
                         self.error = (Pout/dsState['P'] - 1)*dsState['P']*1e2
 
-                else:
-                    #self.error = (dsState['P']/Pout - 1)*Pout*np.abs((dsState['P']/Pout - 1))**1.3
-                    
-                    self.error = np.sign(dsState['P']-Pout)*np.abs(dsState['P']-Pout)**1.3+(dsState['P']-Pout)*10#*Pout#*np.abs((dsState['P']/Pout - 1))**1.5
-                    #self.error = (dsState['P']-Pout)*10
-                    #print(self.error, self._w)
-                    #self.error = np.abs(Pout-dsState['P'])**1.2
+                else:                    
+                    self.error = (np.sign(dsState['P']-Pout)
+                                  * np.abs(dsState['P']-Pout)**1.3
+                                  + (dsState['P']-Pout)*10)
 
-                if self.model.debug == True:
+                if self.model.debug:
                     from pdb import set_trace
                     set_trace()
                 return
@@ -1455,15 +1471,15 @@ class Branch:
                 # Set Branch Mass Flow to this component flow
                 self._w = node._w
                 # Node that sets the mass flow
-                self.w_setter = node
+                self.flow_setter_node = node
                 # Get the node bounds
                 self.bounds = node.bounds
-                
+
                 if len(self.x) != 0:
                     # There shouldn't be any other states
                     from pdb import set_trace
                     set_trace()
-                
+
                 #self.istate[node.name] = np.arange(current_len,
                 #                                   current_len + len(node.x))
                 #self._x = np.concatenate((self.x, node.x))
@@ -1483,85 +1499,25 @@ class Branch:
 
         self.initialized = True
 
-
-    @staticmethod
-    def create(nodes, USJunc, DSJunc, model):
+    def update_state(self, x):
         """
-        Generate a Branch instance from a list of nodes and model.
+        Update the Branch state with a new state vector.
 
         Args:
-            nodes (list): List of node names or instances in sequential order.
-            USJunc (str or instance): Upstream junction name or instance.
-            DSJunc (str or instance): Downstream junction name or instance.
-            model (object): The model containing all nodes and junctions.
-
-        Returns:
-            Branch: A new Branch instance.
+            x (array): The new state vector.
         """
-        return Branch(nodes, USJunc, DSJunc, model)
 
-    def update_state(self, x):
-        # Update Branch State
-
+        # Store the original state
+        # We may need to revert if penalty are triggered
         self._x0 = self.x
         self.x = x
         if self.fixedFlow:
-            self.w_setter.update_state(x)
+            self.flow_setter_node.update_state(x)
             # Get the penalty from the setter object
-            self.penalty = self.w_setter.penalty
+            self.penalty = self.flow_setter_node.penalty
         else:
+            # Update branch mass flow
             self._w = x[0]
-            #from pdb import set_trace
-            #set_trace()
-
-        #if len(self.istate) == 0:
-        #self._state0 = self._w
-        
-        #self._w = x[0]
-
-
-        # Update Tout
-        # Qin - Qout = 0
-
-    def evaluate_old(self):
-        """
-        Evaluate the nodes in the branch.
-
-        This method updates the states of downstream nodes based on the outlet states of upstream nodes.
-        """
-        
-        for i, node in enumerate(self.nodes):
-
-            # Check if are on the last node
-            if i == len(self.nodes) - 1:
-                # Get outlet state
-                outletState = node.getOutletState(self.model)
-
-                self.error = self.DSJunc.thermo._P - outletState['P']
-                return
-
-
-            if isinstance(node, (gt.PBoundary,
-                                 gt.Station,
-                                 gt.Boundary)):
-                continue
-
-            node.update_state(self._w)
-            
-
-            # Get outlet state
-            outletState = node.getOutletState(self.model)
-
-            if outletState['P']<0:
-                from pdb import set_trace
-                set_trace()
-
-            from pdb import set_trace
-            set_trace()
-            # Get the Downstream node Station
-            # Update the thermo state
-            DS = self.nodes[i+1]
-            DS.update_thermo(outletState)
 
 
 class Solution:
@@ -1590,7 +1546,7 @@ class Solution:
 
     def get_column_units(self):
         """
-        Retrieves the units for each column in the DataFrame based on the 
+        Retrieves the units for each column in the DataFrame based on the
         attributes of the nodes and predefined units for performance metrics.
 
         Returns:
