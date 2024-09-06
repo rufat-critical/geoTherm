@@ -369,34 +369,6 @@ class Model(modelTable):
     def steady_evaluate(self, x, t=0):
         return self.evaluate(t, x)
 
-    def _netJac(self, x):
-        # Evaluate the network Jacobian
-
-        x0 = np.copy(self.net['x'])
-        f0 = self.evaluate_network(x0)
-
-        J = approx_derivative(self.evaluate_network, x,
-                              rel_step=None,
-                              abs_step=1e-10,
-                              method='3-point',
-                              f0=f0)
-
-        # Revert state back to OG state
-        self.update_network(x0)
-
-        return J
-
-    def _generateBranchMap(self):
-        # Generate Branch Map for 
-
-        # Currently being used for 1 loop
-        # THIS SHOULD BE UPDATED IN THE FUTURE IF BRANCHING
-        # IS ADDED TO THE CODE
-
-        from pdb import set_trace
-        set_trace()
-
-
     def addNode(self, nodes):
         """ Add nodes to the model """
 
@@ -1078,6 +1050,48 @@ class Network:
         """
         return self.__x
 
+    def _jacobian(self, x):
+        """
+        Calculate the Jacobian matrix for the network using numerical
+        differentiation.
+
+        Args:
+            x (array-like): State vector for which to compute the Jacobian.
+
+        Returns:
+            np.ndarray: Jacobian matrix.
+        """
+        # Save the current state
+        original_x = np.copy(self.x)
+
+        # Evaluate the function at x
+        f0 = self.evaluate(x)
+
+        # Compute the Jacobian using finite differences
+        jacobian_matrix = approx_derivative(
+            self.evaluate,
+            x,
+            rel_step=None,
+            abs_step=1e-10,
+            method='3-point',
+            f0=f0
+        )
+
+        # Restore the original state
+        self.update_state(original_x)
+
+        return jacobian_matrix
+
+    @property
+    def jacobian(self):
+        """
+        Jacobian matrix at the current state.
+
+        Returns:
+            np.ndarray: Jacobian matrix for the current state vector.
+        """
+        return self._jacobian(self.x)
+
 
 class Junction:
     """
@@ -1168,7 +1182,12 @@ class Branch:
                                  value of 0.
         """
         self.branch_name = name
-        self.nodes = nodes
+
+        # Convert node names to instances if necessary
+        if isinstance(nodes[0], str):
+            self.nodes = [model.nodes[name] for name in nodes]
+        else:
+            self.nodes = nodes
 
         if isinstance(US_junction, str):
             self.USJunc = model.nodes[US_junction]
@@ -1183,7 +1202,6 @@ class Branch:
         else:
             self.DSJunc = DS_junction
             self.DS_junction = DS_junction
-
 
         self.model = model
         # Mass Flow for all the nodes in the branch
@@ -1200,28 +1218,7 @@ class Branch:
         # Bounds (for massflow if not fixedFlow)
         self.bounds = [-np.inf, np.inf]
 
-        # Convert node names to instances if necessary
-        if isinstance(self.nodes[0], str):
-            self.nodes = [model.nodes[name] for name in self.nodes]
-
-
-        if isinstance(self.nodes[0], str):
-            # Get Node Instance
-            self.nodes = [model.nodes[name] for name in self.nodes]
-
-        if isinstance(self.USJunc, str):
-            # Get Upstream Junction instance
-            self.USJunc = model.nodes[US_junction]
-
-        if isinstance(self.DSJunc, str):
-            # Get Downstream Junction instance
-            self.DSJunc = model.nodes[DS_junction]
-         
-        # Try to initialize the Branch
-        #try:
         self.initialize()
-        #except:
-        #    set_trace()
 
     @property
     def average_w(self):
@@ -1412,10 +1409,10 @@ class Branch:
 
         for hotNode in node_map['hot']:
             node = self.model.nodes[hotNode]
-            
+
             if hotNode in node_map['US']:
                 continue
-            
+
             if 'H' in dsState:
                 try:
                     dsState['H'] += node._Q/abs(self._w)
@@ -1493,7 +1490,7 @@ class Branch:
             self.x = np.array([self._w])
 
         if len(self.x) > 1:
-        # There should only be 1 state
+            # There should only be 1 state
             from pdb import set_trace
             set_trace()
 
@@ -1580,18 +1577,17 @@ class Solution:
     def initialize(self):
         """
         Initializes the node attributes, prepares the DataFrame with the
-        necessary columns, and pre-allocates resources for efficient data 
+        necessary columns, and pre-allocates resources for efficient data
         handling.
         """
 
         attributes_to_check = [
-            'P', 'T', 'H', 'U', 'density', 'phase', 'w', 'W', 'area', 'Q_in', 'Q_out',
-            'PR', 'N', 'Ns', 'Ds', 'phi', 'psi', 'x', 'xdot',
+            'P', 'T', 'H', 'U', 'density', 'phase', 'w', 'W', 'area', 'Q_in',
+            'Q_out', 'PR', 'N', 'Ns', 'Ds', 'phi', 'psi', 'x', 'xdot',
         ]
 
         dtype = {}
         self.node_attrs = {}
-
 
         # Iterate over each node in the model and get the attributes
         for name, node in self.model.nodes.items():
@@ -1601,7 +1597,6 @@ class Solution:
 
                 attr_val = getattr(node, attr)
                 column = f"{name}.{attr}"
-                
 
                 if isinstance(attr_val, (float, int)):
                     dtype[column] = 'float64'
@@ -1734,45 +1729,3 @@ class Solution:
 
         # Save the DataFrame to CSV with modified headers
         self.df.to_csv(file_path, header=modified_headers, index=False)
-    
-    # Collection of Nodes
-
-    # Evaluate
-
-    # Evaluate nodes in state
-
-
-# Organize
-# self._network[names] 
-
-# Error
-# Pout - Pnode => w'
-#
-# Tcond =T
-
-
-# Heat Transfer Junc
-# Specify H Out
-# 
-
-# Junc Downstream
-# Tout = Junc out T
-
-# HEX T: If DS Junc:
-# Set T
-# If Branch:
-# Update State
-
-# Put in Branch Initialize
-# Check Outlet BC
-# If Pressure then Change to Boundary
-# If Boundary and T!= Tout, then output error
-# 
-
-# If W = 0 and error <0:
-# Raise ValueError (Heat in or Qout error)
-
-
-
-# Junc
-# mh_out - mh_in = error 
