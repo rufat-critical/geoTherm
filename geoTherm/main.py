@@ -3,6 +3,7 @@ import geoTherm as gt
 from scipy.optimize import fsolve
 from scipy.integrate import BDF
 from scipy.optimize._numdiff import approx_derivative
+from scipy.optimize import approx_fprime
 from .nodes.node import modelTable
 from .utilities.thermo_plotter import thermoPlotter
 from .logger import logger
@@ -17,21 +18,34 @@ from pdb import set_trace
 
 class Conditioner:
 
-    def __init__(self, model):
+    def __init__(self, model, solver, conditioning_type='constant'):
         # Initialize Model Conditioner
 
         self.model = model
+        self.solver = solver
+
+        self.conditioning_type = conditioning_type
 
         self.initialize()
 
     def initialize(self):
-        self.getScaling()
+
+        #if self.solver =='network':
+        
+        self.get_scaling()
 
     # Scalings
-    def getScaling(self):
-        self.x_scale = np.ones(len(self.model.x))
-        self.x_func = {'x':[], 'xi': {}, 'xdot':{}}
+    def get_scaling(self):
+        
+        if self.solver == 'nodal':
+            self._nodal_scaling()
+        elif self.solver == 'network':
+            self._network_scaling()
 
+    def _nodal_scaling(self):
+        # Initialize
+        self.x_func = {'x':[], 'xi': {}, 'xdot':{}}
+        self.x_scale = np.ones(len(self.model.x))
         # Do loopy for statefuls
         for name in self.model.statefuls:
             # Get node object
@@ -43,19 +57,47 @@ class Conditioner:
             # Scalings
             self.x_scale[indx] = 1
 
-    def scale_x(self, x):
-        return x/self.x_scale
+    def _network_scaling(self):
+        self.x_func = {'x':[], 'xi': {}, 'xdot':{}}
+        self.x_scale = np.ones(len(self.model.net['x']))
 
-    def unscale_x(self, x):
+        # Do loopy for statefuls
+        for name, indx in self.model.net['istate'].items():
+            
+            if name in self.model.net['branches']:
+                self.x_scale[indx] *=1
+            else:
+                from pdb import set_trace
+                set_trace()
+
+    def scale_x(self, x):
+        #if self.conditioning_type == 'jacobian':
+        #    J = self.model._netJac(x)+eps
+        #    return x/J
+
         return x*self.x_scale
 
-    def conditioner(self, func):
-        def wrapper(x):
-            x_scaled = self.scale_x(x)
-            xdot_scaled = func(x_scaled)
+    def unscale_x(self, x):
+        #if self.conditioning_type == 'jacobian':
+        #    J = self.model._netJac(x)+eps
+        #    return x*J
 
-            return self.unscale_x(xdot_scaled)
-        return wrapper
+        return x/self.x_scale
+
+    def conditioner(self, func):
+
+        if self.conditioning_type == 'constant':
+            def wrapper(x):
+                x_unscaled = self.unscale_x(x)
+                xdot_unscaled = func(x_unscaled)
+                return self.scale_x(xdot_unscaled)
+            return wrapper
+        elif self.conditioning_type =='jacobian':
+            def wrapper(x):
+                x_unscaled = self.unscale_x(x)
+                xdot_unscaled = func(x_unscaled)
+                return self.scale_x(xdot_unscaled)
+            return wrapper            
         
 # Bounds
 # min-max 
@@ -332,17 +374,17 @@ class Model(modelTable):
     def _netJac(self, x):
         # Evaluate the network Jacobian
 
-        x0 = np.copy(self._netX)
-        f0 = self.evaluateNet(x0)
+        x0 = np.copy(self.net['x'])
+        f0 = self.evaluate_network(x0)
 
-        J = approx_derivative(self.evaluateNet, x,
+        J = approx_derivative(self.evaluate_network, x,
                               rel_step=None,
                               abs_step=1e-10,
                               method='3-point',
                               f0=f0)
 
         # Revert state back to OG state
-        self._update_network_state(x0)
+        self.update_network(x0)
 
         return J
 
@@ -446,17 +488,23 @@ class Model(modelTable):
 
     # Save results
 
-    def _evaluate_network(self, x):
+    def evaluate_network(self, x):
 
-        self._update_network_state(x)
+        self.update_network(x)
 
-        for _,branch in self.branches.items():
+        for _,branch in self.net['branches'].items():
             branch.evaluate()
 
-        for _,junc in self.junctions.items():
+        for _,junc in self.net['junctions'].items():
             junc.evaluate()
 
-        return self._netError
+        for name, istate in self.net['istate'].items():
+            if name in self.net['branches']:
+                self.net['xdot'][istate] = self.net['branches'][name].error
+            else:
+                self.net['xdot'][istate] = self.net['junctions'][name].xdot
+        
+        return np.copy(self.net['xdot'])
 
     def thermo_plot(self, plot_type='TS',
                     isolines=None,
@@ -538,27 +586,33 @@ class Model(modelTable):
             # We don't need to solve anything
             return self.x
 
-
-        from scipy.optimize import root_scalar
-
-
         if netSolver:
-            self.initializeSteady()
+            # Initialize the network solver
+            self.initialize_network()
+
+            conditioner = Conditioner(self, 'network')
+            conditioned = conditioner.conditioner(self.evaluate_network)
             # Try Fsolve with Network Solver
-            sol = fsolve(self._evaluate_network, self._netX, full_output=True)
+            #sol = fsolve(self._evaluate_network, self._netX, full_output=True)
+            x_scaled = conditioner.scale_x(self.net['x'])
+            sol = fsolve(conditioned, x_scaled, full_output=True)
+            #sol = fsolve(self.evaluate_network, self.net['x'], full_output=True)
+            x = conditioner.unscale_x(sol[0])
             # Update to network state
-            self._evaluate_network(sol[0])
+            self.evaluate_network(sol[0])
             
 
             if not self.converged:
+                from scipy.optimize import root_scalar
+
                 from pdb import set_trace
                 set_trace()
                 def func(x):
-                    return self.evaluateNet(np.array([x]))[0]
+                    return self.evaluate_network(np.array([x]))[0]
                 try:
                     print('TRYING Root Scalar')
                     sol2 = root_scalar(func,x0=sol[0][0])
-                    self.evaluateNet(np.array([sol2.root]))
+                    self.evaluate_network(np.array([sol2.root]))
                     
                     if not self.converged:
                         # Try bounded problem
@@ -577,17 +631,23 @@ class Model(modelTable):
                     print('Failed 1st conv')
                     from pdb import set_trace
                     #set_trace()
+            else:
+                return x
 
-
-        conditioner = Conditioner(self)
+        from pdb import set_trace
+        set_trace()
+        conditioner = Conditioner(self, 'nodal')
         conditioned = conditioner.conditioner(self.steady_evaluate)
         sol = fsolve(conditioned, self.x, full_output=True)
 
+        x = conditioner.unscale_x(sol[0])
+        self.steady_evaluate(x)
         if not self.converged:
             from pdb import set_trace
             set_trace()
         else:
-            self.steady_evaluate(conditioner.unscale_x(sol[0]))
+            self.steady_evaluate(x)
+
 
     def draw(self, file_path='geoTherm_model_diagram.svg', auto_open=True):
         """
@@ -604,6 +664,7 @@ class Model(modelTable):
         """
         make_dot_diagram(self, file_path='plot.svg', auto_open=auto_open)
 
+
     def make_graphml_diagram(self, file_path='geoTherm_model_diagram.graphml'):
         """
         Generates a GraphML file for the model's node network and saves it to
@@ -617,61 +678,7 @@ class Model(modelTable):
         """
         make_graphml_diagram(self, file_path)
 
-    def evaluateNetwork(self, x):
-        # Evaluate the network 
-        # (with nodes grouped into branches and junctions)
-
-        for bname, branch in self.branches.items():
-            branch.updateState(x)
-
-
-        branch.evaluate()
-
-        return branch.error
         
-
-    def evaluate_old(self, x):
-        # Evaluate each node individually
-
-        
-        #x[1] = np.abs(x[0])
-        #x[1] = np.max([1, x[0]])
-        # Update the system state
-        for name, istate in self.istate.items():
-            self.nodes[name].updateState(x[istate])
-        
-        # I need to initialize and check # of states
-        # Then check what error to output
-
-        # This needs to be updated, write code to find branches
-        # and then loop for branches, but for now this works,
-        # may not in the future
-        for i, (name, node) in enumerate(self.nodes.items()):
-
-            if isinstance(node, (gt.PBoundary,
-                                 gt.Station,
-                                 gt.Boundary)):
-                continue
-
-            if i == len(self.nodes)-1:
-                outletState = node.getOutletState()
-
-                #error = [(outletState['T'] - self.nodes['P'].thermo._T),
-                #            outletState['P'] - self.nodes['P'].thermo._P]
-                error = [outletState['P'] - self.nodes['P'].thermo._P]
-                return np.array(error)
-
-
-            outletState = node.getOutletState()
-
-            if outletState['P'] < 0:
-                from pdb import set_trace
-                set_trace()
-
-            # Get the DS node
-            DS = self.nodes[self.nodeMap[name]['DS'][0]]
-            DS.update_thermo(outletState)
-
     def _getBranchesAndJunctions(self, nodeMap):
         """
         Find all the branches and junctions in a geoTherm node map.
@@ -798,7 +805,7 @@ class Model(modelTable):
 
         return branches, junctions, branchConnections, nodeClassification
 
-    def initializeSteady(self):
+    def initialize_network(self):
 
 
         if not self.initialized:
@@ -808,90 +815,96 @@ class Model(modelTable):
          branchConnections,
          nodeClassification) = self._getBranchesAndJunctions(self.nodeMap)
 
-        self.branches = dict(branch)
-        self.junctions = dict(junction)
-
-        for B, nodes in branch.items():
-            self.branches[B] = Branch.create(nodes=nodes,
-                          USJunc=branchConnections[B]['US'],
-                          DSJunc=branchConnections[B]['DS'],
-                          model=self)
+        self.net = {'branches': dict(branch),
+                    'junctions': dict(junction),
+                    'istate': {},
+                    'x': [],
+                    'xdot': []}
         
-        for J, JMap in junction.items():
-            usBranches = [self.branches[ibranch] for ibranch in JMap['US']]
-            dsBranches = [self.branches[ibranch] for ibranch in JMap['DS']]
+        for B, nodes in branch.items():
+            
+            self.net['branches'][B] = Branch.create(nodes=nodes,
+                                                    USJunc=branchConnections[B]['US'],
+                                                    DSJunc=branchConnections[B]['DS'],
+                                                    model=self)
+        
 
-            self.junctions[J] = Junction(node=self.nodes[J],
-                                         usBranches=usBranches,
-                                         dsBranches=dsBranches,
-                                         model=self)
+        for J, JMap in junction.items():
+            usBranches = [self.net['branches'][ibranch] for ibranch in JMap['US']]
+            dsBranches = [self.net['branches'][ibranch] for ibranch in JMap['DS']]
+
+
+            self.net['junctions'][J] = Junction(node=self.nodes[J],
+                                                usBranches=usBranches,
+                                                dsBranches=dsBranches,
+                                                model=self)
+
 
         # Initialize Branches and Junctions if not initialized
-        for bname, branch in self.branches.items():
+        for bname, branch in self.net['branches'].items():
             if not branch.initialized:
                 from pdb import set_trace
                 set_trace()
 
-        for jname, junction in self.junctions.items():
+        for jname, junction in self.net['junctions'].items():
             if not junction.initialized:
                 from pdb import set_trace
                 set_trace()
 
-        self._netState = {}
-        self.__netX = np.array([])
-
-        for bname, branch in self.branches.items():
+        for bname, branch in self.net['branches'].items():
             if len(branch.x) == 0:
                 continue
 
             xlen = len(branch.x)
 
-            current_len = len(self.__netX)
+            current_len = len(self.net['x'])
 
-            self._netState[bname] = np.arange(current_len,
+            
+            self.net['istate'][bname] = np.arange(current_len,
                                               current_len+xlen)
 
-            self.__netX = np.concatenate((self.__netX, branch.x))
+            self.net['x'] = np.concatenate((self.net['x'], branch.x))
 
-        for jname, junc in self.junctions.items():
+        for jname, junc in self.net['junctions'].items():
             if not hasattr(junc, 'x'):
                 continue
 
             xlen = len(junc.x)
 
-            current_len = len(self.__netX)
+            current_len = len(self.net['x'])
 
-            self._netState[jname] = np.arange(current_len,
+            self.net['istate'][jname] = np.arange(current_len,
                                               current_len+xlen)
 
-            self.__netX = np.concatenate((self.__netX, junc.x))       
+            
+            self.net['x'] = np.concatenate((self.net['x'], junc.x))    
 
         # Initialize Network Error Variable
-        self.__netError = np.zeros(len(self.__netX))
+        self.net['xdot'] = np.zeros(len(self.net['x']))
 
-    @property
-    def _netX(self):
-        return self.__netX
+    #@property
+    #def _netX(self):
+    #    return self.net['x']
 
-    @property
-    def _netError(self):
-        # I need to evaluate nodes first maybe
-        # do this a more efficient way
-        for name, istate in self._netState.items():
-            if name in self.branches:
-                self.__netError[istate] = self.branches[name].error
-            else:
-                self.__netError[istate] = self.junctions[name].xdot
+    # @property
+    # def _netError(self):
+    #     # I need to evaluate nodes first maybe
+    #     # do this a more efficient way
+    #     for name, istate in self.net['istate'].items():
+    #         if name in self.net['branches']:
+    #             self.net['xdot'][istate] = self.net['branches'][name].error
+    #         else:
+    #             self.net['xdot'][istate] = self.net['junctions'][name].xdot
         
-        return self.__netError
+    #     return np.copy(self.net['xdot'])
 
 
-    def _update_network_state(self, x):
-        for net, indx in self._netState.items():
-            if net in self.branches:
-                self.branches[net].updateState(x[indx])
+    def update_network(self, x):
+        for name, istate in self.net['istate'].items():
+            if name in self.net['branches']:
+                self.net['branches'][name].updateState(x[istate])
             else:
-                self.junctions[net].updateState(x[indx])
+                self.net['junctions'][name].updateState(x[istate])
 
 
     def getFlux(self, node):
@@ -1272,13 +1285,11 @@ class Branch:
                 else:
                     #self.error = (dsState['P']/Pout - 1)*Pout*np.abs((dsState['P']/Pout - 1))**1.3
                     
-                    self.error = np.abs(Pout - dsState['P'])**1.3+(dsState['P']-Pout)*10#*Pout#*np.abs((dsState['P']/Pout - 1))**1.5
+                    self.error = np.sign(dsState['P']-Pout)*np.abs(dsState['P']-Pout)**1.3+(dsState['P']-Pout)*10#*Pout#*np.abs((dsState['P']/Pout - 1))**1.5
+                    #self.error = (dsState['P']-Pout)*10
+                    #print(self.error, self._w)
                     #self.error = np.abs(Pout-dsState['P'])**1.2
-                    from pdb import set_trace
-                    #set_trace()
-                    #print(self.error, self._w, dsState['P']- Pout)
-                    from pdb import set_trace
-                    #set_trace()
+
                 if self.model.debug == True:
                     from pdb import set_trace
                     set_trace()
