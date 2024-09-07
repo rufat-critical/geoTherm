@@ -23,7 +23,8 @@ ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(Pin, 'bar'), T=319.8)
               gt.fixedFlowPump(name='Pump', rotor= 'Pump_Rotor', eta=0.7, PR=5, w=w, US='PumpIn', DS='PumpOut'),
               gt.Station(name='PumpOut', fluid=fluid),
               #gt.Qdot(name='ORC_Qdot', hot='WaterHEX'),
-              gt.staticHEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, Q=(3.2e6, 'BTU/hr'), dP=(1,'bar'), D=(2, 'in'), L=3),
+              gt.Pipe(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, dP=(1,'bar'), D=(2, 'in'), L=3),
+              gt.Qdot(name='ORC_Heat', cool='ORC_HEX', Q=(3.2e6, 'BTU/hr')),
               #gt.staticHEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, Q=(1000, 'kW'), dP=(1,'bar'), D=(2, 'in'), L=3),
               #gt.staticHEX(name='ORC_HEX', US='PumpOut', DS='TurbIn',w=50, dP=(1,'bar')),
               #gt.TBoundary(name='TurbIn', fluid=fluid, T=(160, 'degC'), P =101325),
@@ -33,7 +34,7 @@ ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(Pin, 'bar'), T=319.8)
               gt.Turbine(name='Turb', rotor='ORC_Rotor',US='TurbIn', DS='TurbOut', D= .057225646*2, eta=0.8, PR=5),
               gt.Station(name='TurbOut', fluid=fluid),
               #gt.resistor(name='out', US='TurbIn', DS='TurbOut', area=.1),
-              gt.staticHEX(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(1,'bar'))])
+              gt.simpleHEX(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(1,'bar'))])
 
 
 #ORC += gt.Balance('mass_balance', knob='Pump.w', feedback='TurbIn.T', setpoint=473, knob_min=0.5, knob_max=1.5)

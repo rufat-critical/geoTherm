@@ -17,11 +17,11 @@ def test_ORC():
                     gt.Rotor('Pump_Rotor', N =14009.97841),
                     gt.fixedFlowPump(name='Pump', rotor= 'Pump_Rotor', eta=0.7, PR=5, w=w, US='PumpIn', DS='PumpOut'),
                     gt.Station(name='PumpOut', fluid=fluid),
-                    gt.staticHEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, Q=(3.2e6, 'BTU/hr'), dP=(1,'bar'), D=(2, 'in'), L=3),
+                    gt.simpleHEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, Q=(3.2e6, 'BTU/hr'), dP=(1,'bar'), D=(2, 'in'), L=3),
                     gt.Station(name='TurbIn', fluid=fluid),#, T=Thot-5, P =101325),
                     gt.Turbine(name='Turb', rotor='ORC_Rotor',US='TurbIn', DS='TurbOut', D= .057225646*2, eta=0.8, PR=5),
                     gt.Station(name='TurbOut', fluid=fluid),
-                    gt.staticHEX(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(1,'bar'))])
+                    gt.simpleHEX(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(1,'bar'))])
 
     ORC.solve_steady()
     

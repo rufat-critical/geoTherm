@@ -90,7 +90,7 @@ class Conditioner:
                 xdot_unscaled = func(x_unscaled)
                 return self.scale_x(xdot_unscaled)
             return wrapper
-        elif self.conditioning_type =='jacobian':
+        elif self.conditioning_type == 'jacobian':
             def wrapper(x):
                 x_unscaled = self.unscale_x(x)
                 xdot_unscaled = func(x_unscaled)
@@ -726,11 +726,12 @@ class Model(modelTable):
         for name, node in self.nodes.items():
             if isinstance(node, (gt.ThermoNode, gt.Station)):
                 continue
-
-            if hasattr(node, 'Q'):
-                Qnet += node.Q
-                if node.Q > 0:
-                    Qin += node.Q
+            
+            if isinstance(node, (gt.Heat, gt.simpleHEX)):
+                if hasattr(node, 'Q'):
+                    Qnet += node.Q
+                    if node.Q > 0:
+                        Qin += node.Q
 
             if hasattr(node, 'W'):
                 Wnet += node.W
@@ -1305,7 +1306,7 @@ class Branch:
 
             # Update the downstream state
             try:
-                dsNode, dsState = node._setFlow(self._w)
+                dsNode, dsState = node._set_flow(self._w)
             except Exception:
                 from pdb import set_trace
                 set_trace()

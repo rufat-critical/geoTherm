@@ -87,9 +87,6 @@ class Turbo(statefulFlowNode):
             logger.warn(msg)
             self._w = 1
 
-        # Initialize Variables
-        self._Q = 0
-
     def initialize(self, model):
 
         #Create a reference thermo object to evaluate outlet properties
@@ -103,7 +100,7 @@ class Turbo(statefulFlowNode):
         return super().initialize(model)
 
     def _update_outlet_thermo(self):
-        outlet = self.getOutletState()
+        outlet = self.get_outlet_state()
         self._ref_thermo._HP = outlet['H'], outlet['P']
 
     @property

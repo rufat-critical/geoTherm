@@ -11,7 +11,7 @@ class Turbine(Turbo):
 
     def _get_dP(self):
         # Get Upstream Thermo
-        US, _ = self.get_thermostates()
+        US, _ = self._get_thermo()
 
         # Get delta P across Turbine
         return US._P*(1/self.PR - 1)
@@ -25,7 +25,7 @@ class Turbine(Turbo):
     def _dH_is(self):
 
         # Get Upstream Thermo
-        US, _ = self.get_thermostates()
+        US, _ = self._get_thermo()
 
         # Isentropic Enthalpy across Turbo Component
         return dH_isentropic(US, US._P/self.PR)

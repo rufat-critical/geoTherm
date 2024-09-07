@@ -24,8 +24,7 @@ class flow(statefulFlowNode):
                  L:'LENGTH'=None,               # noqa
                  D:'LENGTH'=None,               # noqa
                  roughness:'LENGTH'=1e-5,       # noqa
-                 dP:'PRESSURE'=None,            # noqa
-                 Q: 'POWER'=0):                 # noqa
+                 dP:'PRESSURE'=None):            # noqa
 
         self.name = name
         self.US = US
@@ -46,22 +45,11 @@ class flow(statefulFlowNode):
 
         else:
             self.update_dP = False
-            self.__dPsetpoint = -dP
             self._dP = -dP
-
-        self._Qobj = None
-        if isinstance(Q, (float, int)):
-            self._Q = Q
-        elif isinstance(Q, flow):
-            self._Q = -Q._Q
-            self._Qobj = Q
-        else:
-            from pdb import set_trace
-            set_trace()
 
     def _get_dP(self):
 
-        US, _ = self.get_thermostates()
+        US, _ = self._get_thermo()
 
         if self.update_dP:
             return dP_pipe(US,
@@ -70,30 +58,28 @@ class flow(statefulFlowNode):
                            self._L,
                            self._roughness)
         else:
-            return self.__dPsetpoint
+            return self._dP
 
     def _get_dH(self):
 
-        US, DS = self.get_thermostates()
+        US, DS = self._get_thermo()
 
         # Q
         if self._w == 0:
             return 0
         else:
             # Get Heat
-            self._Q = self._get_Q(US, DS)
+            #self._Q = self._get_Q(US, DS)
 
             return self._Q/np.abs(self._w)
 
-    def _get_Q(self, US, DS):
-        # Update Heat in Pipe
+    #def _get_Q(self, US, DS):
+    #    # Update Heat in Pipe
 
-        if self.fixedT_outlet:
-            return np.abs(self._w)*(DS._H - US._H)
-        elif self._Qobj is not None:
-            self._Q = -self._Qobj._Q
-
-        return self._Q
+    #    if self._Qobj is not None:
+    #        self._Q = -self._Qobj._Q
+    #
+    #   return self._Q
 
     def initialize(self, model):
 
@@ -118,6 +104,11 @@ class flow(statefulFlowNode):
         # Calculate Flow Velocity of object
         # U = mdot/(rho*A^2)
 
-        US, _ = self._getThermo()
+        US, _ = self._get_thermo()
 
         return self._w/(US._density*self._area)
+
+    @property
+    def _cdA(self):
+        dP = np.abs(self.US_node.thermo._P - self.DS_node.thermo._P)
+        return self._w/np.sqrt(2*self.US_node.thermo._density*dP)

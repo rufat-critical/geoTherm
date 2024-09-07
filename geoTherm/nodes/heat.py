@@ -242,10 +242,48 @@ class HEXConnector5(statefulHeatNode):
 class staticHEX(flow):
     pass
 
+class simpleHEX(flow):
+
+    @inputParser
+    def __init__(self, name, US, DS,
+                 w:'MASSFLOW',                  # noqa
+                 L:'LENGTH'=None,               # noqa
+                 D:'LENGTH'=None,               # noqa
+                 roughness:'LENGTH'=1e-5,       # noqa
+                 dP:'PRESSURE'=None,            # noqa
+                 Q:'POWER'=None):               # noqa
+
+        self.name = name
+        self.US = US
+        self.DS = DS
+        self._D = D
+        self._L = L
+        self._w = w
+        self._roughness = roughness
+
+        # Bounds handled via penalty function
+        self.penalty = False
+
+        if dP is None:
+            self.update_dP = True
+            if (L is None) or (D is None):
+                logger.critical(f"Connector {self.name} needs to have D and L "
+                                "specified if dP is not specified!")
+
+        else:
+            self.update_dP = False
+            self.__dPsetpoint = -dP
+            self._dP = -dP
+
+        self.__Q = Q
+
     @property
-    def _cdA(self):
-        dP = np.abs(self.US_node.thermo._P - self.DS_node.thermo._P)
-        return self._w/np.sqrt(2*self.US_node.thermo._density*dP)
+    def _Q(self):
+        if self.__Q is not None:
+            return self.__Q
+        else:
+            return (self.DS_node.thermo._H-self.US_node.thermo._H)*self._w
+
 
 class QController(statefulHeatNode):
     
@@ -291,7 +329,6 @@ class Qdot(Heat):
         self.name = name
         self.cool = cool
         self._Q = Q
-
 
 
 class discretizedHeat:
@@ -1374,7 +1411,7 @@ class hexFlow(flowNode):
         self._dH = self._Q/self._w
         pass
 
-    def getOutletState(self):
+    def get_outlet_state(self):
         # Get the Downstream thermo state
         US = self.model.nodes[self.US].thermo
 

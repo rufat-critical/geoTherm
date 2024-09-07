@@ -40,11 +40,11 @@ class resistor(flowNode):
                                   self.DS_node.thermo,
                                   self._area)
 
-    def getOutletState(self):
+    def get_outlet_state(self):
         # The enthalpy is equal but pressure drop is present
 
         # Get US, DS Thermo
-        US, _ = self._getThermo()
+        US, _ = self._get_thermo()
 
         self._dP = self._dP_func(US, self._w/self._area)
 
@@ -69,7 +69,7 @@ class fixedFlow(flowNode, fixedFlowNode):
         self.DS = DS
         self._w = w
 
-    def getOutletState(self):
+    def get_outlet_state(self):
 
         # Get the Downstream thermo state
         US = self.model.nodes[self.US].thermo

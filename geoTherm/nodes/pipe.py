@@ -36,9 +36,9 @@ class heatedPipe(Pipe):
             self.update_dP = False
             self._dP = dP
 
-    def getOutletState(self):
+    def get_outlet_state(self):
         # Get US, DS Thermo
-        US, DS = self._getThermo()
+        US, DS = self._get_thermo()
 
         self._dP = self._get_dP(US)
 
@@ -67,9 +67,9 @@ class heatedPipe2(Pipe):
         self._roughness = roughness
         self._Q = Q
 
-    def getOutletState(self):
+    def get_outlet_state(self):
         # Get US, DS Thermo
-        US, DS = self._getThermo()
+        US, DS = self._get_thermo()
 
         self._dP = self._get_dP(US)
 

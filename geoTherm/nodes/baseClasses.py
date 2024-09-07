@@ -16,30 +16,57 @@ class flowNode(Node):
             model: The model to initialize with.
         """
 
-        # Attach reference to upstream and downstream nodes
-        self.US_node = model.nodes[self.US]
-        self.DS_node = model.nodes[self.DS]
+        # Get the node map
+        node_map = model.node_map[self.name]
 
-        # Add w attribute if not defined
-        if not hasattr(self, '_w'):
-            self._w = 0
+        # Error checking for correct number of upstream and downstream nodes
+        if len(node_map['US']) != 1 or len(node_map['DS']) != 1:
+            logger.critical(
+                f"Flow Node {self.name} must have only one upstream and "
+                f"one downstream node. Currently connected to: "
+                f"US: {node_map['US']}, DS: {node_map['DS']}"
+            )
 
-        # Initialize dP
-        if not hasattr(self, '_dP'):
-            self._dP = 0
+        # Validate the node map strings are generated correctly
+        if node_map['US'][0] != self.US or node_map['DS'][0] != self.DS:
+            logger.critical(
+                f"Node mapping mismatch for {self.name}: Expected "
+                f"US: {self.US}, DS: {self.DS}, but got "
+                f"US: {node_map['US'][0]}, DS: {node_map['DS'][0]}"
+            )
 
-        # Initialize dH
-        if not hasattr(self, '_dH'):
-            self._dH = 0
+        # Attach references to upstream and downstream nodes
+        self.US_node = model.nodes[node_map['US'][0]]
+        self.DS_node = model.nodes[node_map['DS'][0]]
+        self.hot_nodes = [model.nodes[name] for name in node_map['hot']]
+        self.cool_nodes = [model.nodes[name] for name in node_map['cool']]
 
-        # Store Upstream and Downstream condi
+        # Initialize attributes if not already defined
+        self._w = getattr(self, '_w', 0)
+        self._dP = getattr(self, '_dP', 0)
+        self._dH = getattr(self, '_dH', 0)
 
-        # Do rest of initialization
+        # Continue with further initialization
         return super().initialize(model)
 
-    def _getThermo(self):
+    @property
+    def _W(self):
+        return 0
+
+    @property
+    def _Q(self):
+        # Get Q from hot and cool nodes
+        Qnet = 0
+        for hot in self.hot_nodes:
+            Qnet+=hot._Q
+        for cool in self.cool_nodes:
+            Qnet+=cool._Q
+
+        return Qnet
+
+    def _get_thermo(self):
         """
-        Get the inlet and outlet thermo states based on flow direction.
+        Get the inlet and outlet thermo states based on Pressure
         """
 
         # Handle Backflow
@@ -52,7 +79,7 @@ class flowNode(Node):
 
         return US, DS
 
-    def _setFlow(self, w):
+    def _set_flow(self, w):
         """
         Set the flow rate and get outlet state.
 
@@ -72,12 +99,12 @@ class flowNode(Node):
             dsNode = self.model.node_map[self.name]['US'][0]
 
         # Get the Outlet State
-        dsState = self.getOutletState()
+        dsState = self.get_outlet_state()
 
         # Return the downstream node and downstream state
         return dsNode, dsState
 
-    def getOutletState(self):
+    def get_outlet_state(self):
         """
         Placeholder method to be overwritten by specific flow nodes.
         """
@@ -114,7 +141,7 @@ class statefulFlowNode(flowNode):
     # Variable Bounds
     _bounds = [-1e5, 1e5]
 
-    def get_thermostates(self):
+    def _get_thermo(self):
         """
         Get the inlet and outlet thermo states based on flow direction.
         """
@@ -137,12 +164,6 @@ class statefulFlowNode(flowNode):
             model: The model to initialize with.
         """
 
-        if not hasattr(self, '_W'):
-            self._W = 0
-
-        if not hasattr(self, '_Q'):
-            self._Q = 0
-
         self.penalty = False
 
         return super().initialize(model)
@@ -155,9 +176,9 @@ class statefulFlowNode(flowNode):
         # Get the target outlet state
         # This should be a dictionary in the form of:
         # {'H': Enthalpy, 'P':Pressure}
-        outletState = self.getOutletState()
+        outletState = self.get_outlet_state()
 
-        US, _ = self.get_thermostates()
+        US, _ = self._get_thermo()
 
         # Update dP and dH
         self._dP = (outletState['P']
@@ -213,32 +234,19 @@ class statefulFlowNode(flowNode):
         if self.penalty is not False:
             return np.array([self.penalty])
 
-        outletState = self.getOutletState()
+        outletState = self.get_outlet_state()
 
         # Handle reverse flow case
-        US, DS = self.get_thermostates()
+        US, DS = self._get_thermo()
 
         # Get Difference in DS property and outletState property
         # via list comprehension
         return np.array([(outletState['P'] - DS._P)*np.sign(self._w)])
 
-    def getOutletState(self):
-
-        # Get US, DS Thermo
-        US, DS = self.get_thermostates()
-
-        # get dh and dP
-        self._dH = self._get_dH()
-        self._dP = self._get_dP()
-
-        # Return outlet state
-        return {'H': US._H + self._dH,
-                'P': US._P + self._dP}
-
     def get_outlet_state(self):
 
         # Get US, DS Thermo
-        US, DS = self.get_thermostates()
+        US, DS = self._get_thermo()
 
         # get dh and dP
         self._dH = self._get_dH()

@@ -27,7 +27,7 @@ class Pump(Turbo):
     def _get_dP(self):
         """Get delta P across Pump."""
 
-        US, _ = self.get_thermostates()
+        US, _ = self._get_thermo()
 
         return US._P*(self.PR-1)
 
@@ -44,7 +44,7 @@ class Pump(Turbo):
         # Isentropic Enthalpy across Turbo Component
 
         # Get Upstream Thermo
-        US,_ = self.get_thermostates()
+        US,_ = self._get_thermo()
 
         return dH_isentropic(US, US._P*self.PR)
 
