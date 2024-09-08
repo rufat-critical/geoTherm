@@ -123,6 +123,9 @@ class Balance(BaseController):
                                 "use a thermoBalance Object!"
                                 )
 
+        # Updates bounds
+        self._bounds = [self.knob_min, self.knob_max]
+
     @property
     def feedback_val(self):
         """
@@ -151,10 +154,10 @@ class Balance(BaseController):
             x: The new state (knob value) to apply.
         """
 
-        if x[0] < self.knob_min:
+        if x[0] < self._bounds[0]:
             self.penalty = (self.knob_min - x[0] + 10)*1e8
             return
-        elif x[0] > self.knob_max:
+        elif x[0] > self._bounds[1]:
             self.penalty = (self.knob_max - x[0] - 10)*1e8
             return
         else:

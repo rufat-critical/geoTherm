@@ -14,7 +14,7 @@ class Pump(Turbo):
 
     _displayVars = ['w', 'dP:\u0394P', 'dH:\u0394H', 'W', 'PR', 'Q_in',
                     'Q_out', 'Ns', 'Ds', 'D', 'Mach_in', 'Mach_out',
-                    'phi:\u03C6', 'psi:\u03C8', 'psi_is:\u03C8_is', 'U',
+                    'phi:\u03C6', 'psi:\u03C8', 'psi_is:\u03C8_is', 'U_tip',
                     'eta:\u03B7', 'NSS', 'NPSP']
 
     _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
@@ -22,7 +22,7 @@ class Pump(Turbo):
               'Q_out': 'VOLUMETRICFLOW', 'Q': 'POWER',
               'Ns': 'SPECIFICSPEED', 'Ds': 'SPECIFICDIAMETER',
               'NSS': 'SPECIFICSPEED', 'NPSP': 'PRESSURE',
-              'D': 'LENGTH', 'U': 'VELOCITY'}
+              'D': 'LENGTH', 'U_tip': 'VELOCITY'}
 
     # Bounds on flow variables
     _bounds = [1, 1000]

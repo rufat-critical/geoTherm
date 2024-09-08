@@ -126,7 +126,7 @@ class Turbo(statefulFlowNode):
         US, _ = self._get_thermo()
 
         # Get Upstream
-        return self._w/US.thermo._density
+        return self._w/US._density
 
     @property
     def _Q_out(self):

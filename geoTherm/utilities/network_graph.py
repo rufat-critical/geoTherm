@@ -2,7 +2,7 @@ from ..nodes.baseClasses import ThermoNode, flowNode
 from ..nodes.rotor import Rotor
 from ..nodes.turbine import Turbine
 from ..nodes.pump import Pump
-from ..nodes.heat import staticHEX
+from ..nodes.heat import staticHEX, Heat
 from ..units import units
 from ..logger import logger
 import pyyed
@@ -71,6 +71,12 @@ def generate_dot_code(model):
             color = 'black'
             shape = 'box'
             label = f"{name}\n N:{node.N:.2f}\n {u['ROTATIONSPEED']}"
+        elif isinstance(node, Heat):
+            shape = 'circle'
+            color = 'red'
+            label = (
+                f"{name}\nQ: {node.Q:.1f} {u['POWER']}\n"
+            )  
         else:
             color = 'orange'
             shape = 'circle'
@@ -83,6 +89,9 @@ def generate_dot_code(model):
     for name, nMap in node_map.items():
         for US in nMap['US']:
             dot += f'{US} -> {name};\n'
+
+        for hot in nMap['hot']:
+            dot += f'{hot} -> {name} [style=dashed]; \n'
 
         # Connect Rotor Node to turbo objects
         if isinstance(nodes[name], Rotor):
@@ -237,6 +246,9 @@ def make_graphml_diagram(model, file_path):
         for US in nMap.get('US', []):
             g.add_edge(US, name)
 
+        for hot in nMap.get('hot', []):
+            g.add_edge(hot, name, line_type='dashed')
+
         # Connect Rotor Node to turbo objects
         if isinstance(nodes[name], Rotor):
             for load in nodes[name].loads:
@@ -244,6 +256,8 @@ def make_graphml_diagram(model, file_path):
                            line_type='dashed')
                 g.add_edge(load, name, arrowhead='standard',
                            line_type='dashed')
+
+
 
     g.write_graph(file_path)
 
