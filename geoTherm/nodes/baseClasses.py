@@ -58,9 +58,9 @@ class flowNode(Node):
         # Get Q from hot and cool nodes
         Qnet = 0
         for hot in self.hot_nodes:
-            Qnet+=hot._Q
+            Qnet += hot._Q
         for cool in self.cool_nodes:
-            Qnet+=cool._Q
+            Qnet += -cool._Q
 
         return Qnet
 

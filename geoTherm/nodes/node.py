@@ -1,11 +1,10 @@
 from rich.console import Console
 from rich.table import Table
-#from ..logger import logger
 
 
 class modelTable:
-    """ The Base Model Class that makes a pretty 
-    model printout. Similar to Base Node Class but 
+    """ The Base Model Class that makes a pretty
+    model printout. Similar to Base Node Class but
     for entire model
 
     THIS should be inherited and NOT Standalone"""
@@ -23,7 +22,8 @@ class modelTable:
         """
         Return a string representation of the Model object.
 
-        This method is called when the object is printed using the print() function.
+        This method is called when the object is printed using the print()
+        function.
         """
         return self.__makeTable()
 
@@ -32,13 +32,14 @@ class modelTable:
         Create a formatted table representation of the Model object.
 
         Returns:
-            str: A string containing the formatted table representation of the Node.
+            str: A string containing the formatted table representation of the
+                 Node.
         """
 
         # Initialize model if it's not yet initialized
         if not self.initialized:
             self.initialize()
-        
+
         table = Table(title='Current Model State')
         # Add columns for Node name and its parameters
         table.add_column("Node")
@@ -49,12 +50,11 @@ class modelTable:
         # Loop thru node list and print nodes
         for name, node in self.nodes.items():
 
-            #table.add_row(f'[bold]{name}','2','3','4')
             table.add_row(f'{name}',
                           node._generateParamStr(),
                           ','.join(self.node_map[name]['US']),
                           ','.join(self.node_map[name]['DS']))
-        
+
         # Get Performance metrics
         Wnet, Qin, eta = self.performance
         pText = f'Wnet: {Wnet:.05f} | Qin: {Qin:.05f} | \u03B7: {eta:.05f}\n'
@@ -66,27 +66,26 @@ class modelTable:
             console.print(table)
             console.print(pTable)
 
-            #console.rule(f'[bold white] Wnet: {Wnet:.05f} eta: {eta:.05f}')
+            # console.rule(f'[bold white] Wnet: {Wnet:.05f} eta: {eta:.05f}')
 
-        return capture.get()        
+        return capture.get()
 
 
 class Node:
-    """ The Base Node Class that makes a pretty 
+    """ The Base Node Class that makes a pretty
     node printout
 
     THIS should be inherited and NOT Standalone"""
 
     _displayVars = []
 
-
     def initialize(self, model):
         """
         Initialize the component by attaching a reference to the model.
 
-        This method sets the `model` attribute of the component to the provided model.
-        It is used to link the component to a model instance, allowing the component
-        to interact with the model.
+        This method sets the `model` attribute of the component to the
+        provided model. It is used to link the component to a model instance,
+        allowing the component to interact with the model.
 
         Args:
             model: The model instance to attach to the component.
@@ -107,7 +106,8 @@ class Node:
         """
         Return a string representation of the Node object.
 
-        This method is called when the object is printed using the print() function.
+        This method is called when the object is printed using the print()
+        function.
         """
         return self.__makeTable()
 
@@ -116,7 +116,8 @@ class Node:
         Create a formatted table representation of the Node object.
 
         Returns:
-            str: A string containing the formatted table representation of the Node.
+            str: A string containing the formatted table representation of the
+            Node.
         """
 
         # Generate a table without a title
@@ -135,17 +136,17 @@ class Node:
 
         # Create a console object to capture the table output
         console = Console()
-        
+
         with console.capture() as capture:
             console.print(table)
 
         # Return the captured table output as a string
         return capture.get()
-    
+
     def _generateParamStr(self):
         """
         Create a formatted string of display variables for the Node object.
-        
+
         Returns:
             str: A string containing the formatted display variables.
         """

@@ -18,15 +18,41 @@ class makeLager:
         self.logger.setLevel(log_level)
 
         # Create a console handler for logging to the console
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
+        self.console_handler = logging.StreamHandler()
+        self.console_handler.setLevel(log_level)
 
         # Create a formatter and set it to the console handler
         formatter = logging.Formatter('%(levelname)s - %(message)s')
-        console_handler.setFormatter(formatter)
+        self.console_handler.setFormatter(formatter)
 
         # Add the console handler to the logger
-        self.logger.addHandler(console_handler)
+        self.logger.addHandler(self.console_handler)
+
+    def set_level(self, level):
+        """
+        Set the logging level.
+
+        Args:
+            level (str or int): Logging level to use. Can be 'silent', 'debug',
+                                'info', 'warning', 'error', or 'critical'.
+        """
+        if isinstance(level, str):
+            level = level.lower()
+            levels = {
+                # A level higher than CRITICAL to silence logging
+                'silent': logging.CRITICAL + 1,
+                'debug': logging.DEBUG,
+                'info': logging.INFO,
+                'warning': logging.WARNING,
+                'error': logging.ERROR,
+                'critical': logging.CRITICAL
+            }
+            log_level = levels.get(level, logging.DEBUG)
+        else:
+            log_level = level
+
+        self.logger.setLevel(log_level)
+        self.console_handler.setLevel(log_level)
 
     def warn(self, msg):
         """

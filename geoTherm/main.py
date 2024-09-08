@@ -61,9 +61,22 @@ class Conditioner:
 
         # Do loopy for statefuls
         for name, indx in self.model.network.istate.items():
-            
             if name in self.model.network.branches:
-                self.x_scale[indx] *=1
+                branch = self.model.network.branches[name]
+                if (branch._bounds[0] == -np.inf or
+                        branch._bounds[1] == np.inf):
+                    scale = 1
+                else:
+                    scale = 1/(branch._bounds[1]
+                               - branch._bounds[0])
+
+                self.x_scale[indx] *= scale
+            elif name in self.model.network.junctions:
+                node = self.model.nodes[name]
+                if isinstance(node, gt.Balance):
+                    knob_min = node.knob_min
+                    knob_max = node.knob_max
+                    self.x_scale[indx] *= 1/(knob_max-knob_min)
             else:
                 from pdb import set_trace
                 set_trace()
@@ -531,7 +544,11 @@ class Model(modelTable):
 
         # Initialize the model if it's not initialized
         if not self.initialized:
-            self.initialize()
+            try:
+                self.initialize()
+            except:
+                logger.critical("Could not Initialize Model")
+
 
         # Check if this is a stateless model
         if len(self.x) == 0:
@@ -544,24 +561,26 @@ class Model(modelTable):
 
             self.network = Network(self)
 
+            # Check if this is a stateless network model
+            if len(self.network.x) == 0:
+                # We don't need to solve anything
+                return self.network.x
+
+            # Use Network Conditioner
             conditioner = Conditioner(self, 'network')
-            #conditioned = conditioner.conditioner(self.evaluate_network)
             conditioned = conditioner.conditioner(self.network.evaluate)
-            # Try Fsolve with Network Solver
-            #sol = fsolve(self._evaluate_network, self._netX, full_output=True)
+            # Scale the state vector for fsolve
             x_scaled = conditioner.scale_x(self.network.x)
+            # Run fsolve with scaling
             sol = fsolve(conditioned, x_scaled, full_output=True)
-            #sol = fsolve(self.evaluate_network, self.net['x'], full_output=True)
+            # Unscale/re-scale the solution back to normal
             x = conditioner.unscale_x(sol[0])
             # Update to network state
-            #self.evaluate_network(sol[0])
-            self.network.evaluate(sol[0])
-            
-            from pdb import set_trace
-            #set_trace()
+            self.network.evaluate(x)
+
             if not self.converged:
                 from scipy.optimize import root_scalar
-
+                print('TRYING Root Scalar')
                 from pdb import set_trace
                 set_trace()
                 def func(x):
@@ -856,6 +875,9 @@ class Network:
                                                current_length + state_length)
             self.__x = np.concatenate((self.__x, junction.x))
 
+        # Evaluate Network
+        self.evaluate(self.x)
+
     def _identify_branches_and_junctions(self, node_map):
         """
         Identify all branches and junctions in the geoTherm node map.
@@ -1035,11 +1057,18 @@ class Network:
 
         for name, _ in self.istate.items():
             if name in self.branches:
-                xdot.append(self.branches[name].error)
+                xdot.append(self.branches[name].xdot)
             else:
                 xdot.append(self.junctions[name].xdot)
 
-        return np.array(xdot)
+        try:
+            if len(xdot) > 0:
+                return np.concatenate(xdot)
+            else:
+                return xdot
+        except:
+            from pdb import set_trace
+            set_trace()
 
     @property
     def x(self):
@@ -1169,6 +1198,7 @@ class Branch:
     """
 
     _units = {'w': 'MASSFLOW'}
+    _bounds = [-np.inf, np.inf]
 
     def __init__(self, name, nodes, US_junction, DS_junction, model, w=None):
         """
@@ -1216,8 +1246,6 @@ class Branch:
         self.penalty = False
 
         self.initialized = False
-        # Bounds (for massflow if not fixedFlow)
-        self.bounds = [-np.inf, np.inf]
 
         self.initialize()
 
@@ -1252,7 +1280,8 @@ class Branch:
 
         # Update mass flow if fixed flow is enabled
         if self.fixedFlow:
-            self._w = self.flow_setter_node._w
+            if self.flow_setter_node is not None:
+                self._w = self.flow_setter_node._w
 
         # Reverse order if w is negative
         if self._w < 0:
@@ -1315,20 +1344,20 @@ class Branch:
                 # Pressure drop is too high because massflow too high,
                 # lets decrease mass flow by applying penalty
                 # Maybe set this as seperate method for different cases
+                logger.info("Pressure <0 detected in Branch "
+                            f"'{self.branch_name}' for branch state: "
+                            f"{self.x}")
 
                 if self.fixedFlow:
                     # Calculate Error based on pressure
                     if isinstance(self.flow_setter_node, gt.Pump):
-                        self.error = (0-dsState['P'])*1e5
+                        self.error = (-dsState['P']+10)*1e5
                     else:
                         from pdb import set_trace
                         set_trace()
                 else:
-                    logger.info("Pressure <0 detected in Branch "
-                                f"'{self.branch_name}' for mass flow of: "
-                                f"{self._w}")
                     # This is negative so use error to decrease mass flow
-                    self.error = (dsState['P'])*1e5
+                    self.error = (dsState['P']+10)*1e5
                 return
 
             # Last node error check
@@ -1457,8 +1486,12 @@ class Branch:
                     print('Check Line 1073ish')
                     #from pdb import set_trace
                     #set_trace()
+            elif isinstance(node, gt.fixedFlow):
+                self.fixedFlow = True
+                self._w = node._w
+                self.flow_setter_node = node
 
-            if isinstance(node, gt.fixedFlowNode):
+            elif isinstance(node, gt.fixedFlowNode):
                 if self.fixedFlow:
                     # Fixed Flow already activated somewhere
                     from pdb import set_trace
@@ -1471,7 +1504,7 @@ class Branch:
                 # Node that sets the mass flow
                 self.flow_setter_node = node
                 # Get the node bounds
-                self.bounds = node.bounds
+                self._bounds = node._bounds
 
                 if len(self.x) != 0:
                     # There shouldn't be any other states
@@ -1482,6 +1515,24 @@ class Branch:
                 #                                   current_len + len(node.x))
                 #self._x = np.concatenate((self.x, node.x))
                 self.x = node.x
+
+            if isinstance(node, gt.statefulFlowNode):
+                if not self.fixedFlow:
+                    self._bounds[0] = np.max([self._bounds[0],
+                                              node._bounds[0]])
+                    self._bounds[1] = np.min([self._bounds[1],
+                                              node._bounds[1]])
+
+        if isinstance(self.DS_junction, gt.Outlet):
+            # If the downstream junction is an outlet then
+            # it can be any state and not dependent on branch mass
+            # mass flow, so this is a stateless fixed flow object
+            if self.fixedFlow:
+                if len(self.x) != 0:
+                    from pdb import set_trace
+                    set_trace()
+
+            self.fixedFlow = True
 
         #if len(self._x) == 0:
         if self.fixedFlow:
@@ -1495,6 +1546,7 @@ class Branch:
             from pdb import set_trace
             set_trace()
 
+        self._x0 = np.copy(self.x)
         self.initialized = True
 
     def update_state(self, x):
@@ -1509,6 +1561,14 @@ class Branch:
         # We may need to revert if penalty are triggered
         self._x0 = self.x
         self.x = x
+
+        if x < self._bounds[0]:
+            self.penalty = (self._bounds[0] - x[0] + 10)*1e5
+            return
+        elif x > self._bounds[1]:
+            self.penalty = (self._bounds[1] - x[0] - 10)*1e5
+            return
+
         if self.fixedFlow:
             self.flow_setter_node.update_state(x)
             # Get the penalty from the setter object
@@ -1516,6 +1576,13 @@ class Branch:
         else:
             # Update branch mass flow
             self._w = x[0]
+
+    @property
+    def xdot(self):
+        if isinstance(self.error, float):
+            return np.array([self.error])
+        else:
+            return self.error
 
 
 class Solution:

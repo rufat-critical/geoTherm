@@ -284,6 +284,9 @@ class simpleHEX(flow):
         else:
             return (self.DS_node.thermo._H-self.US_node.thermo._H)*self._w
 
+    @_Q.setter
+    def _Q(self, Q):
+        self.__Q = Q
 
 class QController(statefulHeatNode):
     
@@ -329,6 +332,41 @@ class Qdot(Heat):
         self.name = name
         self.cool = cool
         self._Q = Q
+
+@addQuantityProperty
+class Q_connector(Heat):
+
+    _displayVars = ['Q', 'cool']
+    _units = {'Q': 'POWER'}
+
+    @inputParser
+    def __init__(self, name, hot, cool, Q):
+        self.name = name
+        self.cool = cool
+        self._Q = Q
+
+@addQuantityProperty
+class Heatsistor(Heat):
+
+    _displayVars = ['Q', 'hot', 'cool']
+    _units = {'Q': 'POWER'}
+
+    @inputParser
+    def __init__(self, name, hot, cool, Q:'POWER'=None, H=None):
+        # Specify either Q or H
+        self.name = name
+        self.hot = hot
+        self.cool = cool
+        self.__Q = Q
+
+    @property
+    def _Q(self):
+        if self.__Q is not None:
+            return self.__Q
+        else:
+            from pdb import set_trace
+            set_trace()
+
 
 
 class discretizedHeat:

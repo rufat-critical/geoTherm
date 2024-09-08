@@ -55,23 +55,26 @@ class resistor(flowNode):
 @addQuantityProperty
 class fixedFlow(flowNode, fixedFlowNode):
     """ Resistor Object where mass flow is fixed """
-    pass
 
-    _units = {'w': 'MASSFLOW'}
+    _units = {'w': 'MASSFLOW', 'dP': 'PRESSURE'}
     _displayVars = ['w']
 
     @inputParser
     def __init__(self, name, US, DS,
-                 w:'MASSFLOW'):  # noqa
+                 w:'MASSFLOW',      # noqa
+                 dP:'PRESSURE'=0):  # noqa
 
         self.name = name
         self.US = US
         self.DS = DS
         self._w = w
+        self._dP = dP
 
     def get_outlet_state(self):
 
         # Get the Downstream thermo state
         US = self.model.nodes[self.US].thermo
+        self._dH = self._Q/self._w
 
-        return {'H': US._H, 'P': US._P}
+        return {'H': US._H + self._dH,
+                'P': US._P + self._dP}

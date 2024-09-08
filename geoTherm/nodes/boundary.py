@@ -1,35 +1,10 @@
 from .baseClasses import ThermoNode
-from ..units import inputParser
 from ..logger import logger
 import numpy as np
 
 
 class Boundary(ThermoNode):
     pass
-
-class POutlet(ThermoNode):
-
-    def evaluate(self):
-
-        outlet = self.flowNode.getOutletState()
-        try:
-            self.thermo._HP = outlet['H'], self.thermo._P
-        except:
-            print('Failed to update Poutlet')
-
-    def initialize(self, model):
-
-        # Get node_map
-        node_map = model.node_map[self.name]
-
-        if (len(node_map['US']) != 1
-            or len(node_map['DS']) != 0):
-            from pdb import set_trace
-            set_trace()
-
-        self.flowNode = model.nodes[node_map['US'][0]]
-
-        super().initialize(model)
 
 
 class PBoundary(ThermoNode):
@@ -40,7 +15,7 @@ class PBoundary(ThermoNode):
 
 
     def update_state(self, x):
-        
+
         # Get the initial state
         X0 = self.x
 
@@ -75,9 +50,8 @@ class TBoundary(ThermoNode):
 
     _displayVars = ['P', 'T', 'H', 'phase']
 
-
     def update_state(self, x):
-        
+
         # Get the initial state
         X0 = self.x
 
@@ -116,7 +90,8 @@ class TBoundary(ThermoNode):
             return self.penalty
 
         return np.array([wNet])
-    
+
+
 class Outlet(ThermoNode):
     """ Outlet Node where the state is determined by outlet properties"""
 
@@ -127,23 +102,23 @@ class Outlet(ThermoNode):
         # do some error checking to verify
         if len(self.DS_neighbors) > 0:
             logger.critical(f"Outlet Node '{self.name}' has nodes connected "
-                            f"downstream:\n{self.DS_neighbors}\n It should only be "
-                            "downstream of 1 flow node!""")
+                            f"downstream:\n{self.DS_neighbors}\n It should "
+                            "only be downstream of 1 flow node!""")
 
         if len(self.US_neighbors) > 1:
             logger.critical(f"Outlet Node '{self.name}' is connected to "
-                            f"multiple upstream nodes:\n{self.US_neighbors}\nIt should "
-                            "only be downstream of 1 flow node!")
+                            f"multiple upstream nodes:\n{self.US_neighbors}\n"
+                            "It should only be downstream of 1 flow node!")
 
         if len(self.hot_neighbors) > 0:
             logger.critical(f"Outlet Node '{self.name}' is connected to "
-                            f"hot upstream nodes:\n{self.hot_neighbors}\nIt should "
-                            "only be downstream of 1 flow node!")
+                            f"hot upstream nodes:\n{self.hot_neighbors}\nIt "
+                            "should only be downstream of 1 flow node!")
 
         if len(self.cool_neighbors) > 1:
             logger.critical(f"Outlet Node '{self.name}' is connected to "
-                            f"cool upstream nodes:\n{self.cool_neighbors}\nIt should "
-                            "only be downstream of 1 flow node!")
+                            f"cool upstream nodes:\n{self.cool_neighbors}\nIt "
+                            "should only be downstream of 1 flow node!")
 
     def evaluate(self):
 

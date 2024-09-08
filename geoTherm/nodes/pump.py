@@ -5,6 +5,9 @@ from ..utils import dH_isentropic, pump_eta
 from ..logger import logger
 import numpy as np
 
+
+@addQuantityProperty
+
 @addQuantityProperty
 class Pump(Turbo):
     """Pump class inheriting from Turbo."""
@@ -22,7 +25,7 @@ class Pump(Turbo):
               'D': 'LENGTH', 'U': 'VELOCITY'}
 
     # Bounds on flow variables
-    bounds = [1, 1000]
+    _bounds = [1, 1000]
 
     def _get_dP(self):
         """Get delta P across Pump."""
@@ -72,7 +75,7 @@ class Pump(Turbo):
     def psi(self):
         dH = self._get_dH()
 
-        return dH/self._U**2
+        return dH/self._U_tip**2
 
     @property
     def _Ns(self):
@@ -101,7 +104,7 @@ class fixedFlowPump(fixedFlowNode, Pump):
         Returns:
             np.array: Pressure ratio.
         """
-        return np.array(self._x)
+        return np.array([self.PR])
 
     def update_state(self, x):
         """
@@ -112,19 +115,15 @@ class fixedFlowPump(fixedFlowNode, Pump):
         """
 
         # Update X if it is within boudns or apply penalty
-
-        self._x = x
-        PR = x[0]*np.diff(self._bounds)
-
-        if self._bounds[0] < PR < self._bounds[1]:
-            self.penalty = False
-            self.PR = PR[0]
+        if x < self._bounds[0]:
+            self.penalty = (self._bounds[0] - x[0] + 10)*1e5
+            self.PR = self._bounds[0]
+        elif x > self._bounds[1]:
+            self.penalty = (self._bounds[1] - x[0] - 10)*1e5
+            self.PR = self._bounds[1]
         else:
-            self.penalty = (self._bounds[0] - PR - 10*np.sign(PR))*1e8
-
-    def initialize(self, model):
-        self._x = self.PR/np.diff(self._bounds)
-        return super().initialize(model)
+            self.penalty = False
+            self.PR = x[0]
 
     def __init__(self, *args, **kwargs):
         self._w_correction = 0

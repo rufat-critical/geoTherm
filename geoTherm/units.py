@@ -275,13 +275,13 @@ def inputParser(init):
             raise RuntimeError('Errors Encountered')
 
         # Retrieve default values for function arguments
-        defaults = {
-            var: val.default if val.default != val.empty else None
-            for var, val in sig.parameters.items() if var != 'self'
-        }
+        # defaults = {
+        #     var: val.default if val.default != val.empty else None
+        #     for var, val in sig.parameters.items() if var != 'self'
+        # }
 
         # Store the original inputs
-        #self.__inputs = {**defaults, **inputs}
+        # self.__inputs = {**defaults, **inputs}
 
         # Process each input argument for conversion to SI units
         for name, val in inputs.items():

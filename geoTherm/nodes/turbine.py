@@ -32,14 +32,14 @@ class Turbine(Turbo):
 
     @property
     def phi(self):
-        return self._Q_out/(self._D**2*self._U)
+        return self._Q_out/(self._D**2*self._U_tip)
 
     @property
     def psi(self):
 
         dH = self._get_dH()
 
-        return -dH/self._U**2
+        return -dH/self._U_tip**2
 
     @property
     def _Ns(self):

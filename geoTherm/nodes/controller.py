@@ -2,9 +2,6 @@ from .node import Node
 from ..utils import parse_component_attribute
 import numpy as np
 from .baseClasses import ThermoNode
-from .boundary import Boundary
-from .resistor import fixedFlowNode
-from .volume import Volume, Station
 from ..logger import logger
 
 
@@ -116,7 +113,7 @@ class Balance(BaseController):
         )
 
         self.feedback_node = model.nodes[feedback_node]
-        
+
         if not isinstance(self, ThermoBalance):
             # If this is not ThermoBalance, ensure knob_node is not a
             # ThermoNode. Check what type of node is specified
@@ -147,9 +144,6 @@ class Balance(BaseController):
         return np.array([self.knob_val])
 
     def update_state(self, x):
-        self.update_state(x)
-
-    def update_state(self, x):
         """
         Update the state of the controller based on the new knob value.
 
@@ -173,7 +167,8 @@ class Balance(BaseController):
         if self.penalty is not False:
             return np.array([self.penalty])
 
-        return (self.setpoint - self.feedback_val)*self.gain
+        return np.array([(self.setpoint - self.feedback_val)*self.gain])
+
 
 class ThermoBalance(Balance):
     """
@@ -209,8 +204,8 @@ class ThermoBalance(Balance):
     def initialize(self, model):
 
         """
-        Initialize the ThermoBalance controller, ensuring that the knob node is a ThermoNode
-        and the constant_var is a valid thermodynamic property.
+        Initialize the ThermoBalance controller, ensuring that the knob node
+        is a ThermoNode and the constant_var is a valid thermodynamic property.
 
         Args:
             model: The model containing the components to be controlled.
@@ -234,10 +229,9 @@ class ThermoBalance(Balance):
 
         # Store the initial state with the constant_var fixed
         self._state = {
-            self.constant_var:getattr(self.knob_node, self.constant_var),
+            self.constant_var: getattr(self.knob_node, self.constant_var),
             self.knob_attr: getattr(self.knob_node, self.knob_attr)
             }
-
 
     def set_knob(self, value):
         """

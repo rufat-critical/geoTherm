@@ -10,13 +10,13 @@ class Turbo(statefulFlowNode):
 
     _displayVars = ['w', 'dP:\u0394P', 'dH:\u0394H', 'W', 'PR', 'Q_in',
                     'Q_out', 'Ns', 'Ds', 'D', 'Mach_in', 'Mach_out',
-                    'phi:\u03C6', 'psi:\u03C8', 'psi_is:\u03C8_is', 'U',
+                    'phi:\u03C6', 'psi:\u03C8', 'psi_is:\u03C8_is', 'U_tip',
                     'eta:\u03B7']
 
     _units = {'w': 'MASSFLOW', 'W': 'POWER', 'dH': 'SPECIFICENERGY',
               'dP': 'PRESSURE', 'Q_in': 'VOLUMETRICFLOW',
               'Q_out': 'VOLUMETRICFLOW', 'Q': 'POWER', 'Ns': 'SPECIFICSPEED',
-              'Ds': 'SPECIFICDIAMETER', 'D': 'LENGTH', 'U': 'VELOCITY'}
+              'Ds': 'SPECIFICDIAMETER', 'D': 'LENGTH', 'U_tip': 'VELOCITY'}
 
     # Bounds on flow variables
     bounds = [-1e5, 1e5]
@@ -27,9 +27,9 @@ class Turbo(statefulFlowNode):
                  DS,
                  rotor,
                  PR=2,
-                 D:'LENGTH'=1,
+                 D: 'LENGTH' = 1,       # noqa
                  eta=None,
-                 w:'MASSFLOW'=1,
+                 w: 'MASSFLOW' = 1,     # noqa
                  axial=False):
         """
         Initialize the Turbo Node.
@@ -70,7 +70,8 @@ class Turbo(statefulFlowNode):
         self.axial = axial
 
         if self.__eta is None:
-            logger.info(f"eta for {self.name} will be calculated using Claudio's Curves")
+            logger.info(f"eta for {self.name} will be calculated using "
+                        "Claudio's Curves")
             self.update_eta = True
             # Set to an initial value
             self.eta = 1
@@ -89,7 +90,7 @@ class Turbo(statefulFlowNode):
 
     def initialize(self, model):
 
-        #Create a reference thermo object to evaluate outlet properties
+        # Create a reference thermo object to evaluate outlet properties
         self._ref_thermo = thermo.from_state(model.nodes[self.US].thermo.state)
 
         self.rotor_node = model.nodes[self.rotor]
@@ -122,35 +123,30 @@ class Turbo(statefulFlowNode):
         # Volumeetric flow in
 
         # Get Thermo States
-        #US, DS = self._getThermo()
+        US, _ = self._get_thermo()
 
         # Get Upstream
-        return self._w/self.US_node.thermo._density
+        return self._w/US.thermo._density
 
     @property
     def _Q_out(self):
         # Volumetric Flow Out
 
-        # Get Thermo States
-        #US, DS = self._getThermo()
-
         self._update_outlet_thermo()
         DS_density = self._ref_thermo._density
-
 
         # Get Downstream node density
         return self._w/DS_density
 
-
     @property
-    def _U(self):
+    def _U_tip(self):
         # Rotor Tip Speed
         return self._D*self.rotor_node.Nrad/2
 
     @property
     def psi_is(self):
         # Isentropic Work Coefficient
-        return np.abs(self._dH_is)/self._U**2
+        return np.abs(self._dH_is)/self._U_tip**2
 
     @property
     def _c0_is(self):
@@ -169,10 +165,10 @@ class Turbo(statefulFlowNode):
 
         try:
             DS_sound = self._ref_thermo.sound
-        except:
+        except Exception:
             return 'two-phase'
 
-        return self._c0_is/DS_sound#self.DS_node.thermo.sound
+        return self._c0_is/DS_sound
 
     @property
     def N(self):
@@ -226,10 +222,10 @@ class TurboSizer(Turbo):
                  rotor,
                  PR=2,
                  eta=None,
-                 w:'MASSFLOW'=1,
-                 Ns:'SPECIFICSPEED'=None,
+                 w: 'MASSFLOW' = 1,                 # noqa
+                 Ns: 'SPECIFICSPEED' = None,        # noqa
                  ns=None,
-                 Ds:'SPECIFICDIAMETER'=None,
+                 Ds: 'SPECIFICDIAMETER' = None,     # noqa
                  phi=None,
                  psi=None,
                  axial=False):
@@ -275,15 +271,16 @@ class TurboSizer(Turbo):
                         'psi': psi}
 
         self._targets = {'Ns': Ns,
-                        'ns': ns,
-                        'Ds': Ds,
-                        'phi': phi,
-                        'psi': psi}
+                         'ns': ns,
+                         'Ds': Ds,
+                         'phi': phi,
+                         'psi': psi}
 
         self.axial = axial
 
         if self.__eta is None:
-            logger.info(f"eta for {self.name} will be calculated using Claudio's Curves")
+            logger.info(f"eta for {self.name} will be calculated using "
+                        "Claudio's Curves")
             self.update_eta = True
             # Set to an initial value
             self.eta = 1
@@ -304,14 +301,13 @@ class TurboSizer(Turbo):
         super().initialize(model)
 
         # Sort thru targets list and make sure only 2 targets are specified
-        targets = [k for k,v in self.targets.items() if v is not None]
+        targets = [k for k, v in self.targets.items() if v is not None]
 
         if len(targets) != 2:
             logger.critical(f"Turbo Sizer '{self.name} can only have 2 "
                             "targets specified. Possible options are:\n"
                             'Ns, ns, Ds, phi, psi')
 
-        #self.__Ns, self.__Ds = self._target_NsDs()
         self._target_NsDs()
 
     def _target_NsDs2(self):
@@ -358,7 +354,6 @@ class TurboSizer(Turbo):
                 set_trace()
 
             Ds_target = psi**(1/4)/np.sqrt(phi)
-
 
         return Ns_target, Ds_target
 
@@ -415,9 +410,6 @@ class TurboSizer(Turbo):
         self._targets['psi'] = (60/(np.pi*Ds_target*Ns_target))**2
         self._targets['phi'] = (self._targets['psi']**(1/4)/Ds_target)**2
 
-        #return Ns_target, Ds_target
-
-
     def evaluate(self):
         # Calculate Node and rotor parameters
 
@@ -437,8 +429,9 @@ class TurboSizer(Turbo):
         super().evaluate()
 
     def _update_rotor(self):
-        self.rotor_node.N = self._targets['Ns']*(-self._dH_is)**0.75/np.sqrt(self._Q_out)
-    
+        self.rotor_node.N = (self._targets['Ns']*(-self._dH_is)**0.75
+                             / np.sqrt(self._Q_out))
+
     @property
     def _Ns(self):
         """ Turbine Specific Speed Dimensional in SI """
@@ -455,7 +448,7 @@ class TurboSizer(Turbo):
 
     def update_targets(self, Ns=None, ns=None, Ds=None, phi=None, psi=None):
 
-        # Check if more than 2 specified 
+        # Check if more than 2 specified
         self.targets = {'Ns': Ns,
                         'ns': ns,
                         'Ds': Ds,
@@ -463,7 +456,7 @@ class TurboSizer(Turbo):
                         'psi': psi}
 
         # Sort thru targets list and make sure only 2 targets are specified
-        targets = [k for k,v in self.targets.items() if v is not None]
+        targets = [k for k, v in self.targets.items() if v is not None]
 
         if len(targets) != 2:
             logger.critical(f"Turbo Sizer '{self.name} can only have 2 "

@@ -68,18 +68,7 @@ class flow(statefulFlowNode):
         if self._w == 0:
             return 0
         else:
-            # Get Heat
-            #self._Q = self._get_Q(US, DS)
-
             return self._Q/np.abs(self._w)
-
-    #def _get_Q(self, US, DS):
-    #    # Update Heat in Pipe
-
-    #    if self._Qobj is not None:
-    #        self._Q = -self._Qobj._Q
-    #
-    #   return self._Q
 
     def initialize(self, model):
 

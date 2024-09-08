@@ -220,7 +220,7 @@ class CylindricalWall(Wall):
 
    
 
-class Heatsistor(Node):
+class Heatsistor_surface(Node):
 
     _displayVars = ['_UA']
 
