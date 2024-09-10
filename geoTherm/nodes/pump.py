@@ -135,12 +135,9 @@ class fixedFlowPump(fixedFlowNode, Pump):
         if self.penalty is not False:
             return self.penalty
         else:
-        # Get Thermo States
-            #self._w_correction = (self.US_node.thermo._P/self.DS_node.thermo._P
-            #                      - self.PR)*.0001
-
             return (self.DS_node.thermo._P/self.US_node.thermo._P
                     - self.PR)
+
     @property
     def _w(self):
         # Correction Term

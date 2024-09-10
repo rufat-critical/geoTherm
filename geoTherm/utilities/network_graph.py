@@ -76,7 +76,7 @@ def generate_dot_code(model):
             color = 'red'
             label = (
                 f"{name}\nQ: {node.Q:.1f} {u['POWER']}\n"
-            )  
+            )
         else:
             color = 'orange'
             shape = 'circle'
@@ -214,7 +214,7 @@ def make_graphml_diagram(model, file_path):
             label += (
                 f"w: {node.w:.2f} {u['MASSFLOW']}\n"
                 f"Q: {node.Q:.1f} {u['POWER']}\n"
-                f"dP: {node.dP:.1f} {u['PRESSURE']}\n")            
+                f"dP: {node.dP:.1f} {u['PRESSURE']}\n")
         elif isinstance(node, flowNode):
             shape = 'diamond'
             border_color = '#000000'  # Black
@@ -256,8 +256,6 @@ def make_graphml_diagram(model, file_path):
                            line_type='dashed')
                 g.add_edge(load, name, arrowhead='standard',
                            line_type='dashed')
-
-
 
     g.write_graph(file_path)
 

@@ -256,12 +256,17 @@ class thermoPlotter:
         y_vals = np.full_like(x_sweep, np.nan)
 
         for i, x in enumerate(x_sweep):
-            self._update_thermo({x_prop: x,
-                                 process_var: p_sweep[i]},
-                                 SI=True)
+            try:
+                self._update_thermo({x_prop: x,
+                                    process_var: p_sweep[i]},
+                                    SI=True)
+                x_vals[i] = self.evaluate_thermo(x_prop)
+                y_vals[i] = self.evaluate_thermo(y_prop)
+            except Exception:
+                continue
 
-            x_vals[i] = self.evaluate_thermo(x_prop)
-            y_vals[i] = self.evaluate_thermo(y_prop)
+        x_vals = x_vals[~np.isnan(x_vals)]
+        y_vals = y_vals[~np.isnan(y_vals)]
 
         return x_vals, y_vals
 
@@ -458,7 +463,7 @@ class thermoPlotter:
         if 'v' in state:
             state['D'] = 1/state['v']
             del(state['v'])
-        
+
         if SI:
             self.thermo._update_state(state)
         else:
@@ -486,7 +491,7 @@ class thermoPlotter:
             # Add statepoint name over state point
             plt.text(x, y, name)
 
-    def _plot_process_lines(self,ax, x_prop, y_prop):
+    def _plot_process_lines(self, ax, x_prop, y_prop):
 
         self.make_process_lines(x_prop, y_prop)
 
@@ -518,6 +523,7 @@ class thermoPlotter:
                     color=self.process_lines[name]['color'],  # color of the arrow
                     linewidth=2.5,  # linewidth of the arrow
                     )
+
             ax.add_patch(arrow)
 
     def _plot_isolines(self, ax, x_prop, y_prop):

@@ -162,7 +162,10 @@ class Node:
             else:
                 var = dVar
 
-            val = getattr(self, var)
+            try:
+                val = getattr(self, var)
+            except:
+                val = 'error'
 
             # Format the variable depending on its type
             if isinstance(val, (int, float)):

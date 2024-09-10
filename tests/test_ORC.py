@@ -72,7 +72,7 @@ def test_stechmann():
                   #gt.staticHEX(name='WaterHEX', US='Well', DS='WaterHEXOut',w=mdot_H2O, dP-=(38, 'bar')),#, Q= -ORC['ORC_HEX']._Q, dP =(38, 'bar'),w=50.232),
                   #gt.Qdot(name='ORC_Heat2', cool='WaterHEX', Q=(-21 , 'MW')),
                   gt.fixedFlow(name='WaterHEX', US='Well', DS='WaterHEXOut', dP =(-38, 'bar'),w=mdot_H2O),
-                  gt.Station(name='WaterHEXOut', fluid=HOT_fluid),#, P=(2, 'bar'), T=473+5),
+                  gt.PBoundary(name='WaterHEXOut', fluid=HOT_fluid),#, P=(2, 'bar'), T=473+5),
                   gt.Outlet(name='Outlet', fluid=HOT_fluid, P=(140, 'bar'), T=500),
                   gt.Pump(name='WaterPump',rotor='DummyRotor', eta=.7,PR=140/2,w=mdot_H2O*20,US='WaterHEXOut',DS='Outlet')])
 
@@ -82,7 +82,6 @@ def test_stechmann():
     combined += gt.Balance('Turbin_Temp', 'Pump.w', 'TurbIn.T', 470, knob_min=0.5, knob_max=100)
     combined += HOT
     combined.solve_steady()
-    
     assert math.isclose(combined.performance[0], 4069798.232, abs_tol=1e-3)
     assert math.isclose(combined.performance[2], 12.972, abs_tol=1e-3)
     assert math.isclose(combined.nodes['TurbIn'].T, 470, abs_tol=1e-3)

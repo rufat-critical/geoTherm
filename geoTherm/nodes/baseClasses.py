@@ -41,10 +41,14 @@ class flowNode(Node):
         self.hot_nodes = [model.nodes[name] for name in node_map['hot']]
         self.cool_nodes = [model.nodes[name] for name in node_map['cool']]
 
-        # Initialize attributes if not already defined
-        self._w = getattr(self, '_w', 0)
-        self._dP = getattr(self, '_dP', 0)
-        self._dH = getattr(self, '_dH', 0)
+        # Initialize attributes if not already defined and no property
+        # is defined
+        if not hasattr(self, '_w'):
+            self._w = 0
+        if not hasattr(self, '_dP'):
+            self._dP = 0
+        if not hasattr(self, '_dH'):
+            self._dH = 0
 
         # Continue with further initialization
         return super().initialize(model)
@@ -244,7 +248,13 @@ class statefulFlowNode(flowNode):
         return np.array([(outletState['P'] - DS._P)*np.sign(self._w)])
 
     def get_outlet_state(self):
+        """
+        Calculate the thermodynamic state at the outlet (downstream).
 
+        Returns:
+            dict: A dictionary containing the enthalpy ('H') and pressure ('P')
+                  at the downstream node.
+        """
         # Get US, DS Thermo
         US, DS = self._get_thermo()
 

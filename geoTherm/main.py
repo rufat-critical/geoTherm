@@ -62,6 +62,8 @@ class Conditioner:
                 node._bounds[0] != -np.inf and
                 node._bounds[1] != np.inf):
             return 1 / (node._bounds[1] - node._bounds[0])
+        elif isinstance(node, gt.PBoundary):
+            return np.array([1e-1])
         elif isinstance(node, gt.ThermoNode):
             return np.array([1e-1, 1e-5])
         else:
@@ -670,7 +672,6 @@ class Model(modelTable):
             Qnet -= self.nodes[name]._Q
 
         return wNet, Hnet, Wnet, Qnet
-
 
     @property
     def converged(self):
@@ -1413,7 +1414,7 @@ class Branch:
         return dsState
 
     def initialize(self):
-        
+
         # Define the states defining this dict
 
         # If PR Turbine then set PR as state controller
