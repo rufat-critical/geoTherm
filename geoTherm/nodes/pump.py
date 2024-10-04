@@ -7,8 +7,6 @@ import numpy as np
 
 
 @addQuantityProperty
-
-@addQuantityProperty
 class Pump(Turbo):
     """Pump class inheriting from Turbo."""
 

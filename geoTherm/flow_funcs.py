@@ -3,6 +3,7 @@ import numpy as np
 from .thermostate import thermo
 from scipy.optimize import root_scalar
 from .logger import logger
+from .logger import logger
 
 
 def _extend_bounds(f, bounds, max_iter=10, factor=1.5):
@@ -27,27 +28,32 @@ def _extend_bounds(f, bounds, max_iter=10, factor=1.5):
 
     iteration = 0
 
-    while np.sign(f_lower) == np.sign(f_upper) and iteration < max_iter:
+    while iteration < max_iter:
         # Extend bounds by multiplying with the factor
         if f_lower < 0 and f_upper < 0:
             # If both are negative, extend upper bound
             lower = upper
             upper *= factor
+            f_lower = f_upper
+            f_upper = f(upper)
         elif f_lower > 0 and f_upper > 0:
             # If both are positive, reduce lower bound
             upper = lower
             lower /= factor
+            f_upper = f_lower
+            f_lower = f(lower)
         else:
             # In case the signs are mixed or zero, we have proper bounds
-            break
+            return [lower, upper]
 
-        # Re-evaluate function at the new bounds
-        f_lower = f(lower)
-        f_upper = f(upper)
         iteration += 1
 
-    # Return adjusted bounds
-    return [lower, upper]
+    # Check if f_upper and f_lower are the same sign
+    if np.sign(f_upper) == np.sign(f_lower):
+        return None
+    else:
+        return [lower, upper]
+
 
 
 def _total_to_static(total, w_flux, supersonic=False, static=None):
@@ -71,7 +77,10 @@ def _total_to_static(total, w_flux, supersonic=False, static=None):
         return static
 
     # Calculate critical pressure ratio for Mach 1
-    PR_crit = perfect_ratio_from_Mach(1, total.gamma, 'PR')
+    if total.phase in ['gas', 'supercritical gas']:
+        PR_crit = perfect_ratio_from_Mach(1, total.gamma, 'PR')
+    else:
+        PR_crit = 0.8
 
     def hunt_PR(PR):
         # Constrain PR to valid range
@@ -93,12 +102,14 @@ def _total_to_static(total, w_flux, supersonic=False, static=None):
     # Extend bounds if the sign is the same
     P_bounds = _extend_bounds(hunt_PR, P_bounds, max_iter=20, factor=1.5)
 
-    try:
-        # Solve for pressure ratio (PR) using subsonic or supersonic bounds
-        PR = root_scalar(hunt_PR, method='brentq', bracket=P_bounds).root
-    except Exception:
-        from pdb import set_trace
-        set_trace()
+    if not P_bounds:
+        logger.warn(
+            f"No static state solution for mass_flux of {w_flux}"
+            )
+        return None
+
+    # Solve for pressure ratio (PR) using subsonic or supersonic bounds
+    PR = root_scalar(hunt_PR, method='brentq', bracket=P_bounds).root
 
     static._SP = total._S, PR * total._P
     return static
@@ -565,7 +576,7 @@ def _w_isen(US_thermo, DS_thermo, cdA) -> float:
     outlet = thermo.from_state(US.state)
     outlet._SP = US._S, DS._P
 
-    U = np.sqrt(2*(US._H - outlet._H))
+    U = np.sqrt(2*(US._H - outlet._H + 1e-9))
 
     # Check if the flow is sonic
     if U > outlet.sound:
@@ -597,8 +608,12 @@ def _dP_isen(US_thermo, w_flux) -> float:
 
     static = _total_to_static(US_thermo, w_flux)
 
-    return static._P - US_thermo._P
-
+    if static:
+        return static._P - US_thermo._P
+    else:
+        # If no solution is found because mass flux is too high
+        # then _total_to_static will output None, return None
+        return static
 
 def Mach_isentropic(US_thermo, DS_thermo) -> float:
     """

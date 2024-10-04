@@ -272,8 +272,8 @@ class simpleHEX(flow):
 
         else:
             self.update_dP = False
-            self.__dPsetpoint = -dP
-            self._dP = -dP
+            self.__dPsetpoint = dP
+            self._dP = dP
 
         self.__Q = Q
 
@@ -324,13 +324,17 @@ class Qdot2(statefulHeatNode):
 @addQuantityProperty
 class Qdot(Heat):
 
-    _displayVars = ['Q', 'cool']
+    _displayVars = ['Q', 'hot', 'cool']
     _units = {'Q': 'POWER'}
 
     @inputParser
-    def __init__(self, name, cool, Q:'POWER'=0):
+    def __init__(self, name, hot=None, cool=None,
+                 Q:'POWER'=0):
         self.name = name
-        self.cool = cool
+        if hot is not None:
+            self.hot = hot
+        if cool is not None:
+            self.cool = cool
         self._Q = Q
 
 @addQuantityProperty
@@ -352,21 +356,31 @@ class Heatsistor(Heat):
     _units = {'Q': 'POWER'}
 
     @inputParser
-    def __init__(self, name, hot, cool, Q:'POWER'=None, H=None):
+    def __init__(self, name, hot, cool, H:'CONVECTION'):
         # Specify either Q or H
         self.name = name
         self.hot = hot
         self.cool = cool
-        self.__Q = Q
+        self._H = H
+    
+    def evaluate(self):
+        T_hot = self.model[self.hot].thermo._T
+        T_cold = self.model[self.cool].thermo._T
+        self._Q = self._H*(T_hot-T_cold)
 
-    @property
-    def _Q(self):
-        if self.__Q is not None:
-            return self.__Q
-        else:
-            from pdb import set_trace
-            set_trace()
 
+
+class fixedQ(Heat):
+    _displayVars = ['Q', 'hot', 'cool']
+    _units = {'Q': 'POWER'}  
+
+    @inputParser
+    def __init__(self, name, hot, cool, Q:'POWER'):
+        # Specify either Q or H
+        self.name = name
+        self.hot = hot
+        self.cool = cool
+        self._Q = Q
 
 
 class discretizedHeat:

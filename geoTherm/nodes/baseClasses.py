@@ -105,8 +105,11 @@ class flowNode(Node):
         # Get the Outlet State
         dsState = self.get_outlet_state()
 
-        # Return the downstream node and downstream state
-        return dsNode, dsState
+        if dsState:
+            # Return the downstream node and downstream state
+            return dsNode, dsState
+        else:
+            return dsNode, None
 
     def get_outlet_state(self):
         """
@@ -386,7 +389,7 @@ class ThermoNode(Node):
             return False
         except Exception as e:
             # If an error occurs, trigger debugging and return True
-            logger.error(f"Failed to update thermo state: {e}")
+            logger.error(f"Failed to update thermo state for {self.name}: {e}")
             return True
 
     @property

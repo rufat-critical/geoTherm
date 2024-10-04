@@ -50,9 +50,11 @@ class resistor(flowNode):
 
         self._dP = self._dP_func(US, self._w/self._area)
 
-        return {'H': US._H,
-                'P': US._P + self._dP}
-
+        if self._dP:
+            return {'H': US._H,
+                    'P': US._P + self._dP}
+        else:
+            return self._dP
 
 @addQuantityProperty
 class fixedFlow(flowNode, fixedFlowNode):

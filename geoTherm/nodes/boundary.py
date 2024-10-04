@@ -1,5 +1,4 @@
 from .baseClasses import ThermoNode
-from ..thermostate import thermo
 from ..logger import logger
 import numpy as np
 
@@ -13,7 +12,6 @@ class PBoundary(ThermoNode):
     calculated based on conservation """
 
     _displayVars = ['P', 'T']
-
 
     def update_state(self, x):
 
