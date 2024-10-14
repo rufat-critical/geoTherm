@@ -107,8 +107,9 @@ class UnitSystem:
         table.add_column(f"Input Unit: {self._input}")
         table.add_column(f"Output Unit: {self._output}")
 
-        for quantity, unit in self.input_units.items():
-            table.add_row(quantity, unit, self.output_units[quantity])
+        for quantity in sorted(self.input_units.keys()):
+            table.add_row(quantity, self.input_units[quantity],
+                          self.output_units[quantity])
 
         # Capture the table output using the rich console
         console = Console()
