@@ -95,7 +95,7 @@ class UnitSystem:
         """Return a formatted string representation of the UnitSystem."""
         return self._make_table()
 
-    def _makeTable(self):
+    def _make_table(self):
         """
         Create a formatted table representation of the UnitSystem using rich.
 
