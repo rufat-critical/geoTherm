@@ -1,5 +1,5 @@
 from .baseClasses import fixedFlowNode
-from .baseTurbo import Turbo
+from .baseTurbo import Turbo, pumpParameters, fixedFlowTurbo
 from ..units import addQuantityProperty
 from ..utils import dH_isentropic, pump_eta
 from ..logger import logger
@@ -7,7 +7,7 @@ import numpy as np
 
 
 @addQuantityProperty
-class Pump(Turbo):
+class Pump(Turbo, pumpParameters):
     """Pump class inheriting from Turbo."""
 
     _displayVars = ['w', 'dP:\u0394P', 'dH:\u0394H', 'W', 'PR', 'Q_in',
@@ -49,45 +49,9 @@ class Pump(Turbo):
 
         return dH_isentropic(US, US._P*self.PR)
 
-    @property
-    def _NPSP(self):
-        try:
-            return self.US_node.thermo._P - self._ref_thermo._Pvap
-        except:
-            return 0
-
-    @property
-    def _u_tip(self):
-        return np.sqrt(self._dH_is/self.psi)
-
-    @property
-    def _Ds(self):
-        """ Pump Specific Diameter """
-        return self._D/np.sqrt(self._Q_in)*(self._dH_is)**0.25
-
-    @property
-    def phi(self):
-        return self._Q_in/(self._D**2*self._u_tip)
-
-    @property
-    def psi(self):
-        dH = self._get_dH()
-
-        return dH/self._U_tip**2
-
-    @property
-    def _Ns(self):
-        """ Pump Specific Speed Dimensional in SI """
-        return self.rotor_node.N*np.sqrt(self._Q_in)/(self._dH_is)**(0.75)
-
-    @property
-    def _NSS(self):
-        return (self.rotor_node.N*np.sqrt(self._Q_in)
-                / (np.abs(self._NPSP)
-                   / (9.81*self.US_node.thermo._density))**0.75)
 
 
-class fixedFlowPump(fixedFlowNode, Pump):
+class fixedFlowPump(fixedFlowTurbo, Pump):
     """Pump class with fixed mass flow."""
 
     # State Bounds, defining them here for now
@@ -137,7 +101,7 @@ class fixedFlowPump(fixedFlowNode, Pump):
                     - self.PR)
 
     @property
-    def _w(self):
+    def _w2(self):
         # Correction Term
         #if hasattr(self, 'DS_node'):
         #    corr = (self.DS_node.thermo._P/self.US_node.thermo._P
@@ -146,8 +110,11 @@ class fixedFlowPump(fixedFlowNode, Pump):
         #    corr = 0
         #return self._w_setpoint + corr*.1
 
+        from pdb import set_trace
+        set_trace()
+
         return self._w_setpoint*(1+self._w_correction)
 
-    @_w.setter
-    def _w(self, w):
+    @_w2.setter
+    def _w2(self, w):
         self._w_setpoint = w

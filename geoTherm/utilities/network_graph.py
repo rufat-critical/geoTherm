@@ -189,6 +189,16 @@ def make_graphml_diagram(model, file_path):
                 f"T: {node.T:.1f} {u['TEMPERATURE']}\n"
                 f"P: {node.P:.1f} {u['PRESSURE']}"
             )
+        elif isinstance(node, Heat):
+            shape = 'ellipse'
+            if node._Q > 0:
+                border_color = '#FF0000'  # Red
+            else:
+                border_color = '#0000FF'  # Blue
+            fill_color = '#FFFFFF'  # White
+            label += (
+                f"Q: {node.Q:.2f} {u['POWER']}"
+            )
         elif isinstance(node, Turbine):
             shape = 'trapezoid2'
             border_color = '#000000'  # Black

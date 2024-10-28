@@ -67,6 +67,8 @@ class Conditioner:
                 node._bounds[0] != -np.inf and
                 node._bounds[1] != np.inf):
             return 1 / (node._bounds[1] - node._bounds[0])
+        elif isinstance(node, gt.TBoundary):
+            return np.array([1e-1])
         elif isinstance(node, gt.PBoundary):
             return np.array([1e-1])
         elif isinstance(node, gt.ThermoNode):
@@ -253,6 +255,8 @@ class Model(modelTable):
 
         if len(self.__x) > 0:
             self.__error = np.zeros(len(self.__x))
+        else:
+            self.__error = []
 
         # Run error checker
         if self._error_checker():
@@ -375,15 +379,18 @@ class Model(modelTable):
         self.update_state(x)
 
         # Evaluate the nodes
-        for name, node in self.nodes.items():
-            if hasattr(node, 'evaluate'):
-                node.evaluate()
+        self.evaluate_nodes()
 
         # Return the error
         return self.xdot
 
     def steady_evaluate(self, x, t=0):
         return self.evaluate(t, x)
+
+    def evaluate_nodes(self):
+        for name, node in self.nodes.items():
+            if hasattr(node, 'evaluate'):
+                node.evaluate()
 
     def addNode(self, nodes):
         """ Add nodes to the model """
@@ -543,6 +550,8 @@ class Model(modelTable):
         # Check if this is a stateless model
         if len(self.x) == 0:
             # We don't need to solve anything
+            # Just evaluate nodes
+            self.evaluate_nodes()
             return self.x
 
         if netSolver:
@@ -587,9 +596,9 @@ class Model(modelTable):
         else:
             return self.x
 
+        # USE SIM TO TRY AND SOVLE MODEL
         from pdb import set_trace
         set_trace()
-        # USE SIM TO TRY AND SOVLE MODEL
 
     def draw(self, file_path='geoTherm_model_diagram.svg', auto_open=True):
         """
@@ -1223,7 +1232,7 @@ class Branch:
         # Backflow flag
         self.backFlow = False
         # Node for controlling mass flow
-        self.flow_setter_node = None
+        self.fixed_flow_node = None
         self.penalty = False
 
         self.initialized = False
@@ -1243,191 +1252,20 @@ class Branch:
         flow_elements = 0
 
         for node in self.nodes:
-            if isinstance(node, gt.flowNode):
+            if isinstance(node, (gt.flowNode,
+                          gt.BoundaryConnector)):
                 Wnet += node._w
                 flow_elements += 1
 
+        if flow_elements == 0:
+            from pdb import set_trace
+            set_trace()
+
         return float(Wnet/flow_elements)
-
-    def evaluate_copy(self):
-        """
-        Evaluate the branch by updating nodes and calculating errors.
-
-        This method checks the flow and state of each node in the branch,
-        reverses order for backflow, and computes errors if constraints
-        are violated.
-        """
-        nodes = self.nodes
-
-        print("****** CHECK ME***********")
-        # WHat I need to do:
-        # Update the values and check for error:
-        # dP low
-        # Thermo Error
-        # ...
-        # Apply Penalty
-        # Revert x to x0
-        # xdot func that checks penalty
-
-        # Update mass flow if fixed flow is enabled
-        if self.fixedFlow:
-            if self.flow_setter_node is not None:
-                self._w = self.flow_setter_node._w
-
-        # Reverse order if w is negative
-        if self._w < 0:
-            if self.backFlow:
-                # Reverse node order
-                nodes = nodes[::-1]
-                # dP will be calculated and compared to this Pressure
-                Pout = self.USJunc.thermo._P
-                DS_junction = self.US_junction.name
-            else:
-                self.error = (-self._w + 1)*1e5
-                return
-        else:
-            Pout = self.DSJunc.thermo._P
-            DS_junction = self.DS_junction.name
-
-        # Check for penalty
-        if self.penalty is not False:
-            self.error = self.penalty
-            return
-
-        # Loop thru Branch nodes
-        for inode, node in enumerate(nodes):
-            # Evaluate the node
-            node.evaluate()
-
-            if isinstance(node, (gt.ThermoNode)):
-                # We're working with either a thermoNode or Station node.
-                # The expected pattern of connections is:
-                # flowNode => Station => flowNode
-                # The following logic checks and enforces this pattern.
-
-                # Perform a bitwise AND operation to check if 'inode' is even.
-                # '0x1' is the hexadecimal representation of the binary value
-                # '0001'. If 'inode & 0x1' results in 0, 'inode' is even,
-                # otherwise it's odd. If 'inode' is even, trigger the debugger
-                # to inspect the state.
-                if not inode & 0x1:
-                    from pdb import set_trace
-                    set_trace()
-
-                # Skip the rest of the loop iteration for this node
-                continue
-
-            if isinstance(node, gt.TBoundary):
-                continue
-
-            # Update the downstream state
-            try:
-                dsNode, dsState = node._set_flow(self._w)
-                if dsState is None:
-                    print('NONE')
-                    print(self._w)
-                    if self.fixedFlow:
-                        if isinstance(self.flow_setter_node, gt.Pump):
-                            #self.error = (-dsState['P']+10)*1e5
-                            from pdb import set_trace
-                            set_trace()
-                        else:
-                            from pdb import set_trace
-                            set_trace()   
-                    else:
-                        # This is negative so use error to decrease mass flow
-                        self.error = (-self._w-10*np.sign(self._w))*1e5
-                    return
-            except Exception:
-                print("ERR")
-                from pdb import set_trace
-                set_trace()
-
-            if dsState['P'] < 0:
-                # Pressure drop is too high because massflow too high,
-                # lets decrease mass flow by applying penalty
-                # Maybe set this as seperate method for different cases
-                logger.info("Pressure <0 detected in Branch "
-                            f"'{self.name}' for branch state: "
-                            f"{self.x}")
-
-                if self.fixedFlow:
-                    # Calculate Error based on pressure
-                    if isinstance(self.flow_setter_node, gt.Pump):
-                        self.error = (-dsState['P']+10)*1e5
-                    else:
-                        from pdb import set_trace
-                        set_trace()
-                else:
-                    # This is negative so use error to decrease mass flow
-                    self.error = (dsState['P']+10)*1e5
-                return
-
-            # Last node error check
-            if inode == len(nodes) - 1:
-                if dsNode != DS_junction:
-                    # dsNode is not dsJunc for some reason
-                    # error check
-                    print('here')
-                    node._set_flow(self._w)
-                    from pdb import set_trace
-                    set_trace()
-
-                if self.fixedFlow:
-                    if self.penalty is not False:
-                        self.error = self.penalty
-                        return
-
-                    if isinstance(self.flow_setter_node, gt.Turbine):
-                        self.error = (dsState['P']/Pout - 1)*Pout
-                    elif isinstance(self.flow_setter_node, gt.Pump):
-                        self.error = (Pout/dsState['P'] - 1)*dsState['P']*1e2
-
-                else:
-                    self.error = (np.sign(dsState['P']-Pout)
-                                  * np.abs(dsState['P']-Pout)**1.3
-                                  + (dsState['P']-Pout)*10)
-
-                if self.model.debug:
-                    from pdb import set_trace
-                    set_trace()
-                return
-
-            if isinstance(node, (gt.flowNode, gt.Turbo)):
-
-                if nodes[inode+1].name != dsNode:
-                    # Error checking, dsNode should be the next
-                    # node in the list
-                    from pdb import set_trace
-                    set_trace()
-                
-                dsState = self._getDSThermo(dsNode, dsState)
-                # Update thermo for dsNode
-
-                if isinstance(nodes[inode+1], (gt.TBoundary, gt.PBoundary)):
-                    error = self.model.nodes[dsNode].update_thermo(dsState)
-                else:
-                    error = self.model.nodes[dsNode].update_thermo(dsState)
-
-                if error:
-                    print("W:")
-                    print(self._w, self._x0)
-                    logger.warn("Failed to update thermostate in Branch "
-                                f" evaluate call for '{dsNode}' to state: "
-                                f"{dsState}")
-
-                    # Reduce Mass Flow
-                    # What if PR
-                    if self.fixedFlow:
-                        # Point error back to x0
-                        self.error = (self._x0 - self.x)*1e5
-                    else:
-                        self.error = (-self._w - np.sign(self._w+eps))*1e5
-                    return
 
     @property
     def xdot(self):
-        
+
         if self.penalty is not False:
             return np.array([self.penalty])
 
@@ -1437,19 +1275,20 @@ class Branch:
             Pout = self.DSJunc.thermo._P
 
         if self.fixedFlow:
-            if isinstance(self.flow_setter_node, gt.Turbine):
+            if isinstance(self.fixed_flow_node, gt.Turbine):
                 self.error = (self.DS_target['P']/Pout - 1)*Pout
-            elif isinstance(self.flow_setter_node, gt.Pump):
-                self.error = (Pout/self.DS_target['P'] - 1)*self.DS_target['P']*1e2                
+            elif isinstance(self.fixed_flow_node, gt.Pump):
+                self.error = (Pout/self.DS_target['P'] - 1)*self.DS_target['P']*1e2
+
             else:
                 from pdb import set_trace
                 set_trace()
 
-
+        else:
         #if self.fixedFlow:
-        self.error = (np.sign(self.DS_target['P']-Pout)
-                      * np.abs(self.DS_target['P']-Pout)**1.3
-                      + (self.DS_target['P']-Pout)*10)
+            self.error = (np.sign(self.DS_target['P']-Pout)
+                        * np.abs(self.DS_target['P']-Pout)**1.3
+                        + (self.DS_target['P']-Pout)*10)
         
         return np.array([self.error])
 
@@ -1465,9 +1304,8 @@ class Branch:
         nodes = self.nodes
 
         # Update mass flow if this is a fixed flow branch
-        # and mass flow is set but a setter node
-        if self.fixedFlow and self.flow_setter_node is not None:
-            self._w = self.flow_setter_node._w
+        if self.fixedFlow:
+            self._w = self.fixed_flow_node._w
 
         if self.penalty:
             # If penalty was triggered then return
@@ -1507,16 +1345,22 @@ class Branch:
             if isinstance(node, gt.TBoundary):
                 continue
 
-            # Update the downstream state
-            DS_node, DS_state = node._set_flow(self._w)
+            if isinstance(node, gt.fixedFlowNode):
+                pass
+            else:
+                # Update the downstream state
+                node._set_flow(self._w)
+
+            DS_node, DS_state = node.get_DS_state()
+
             if DS_state is None:
                 # If this is none then there was an error
                 # with setting the flow, so lets apply penalty
                 logger.warn(f"Error trying to set node {node.name} to "
                             f"{self._w} in branch {self.name}")
-                
+
                 if self.fixedFlow:
-                    if isinstance(self.flow_setter_node, gt.Pump):
+                    if isinstance(self.fixed_flow_node, gt.Pump):
                         from pdb import set_trace
                         set_trace()
                     else:
@@ -1537,7 +1381,7 @@ class Branch:
 
                 if self.fixedFlow:
                     # Calculate penalty based on pressure
-                    if isinstance(self.flow_setter_node, gt.Pump):
+                    if isinstance(self.fixed_flow_node, gt.Pump):
                         # Increase Pressure Ratio
                         self.penalty = (-DS_state['P']+10)*1e5
                     else:
@@ -1646,48 +1490,42 @@ class Branch:
                 # Check the node_map if there are heat nodes
                 nMap = self.model.node_map[node.name]
 
-            elif isinstance(node, gt.fixedFlow):
-                if self.fixedFlow:
-                    logger.warn(f"'{self.flow_setter_node.name}' is in series "
-                                f"with another fixedFlow object: '{node.name}'"
-                                f". Setting the flow rate to {self._w} kg/s")
-                    node._w = self._w
-                    continue
-                # Turn on fixedFlow flag for this branch
-                self.fixedFlow = True
-
-                # Set Branch Mass Flow to this component flow
-                self._w = node._w
-                # Node that sets the mass flow
-                self.flow_setter_node = node
-
             elif isinstance(node, gt.fixedFlowNode):
                 if self.fixedFlow:
-                    logger.warn(f"'{self.flow_setter_node.name}' is in series "
-                                f"with another fixedFlow object: '{node.name}'"
-                                f". Setting the flow rate to {self._w} kg/s")
-                    node._w = self._w
+                    if node._w == self._w:
+                        logger.warn(f"'{self.fixed_flow_node.name}' is in "
+                                    "series with another fixedFlow object: "
+                                    f"'{node.name}'. Setting the flow rate to "
+                                    f"{self._w} kg/s")
+                    else:
+                        logger.critical(
+                            f"'{self.fixed_flow_node.name}' is in series with "
+                            f"another fixedFlow object: '{node.name}' and has "
+                            "different flow rates specified. Double check the "
+                            "model!"
+                            )
                     continue
 
                 # Turn on fixedFlow flag for this branch
                 self.fixedFlow = True
+
                 # Set Branch Mass Flow to this component flow
                 self._w = node._w
                 # Node that sets the mass flow
-                self.flow_setter_node = node
-                # Get the node bounds
-                if hasattr(node, '_bounds'):
-                    self._bounds = node._bounds
+                self.fixed_flow_node = node
 
-                if len(self.x) != 0:
-                    # There shouldn't be any other states
-                    from pdb import set_trace
-                    set_trace()
+                if isinstance(node, gt.fixedFlowTurbo):
+                    # Get the node bounds
+                    if hasattr(node, '_bounds'):
+                        self._bounds = node._bounds
 
-                #self.istate[node.name] = np.arange(current_len,
-                #                                   current_len + len(node.x))
-                #self._x = np.concatenate((self.x, node.x))
-                self.x = node.x
+                    if len(self.x) != 0:
+                        # There shouldn't be any other states
+                        from pdb import set_trace
+                        set_trace()
+
+                    if hasattr(node, 'x'):
+                        self.x = node.x
 
             if isinstance(node, gt.statefulFlowNode):
                 if not self.fixedFlow:
@@ -1747,13 +1585,14 @@ class Branch:
             return
 
         if self.fixedFlow:
-            if isinstance(self.flow_setter_node, gt.fixedFlow):
+            if isinstance(self.fixed_flow_node, gt.fixedFlow):
                 from pdb import set_trace
                 set_trace()
                 return
-            self.flow_setter_node.update_state(x)
+
+            self.fixed_flow_node.update_state(x)
             # Get the penalty from the setter object
-            self.penalty = self.flow_setter_node.penalty
+            self.penalty = self.fixed_flow_node.penalty
         else:
             if x[0] < 0 and not self.backFlow:
                 # If backflow is not enabled apply penalty
@@ -1762,21 +1601,6 @@ class Branch:
 
             # Update branch mass flow
             self._w = x[0]
-
-
-
-
-       # self.evaluate2()
-        #if self.penalty:
-        #    if self.fixedFlow:
-        #        from pdb import set_trace
-        #        set_trace()
-            #else:
-            #    self.x = self._x0
-            #    self._w = self._x0[0]
-            #    self.evaluate2()
-
-
 
     @property
     def xdot_copy(self):

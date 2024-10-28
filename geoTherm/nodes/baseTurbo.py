@@ -3,6 +3,9 @@ from .baseClasses import statefulFlowNode
 from ..units import inputParser
 from ..logger import logger
 from ..thermostate import thermo
+from ..flow_funcs import dH_isentropic
+from .baseClasses import fixedFlowNode
+from .flow import flowController
 
 
 class Turbo(statefulFlowNode):
@@ -53,7 +56,7 @@ class Turbo(statefulFlowNode):
         # Component Name
         self.name = name
         # Component Efficiency
-        self.__eta = eta
+        self.eta = eta
         # Upstream Station
         self.US = US
         # Downstream Station
@@ -69,7 +72,7 @@ class Turbo(statefulFlowNode):
 
         self.axial = axial
 
-        if self.__eta is None:
+        if self.eta is None:
             logger.info(f"eta for {self.name} will be calculated using "
                         "Claudio's Curves")
             self.update_eta = True
@@ -105,18 +108,18 @@ class Turbo(statefulFlowNode):
         self._ref_thermo._HP = outlet['H'], outlet['P']
 
     @property
-    def eta(self):
-        return self.__eta
-
-    @eta.setter
-    def eta(self, eta):
-        self.__eta = eta
-
-    @property
     def _W(self):
         # Power
         dH = self._get_dH()
         return -dH*np.abs(self._w)
+
+    @property
+    def Q(self):
+        "Heat flow from Turbo Machine"
+        return 0
+
+
+class turboParameters:
 
     @property
     def _Q_in(self):
@@ -175,42 +178,79 @@ class Turbo(statefulFlowNode):
         # Get the rotor shaft speed in RPM
         return self.rotor_node.N
 
-    @property
-    def _Ns(self):
-        """
-        Placeholder method to be overwritten by specific flow nodes.
-        """
-        logger.critical(f"{self.name} of type {type(self)} is missing a "
-                        "_Ns(self) property")
+
+class pumpParameters(turboParameters):
+
 
     @property
-    def Ds(self):
-        """
-        Placeholder method to be overwritten by specific flow nodes.
-        """
-        logger.critical(f"{self.name} of type {type(self)} is missing a "
-                        "Ds(self) property")
+    def _NPSP(self):
+        try:
+            return self.US_node.thermo._P - self._ref_thermo._Pvap
+        except:
+            return 0
 
     @property
-    def _dH_is(self):
-        """
-        Placeholder method to be overwritten by specific flow nodes.
-        """
-        logger.critical(f"{self.name} of type {type(self)} is missing a "
-                        "_dH_is(self) property")
+    def _u_tip(self):
+        return np.sqrt(self._dH_is/self.psi)
+
+    @property
+    def _Ds(self):
+        """ Pump Specific Diameter """
+        return self._D/np.sqrt(self._Q_in)*(self._dH_is)**0.25
+
+    @property
+    def phi(self):
+        return self._Q_in/(self._D**2*self._u_tip)
 
     @property
     def psi(self):
-        """
-        Placeholder method to be overwritten by specific flow nodes.
-        """
-        logger.critical(f"{self.name} of type {type(self)} is missing a "
-                        "psi(self) property")
+        dH = self._get_dH()
+
+        return dH/self._U_tip**2
 
     @property
-    def Q(self):
-        "Heat flow from Turbo Machine"
-        return 0
+    def _Ns(self):
+        """ Pump Specific Speed Dimensional in SI """
+        return self.rotor_node.N*np.sqrt(self._Q_in)/(self._dH_is)**(0.75)
+
+    @property
+    def _NSS(self):
+        return (self.rotor_node.N*np.sqrt(self._Q_in)
+                / (np.abs(self._NPSP)
+                   / (9.81*self.US_node.thermo._density))**0.75)
+
+
+class turbineParameters(turboParameters):
+
+    @property
+    def phi(self):
+        return self._Q_out/(self._D**2*self._U_tip)
+
+    @property
+    def psi(self):
+
+        dH = self._get_dH()
+
+        return -dH/self._U_tip**2
+
+    @property
+    def _Ns(self):
+        """ Turbine Specific Speed Dimensional in SI """
+        return self.rotor_node.N*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
+
+    @property
+    def ns(self):
+        """ Turbine Specific Speed Dimensionless """
+        return self.rotor_node.Nrad*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
+
+    @property
+    def _Ds(self):
+        """ Turbine Specific Diameter"""
+        return self._D/np.sqrt(self._Q_out)*(-self._dH_is)**0.25
+
+    @property
+    def AN2(self):
+        return self.rotor_node.N**2*self._Q_out
 
 
 class TurboSizer(Turbo):
@@ -464,3 +504,67 @@ class TurboSizer(Turbo):
                             'Ns, ns, Ds, phi, psi')
 
         self.evaluate()
+
+class fixedFlowTurbo(fixedFlowNode, Turbo):
+
+    @inputParser
+    def __init__(self, name,
+                 US,
+                 DS,
+                 rotor,
+                 w:'MASSFLOW',
+                 PR=2,
+                 D: 'LENGTH' = 1,       # noqa
+                 eta=None,
+                 axial=False):
+        """
+        Initialize the Turbo Node.
+
+        Args:
+            name (str): Name of the turbine.
+            eta (float): Efficiency of the turbine.
+            US (str): Upstream node name.
+            DS (str): Downstream node name.
+            rotor (str): Rotor Object.
+            PR (float): Pressure ratio.
+            D (float, optional): Roter Diameter.
+            eta(float, optional): Efficiency.
+            w (object): Mass flow controller object.
+            Ns (float): Specific Speed
+            ns (float): Dimensionless Specific Speed
+            ds (float): Dimensionless Specific Diameter
+            axial (Boolean): Axial or Radial. Default is False
+        """
+
+        # Component Name
+        self.name = name
+        # Component Efficiency
+        self.eta = eta
+        # Upstream Station
+        self.US = US
+        # Downstream Station
+        self.DS = DS
+        # Rotor Object
+        self.rotor = rotor
+        # Pressure Ratio
+        self.PR = PR
+        # Rotor Diameter
+        self._D = D
+        # Mass Flow
+        self.axial = axial
+
+        self.initialize_flow(w)
+
+        if self.eta is None:
+            logger.info(f"eta for {self.name} will be calculated using "
+                        "Claudio's Curves")
+            self.update_eta = True
+            # Set to an initial value
+            self.eta = 1
+        else:
+            self.update_eta = False
+
+        if self.PR is None:
+            msg = f'No PR input specified for {self.name}, setting it to 2'
+            logger.warn(msg)
+            self.PR = 1.5

@@ -40,6 +40,9 @@ class modelTable:
         if not self.initialized:
             self.initialize()
 
+        # Evaluate Nodes
+        self.evaluate_nodes()
+
         table = Table(title='Current Model State')
         # Add columns for Node name and its parameters
         table.add_column("Node")

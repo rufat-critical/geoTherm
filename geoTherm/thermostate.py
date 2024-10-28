@@ -108,6 +108,12 @@ def parseComposition(composition):
     return composition
 
 
+class IncompressibleState:
+    """Incompressible fluid state model"""
+    pass
+
+
+
 class coolprop_wrapper:
     """ Wrapper for CoolProp, makes it easy to interface with thermo state """
 
@@ -320,11 +326,11 @@ def addThermoSetters(setterList):
     def decorator(cls):
         for name in setterList:
             properties = [prop for prop in name]
-            
+
             # Getter method that returns a tuple for the corresponding properties in SI units
             def getterSI(self, name=name, properties=properties):
                 return tuple(self.pObj.getProperty(p) for p in properties)
-            
+
             # Getter method that returns a tuple for the corresponding properties in specified units
             def getterUnit(self, name=name, properties=properties):
                 return tuple(
@@ -339,7 +345,7 @@ def addThermoSetters(setterList):
                     self.pObj.updateComposition(cDict, cType=properties[0])    
 
                 # Apply the getter and setter for single property (composition)
-                setattr(cls, name, property(getterSI, setter))                   
+                setattr(cls, name, property(getterSI, setter))
 
             elif len(properties) == 2:
 
@@ -374,14 +380,13 @@ def addThermoSetters(setterList):
                     self.pObj.updateComposition(cDict, cType=properties[2])
 
                     # Create array with converted values in SI units
-                    val = np.array(value[:2],dtype='object')
-                    
+                    val = list(value[:2])
                     for i, v in enumerate(val):
                         if properties[i] in cls._units:
                             val[i] = toSI(v, cls._units[properties[i]])
 
                     self.pObj.update_state({properties[0]: val[0], properties[1]: val[1]},
-                                          stateVars=name[:2])
+                                           stateVars=name[:2])
 
                 # Apply the getters and setters for state and composition (3 properties)
                 setattr(cls, f'_{name}', property(getterSI, setterSI))
@@ -429,7 +434,7 @@ class thermo:
               'sound': 'VELOCITY',              # Velocity
               'Pvap': 'PRESSURE',               # Vapor Pressure
               'Tvap': 'TEMPERATURE'}            # Vapor Temperature
-               
+
 
     @inputParser
     def __init__(self, fluid='H2O', state=None, model='coolprop'):
@@ -460,17 +465,6 @@ class thermo:
         else:
             set_trace()
 
-
-    def update_state2(self, state):
-        """
-        Update the thermodynamic state of the object.
-
-        Args:
-            state (dict): Dictionary containing thermodynamic state variables.
-        """
-        # Parse the state variables
-        stateVars = parseState(state)
-        self.pObj.update_state(state=state, stateVars=stateVars)
 
     def update_state(self, state, composition=None, cType='Y'):
         """

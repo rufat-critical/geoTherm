@@ -12,11 +12,12 @@ fluid = 'acetone'
 acetone = gt.thermo()
 acetone.TPY = 303, 101325, fluid
 PR_turb = 5
-Pin = 2.8
-w = 1.3968
+Pin = 4.8
+w = 1.4
 
+w_H2O = 5.2
             
-ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(Pin, 'bar'), T=(45.85, 'degC')),#,319.8),
+ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(Pin, 'bar'), T=319.8),
                 #gt.Station(name='PumpIn', fluid=fluid),
                 gt.Rotor('ORC_Rotor', N =40000),
                 gt.Rotor('Pump_Rotor', N =14009.97841),
@@ -34,8 +35,26 @@ ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(Pin, 'bar'), T=(45.85
               gt.Turbine(name='Turb', rotor='ORC_Rotor',US='TurbIn', DS='TurbOut', D= .057225646*2, eta=0.8, PR=5),
               gt.Station(name='TurbOut', fluid=fluid),
               #gt.resistor(name='out', US='TurbIn', DS='TurbOut', area=.1),
-              gt.simpleHEX(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(-2,'bar'))])
+              gt.simpleHEX(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(1,'bar'))])
 
+WaterFlow = gt.flowController('WaterFlow', 5.2)
+Cool = gt.Model([gt.Boundary(name='Water_PumpInlet', fluid='Water', P=(1, 'bar'), T=310),
+                gt.Station(name='Water_PumpOutlet', fluid='Water'),
+                gt.fixedFlowPump(name='Water_Pump',rotor='DummyRotor', eta=.7,PR=7,w=WaterFlow,
+                                 US='Water_PumpInlet',DS='Water_PumpOutlet'),
+                gt.Rotor('DummyRotor', N =15000),
+                gt.Qdot('HEAT', cool='Water_HotHEX',Q=(3.2e6, 'BTU/hr')),
+                #gt.Heatsistor('HEAT', hot='CoolHex', cool='Water_HotHEX', Q=(851968.5280509379,'W')),
+                gt.fixedFlow(name='Water_HotHEX', US='Water_PumpOutlet', DS='Water_HEX_Outlet', dP =(-50, 'psi'),w=WaterFlow),
+                gt.PBoundary(name='Water_HEX_Outlet', fluid='Water'),
+                gt.simpleHEX(name='Water_CoolHex', US='Water_HEX_Outlet', DS='Water_PumpInlet', w=w_H2O, dP=(-50, 'psi'))])
+
+
+Cool += gt.Balance('mass_balance', knob='WaterFlow._w', feedback='Water_HEX_Outlet.T', setpoint=353.15, knob_min=0, knob_max=10)
+Cool += ORC
+Cool.solve_steady()
+from pdb import set_trace
+set_trace()
 
 #ORC += gt.Balance('mass_balance', knob='Pump.w', feedback='TurbIn.T', setpoint=473, knob_min=0.5, knob_max=1.5)
 #ORC += gt.ThermoBalance('mass_balance', knob='PumpIn.T', constant_var='P', feedback='TurbIn.T', setpoint=473, knob_min=300, knob_max=350, gain=-1)

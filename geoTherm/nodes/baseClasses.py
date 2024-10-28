@@ -3,6 +3,7 @@ import numpy as np
 from ..logger import logger
 from ..units import inputParser, addQuantityProperty
 from ..thermostate import thermo, addThermoAttributes
+from numbers import Number
 
 
 class flowNode(Node):
@@ -10,20 +11,19 @@ class flowNode(Node):
 
     def initialize(self, model):
         """
-        Initialize the node with the model.
+        Initialize the node with the model, setting up connections to upstream
+        and downstream nodes.
 
         Args:
-            model: The model to initialize with.
+            model: The model containing the node map and other nodes.
         """
-
-        # Get the node map
         node_map = model.node_map[self.name]
 
-        # Error checking for correct number of upstream and downstream nodes
+        # Validate node connections
         if len(node_map['US']) != 1 or len(node_map['DS']) != 1:
             logger.critical(
-                f"Flow Node {self.name} must have only one upstream and "
-                f"one downstream node. Currently connected to: "
+                f"Flow Node {self.name} must have exactly one upstream and "
+                f"one downstream node. Current connections: "
                 f"US: {node_map['US']}, DS: {node_map['DS']}"
             )
 
@@ -97,19 +97,19 @@ class flowNode(Node):
         self._w = w
 
         # Get Downstream Node
-        if self._w >= 0:
-            dsNode = self.model.node_map[self.name]['DS'][0]
-        else:
-            dsNode = self.model.node_map[self.name]['US'][0]
+        #if self._w >= 0:
+        #    dsNode = self.model.node_map[self.name]['DS'][0]
+        #else:
+        #    dsNode = self.model.node_map[self.name]['US'][0]
 
         # Get the Outlet State
-        dsState = self.get_outlet_state()
+        #dsState = self.get_outlet_state()
 
-        if dsState:
+        #if dsState:
             # Return the downstream node and downstream state
-            return dsNode, dsState
-        else:
-            return dsNode, None
+        #    return dsNode, dsState
+        #else:
+        #    return dsNode, None
 
     def get_outlet_state(self):
         """
@@ -134,9 +134,120 @@ class flowNode(Node):
                         "_get_dP(self, US, DS) method")
 
 
-class fixedFlowNode:
-    # Node for classes where flow is fixed, fixedFlow Resistor, Pump, Turb
-    pass
+    def get_DS_state(self):
+
+        # Get Downstream Node
+        if self._w >= 0:
+            dsNode = self.model.node_map[self.name]['DS'][0]
+        else:
+            dsNode = self.model.node_map[self.name]['US'][0]
+
+        # Get the Outlet State
+        DS_state = self.get_outlet_state()
+
+        if DS_state:
+            # Return the downstream node and downstream state
+            return dsNode, DS_state
+        else:
+            return dsNode, None
+
+
+class fixedFlowNode(flowNode):
+    """
+    Node for classes where flow is fixed, e.g., for fixedFlow resistors, pumps, 
+    or turbines.
+    Fixed flow nodes are associated with a FlowController.
+    """
+
+    def __init__(self, name, US, DS, w) -> None:
+
+        # Component Name
+        self.name = name
+        # Upstream Station
+        self.US = US
+        # Downstream Station
+        self.DS = DS
+        # Flow Controller
+        self.flow_controller = None
+
+    def initialize_flow(self, w):
+
+        if isinstance(w, Number):
+            self._w = w
+            self.flow_controller = None
+        elif isinstance(w, (flowController, str)):
+            self.flow_controller = w
+        else:
+            logger.critical(f"w to '{self.name}' must be a number, "
+                            "flowController Object or string of the "
+                            "flowController Object in the model")
+
+    def initialize(self, model):
+        # Add Flow Controller Node Reference
+        if isinstance(self.flow_controller, str):
+            if self.flow_controller not in model.nodes:
+                logger.critical(
+                    f"{self.name} references flow controller: "
+                    f"{self.flow_controller} but it's not defined in the"
+                    "model")
+            else:
+                self.flow_controller = model.nodes[self.flow_controller]
+
+        if self.flow_controller is not None:
+            self.flow_controller.add_node(self)
+
+            if self.flow_controller.name not in model.nodes:
+                logger.warn(
+                    f"Flow Controller '{self.flow_controller.name}' is "
+                    f"controlling '{self.name}' but is not part of the model."
+                    " Adding it to model. Ignore the model initialization "
+                    "failure message."
+                )
+                model.addNode(self.flow_controller)
+
+        super().initialize(model)
+
+
+@addQuantityProperty
+class flowController(Node):
+    """ Object that sets mass flow"""
+
+    _units = {'w': 'MASSFLOW'}
+    _displayVars = ['w', 'nodes']
+
+    @inputParser
+    def __init__(self, name,
+                 w:'MASSFLOW',  # noqa
+                 nodes=None):
+
+        self.name = name
+        self.__w = w
+        self._nodes = {}
+
+    @property
+    def _w(self):
+        return self.__w
+
+    @_w.setter
+    def _w(self, w):
+        self.__w = w
+        self.evaluate()
+
+    def evaluate(self):
+
+        if self._nodes:
+            for _, node in self._nodes.items():
+                node._w = self._w
+
+    def add_node(self, node):
+        # Add Node to internal nodes dictionary
+        self._nodes.update({node.name: node})
+        # Update Node Mass Flow
+        node._w = self._w
+
+    @property
+    def nodes(self):
+        return [node for node in self._nodes]
 
 
 class statefulFlowNode(flowNode):

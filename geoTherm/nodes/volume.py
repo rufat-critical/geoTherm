@@ -1,4 +1,3 @@
-from .surfaces import Wall
 from .baseClasses import ThermoNode
 from ..utils import Re_calc
 import numpy as np
@@ -79,7 +78,8 @@ class Volume(Station):
 
     _displayVars = ['P', 'T', 'H', 'volume', 'phase']
 
-    _units = {'volume': 'VOLUME', 'mass': 'MASS', 'U': 'ENERGY', 'w': 'MASSFLOW'}
+    _units = {'volume': 'VOLUME', 'mass': 'MASS', 'U': 'ENERGY',
+              'w': 'MASSFLOW'}
 
     @inputParser
     def __init__(self, name, fluid,
@@ -173,7 +173,7 @@ class Volume(Station):
             return False
         except Exception as e:
             # If an error occurs, trigger debugging and return True
-            logger.error(f"Failed to update thermo state: {e}")
+            logger.error(f"Failed to update thermo state for {self.name}: {e}")
             return True
 
     @property
@@ -197,14 +197,14 @@ class flowVol(Node):
 
     @inputParser
     def __init__(self, name, fluid,
-                 P:'PRESSURE'=None,
-                 T:'TEMPERATURE'=None,
-                 H:'SPECIFICENTHALPY'=None,
-                 S:'SPECIFICENTROPY'=None,
+                 P: 'PRESSURE'=None,            # noqa
+                 T: 'TEMPERATURE'=None,         # noqa
+                 H: 'SPECIFICENTHALPY'=None,    # noqa
+                 S: 'SPECIFICENTROPY'=None,     # noqa
                  Q=None,
-                 A:'AREA'=None,
-                 Per:'LENGTH'=None,
-                 w:'MASSFLOW'=None,
+                 A: 'AREA'=None,                # noqa
+                 Per: 'LENGTH'=None,            # noqa
+                 w: 'MASSFLOW'=None,            # noqa
                  state=None):
         """ Initialize a Thermodynamic Station via fluid
         name and thermodynamic state
@@ -228,10 +228,10 @@ class flowVol(Node):
             pass
         else:
             # Generate State Dictionary
-            state = {'P':P, 'T': T, 'H': H, 'S': S, 'Q': Q}
+            state = {'P': P, 'T': T, 'H': H, 'S': S, 'Q': Q}
             # Trim the state by removing entries with None Variables
-            state = {var:val for var, val in state.items() if val is not None}
-            
+            state = {var: val for var, val in state.items() if val is not None}
+
             if len(state) == 0:
                 # If the state dict is 0 then set the state to None
                 # thermostate will use default initializiation values
@@ -258,10 +258,10 @@ class flowVol(Node):
 
     def update_thermo(self, state):
         """ Update the station thermodynamic state
-        
+
         Args:
             state (dict): Dictionary defining the thermodynamic state """
-        
+
         try:
             self.thermo.update_state(state)
             return False
@@ -280,7 +280,7 @@ class flowVol(Node):
 
     @property
     def _flowU(self):
-         return self._w/(self.thermo._density*self._A)       
+        return self._w/(self.thermo._density*self._A)       
 
 
 class hexVolume(Node):

@@ -1,13 +1,12 @@
 import numpy as np
-from .baseClasses import fixedFlowNode
-from .baseTurbo import Turbo, TurboSizer
+from .baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters
 from ..units import addQuantityProperty
 from ..utils import dH_isentropic, turb_axial_eta, turb_radial_eta
 from scipy.optimize import fsolve
 
 
 @addQuantityProperty
-class Turbine(Turbo):
+class Turbine(Turbo, turbineParameters):
 
     def _get_dP(self):
         # Get Upstream Thermo
@@ -30,35 +29,6 @@ class Turbine(Turbo):
         # Isentropic Enthalpy across Turbo Component
         return dH_isentropic(US, US._P/self.PR)
 
-    @property
-    def phi(self):
-        return self._Q_out/(self._D**2*self._U_tip)
-
-    @property
-    def psi(self):
-
-        dH = self._get_dH()
-
-        return -dH/self._U_tip**2
-
-    @property
-    def _Ns(self):
-        """ Turbine Specific Speed Dimensional in SI """
-        return self.rotor_node.N*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
-
-    @property
-    def ns(self):
-        """ Turbine Specific Speed Dimensionless """
-        return self.rotor_node.Nrad*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
-
-    @property
-    def _Ds(self):
-        """ Turbine Specific Diameter"""
-        return self._D/np.sqrt(self._Q_out)*(-self._dH_is)**0.25
-
-    @property
-    def AN2(self):
-        return self.rotor_node.N**2*self._Q_out
 
     def _update_eta(self):
         # Update Turbine efficiency using efficiency curves
@@ -133,7 +103,7 @@ class Turbine_sizer(Turbine, TurboSizer):
             set_trace()
 
 
-class fixedFlowTurbine(fixedFlowNode, Turbine):
+class fixedFlowTurbine(fixedFlowTurbo, Turbine):
     """
     Turbine class where mass flow is fixed to initialization value.
     """

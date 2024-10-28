@@ -57,7 +57,7 @@ class resistor(flowNode):
             return self._dP
 
 @addQuantityProperty
-class fixedFlow(flowNode, fixedFlowNode):
+class fixedFlow(fixedFlowNode):
     """ Resistor Object where mass flow is fixed """
 
     _units = {'w': 'MASSFLOW', 'dP': 'PRESSURE'}
@@ -81,8 +81,9 @@ class fixedFlow(flowNode, fixedFlowNode):
         self.name = name
         self.US = US
         self.DS = DS
-        self._w = w
         self.__dP = dP
+
+        self.initialize_flow(w)
 
     def _get_thermo(self):
         """

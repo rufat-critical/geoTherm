@@ -84,7 +84,6 @@ class Balance(Node):
     def update_state(self, x):
 
         self._x = x
-        print('x1', x)
         if x[0] < self.knob_min:
             self.penalty = (self.knob_min - x[0] + 10)*1e8
             return
@@ -103,7 +102,6 @@ class Balance(Node):
                 from pdb import set_trace
                 set_trace()
         elif isinstance(self.knob_node, fixedFlowNode):
-            print('x2', x)
             self.knob_node.w = x[0]
         
         else:

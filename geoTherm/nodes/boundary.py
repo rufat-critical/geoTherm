@@ -23,7 +23,6 @@ class PBoundary(ThermoNode):
             self.penalty = (X0-x)*1e5
             return
 
-        print(x)
         try:
             # Update the thermodynamic state
             self.thermo._DP = x[0], P0
@@ -59,6 +58,10 @@ class TBoundary(ThermoNode):
 
     _displayVars = ['P', 'T', 'H', 'phase']
 
+    def initialize(self, model):
+        super().initialize(model)
+        self.penalty = False
+
     def update_state(self, x):
 
         # Get the initial state
@@ -71,7 +74,6 @@ class TBoundary(ThermoNode):
         except:
             self.thermo._TD = self.thermo._T, X0
             self.penalty = (X0-x)*1e5
-
 
     def update_thermo(self, dsState):
 
@@ -100,6 +102,9 @@ class TBoundary(ThermoNode):
 
         return np.array([wNet])
 
+    @property
+    def xdot(self):
+        return self.error
 
 class Outlet(ThermoNode):
     """ Outlet Node where the state is determined by outlet properties"""

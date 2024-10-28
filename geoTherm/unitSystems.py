@@ -98,7 +98,7 @@ class MIXED:
         'MASSFLOW': 'kg/s',                # Kilogram per second
         'MASSFLUX': 'kg/s/m**2',           # Kilogram per second per square
                                            # meter
-        'POWER': 'kW',                     # Kilowatt
+        'POWER': 'MW',                     # Kilowatt
         'PRESSURE': 'bar',                 # Bar
         'SPECIFICENERGY': 'kJ/kg',         # Kilojoule per kilogram
         'SPECIFICENTROPY': 'kJ/kg/degK',   # Kilojoule per kilogram per Kelvin
