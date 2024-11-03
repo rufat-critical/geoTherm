@@ -17,11 +17,11 @@ def test_simple_ORC():
                     gt.Rotor('Pump_Rotor', N =14009.97841),
                     gt.fixedFlowPump(name='Pump', rotor= 'Pump_Rotor', eta=0.7, PR=5, w=w, US='PumpIn', DS='PumpOut'),
                     gt.Station(name='PumpOut', fluid=fluid),
-                    gt.simpleHEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, Q=(3.2e6, 'BTU/hr'), dP=(1,'bar'), D=(2, 'in'), L=3),
+                    gt.simpleHEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, Q=(3.2e6, 'BTU/hr'), dP=(-1,'bar'), D=(2, 'in'), L=3),
                     gt.Station(name='TurbIn', fluid=fluid),#, T=Thot-5, P =101325),
                     gt.Turbine(name='Turb', rotor='ORC_Rotor',US='TurbIn', DS='TurbOut', D= .057225646*2, eta=0.8, PR=5),
                     gt.Station(name='TurbOut', fluid=fluid),
-                    gt.simpleHEX(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(1,'bar'))])
+                    gt.simpleHEX(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(-1,'bar'))])
 
     ORC.solve_steady()
     
@@ -59,7 +59,7 @@ def test_stechmann():
                     gt.Station(name='PumpOut', fluid=ORC_fluid),
                     gt.flow(name='ORC_HEX', US='PumpOut', DS='TurbIn', dP =(0, 'bar'),w=50.232),#, Q=(20, 'MW')),
                     #gt.Qdot(name='ORC_Heat', cool='ORC_HEX', Q=(20 , 'MW')),
-                    gt.Heatsistor('ORC_Heat', hot='WaterHEX', cool='ORC_HEX', Q=(31374557.96)),
+                    gt.Qdot('ORC_Heat', hot='WaterHEX', cool='ORC_HEX', Q=(31374557.96)),
                     gt.Station(name='TurbIn', fluid=ORC_fluid),
                     gt.Turbine(name='Turb', rotor = 'ORC_Rotor', eta=.9, PR=ORC_Turb_PR, w=mdot_ORC, US='TurbIn', DS='TurbOut',
                                D=(0.510569758, 'm')),
