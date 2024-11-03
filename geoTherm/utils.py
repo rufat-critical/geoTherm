@@ -269,46 +269,69 @@ class thermo_data:
         }
 
 
-def _extend_bounds(f, bounds, max_iter=10, factor=2):
+def find_bounds(f, bounds, upper_limit=np.inf, lower_limit=-np.inf,
+                max_iter=10, factor=2):
     """
-    Check and extend bounds to ensure that they bracket a root.
+    Expand bounds to ensure they bracket a root, returning
+    bounds as [lower, upper] where lower < upper and within specified limits.
 
     Args:
         f (callable): Function for which the root is sought.
         bounds (list): Initial bounds as a list [lower, upper].
+        upper_limit (float, optional): Maximum allowable value for the upper
+                                       bound.
+        lower_limit (float, optional): Minimum allowable value for the lower
+                                       bound.
         max_iter (int, optional): Maximum number of iterations to extend
                                   bounds. Default is 10.
         factor (float, optional): Factor by which to extend the bounds.
-                                  Default is 2.
+        Default is 2.
 
     Returns:
-        list: Adjusted bounds that bracket the root.
+        list: Adjusted bounds that bracket the root, ordered as [lower, upper].
     """
+    lower, upper = min(bounds), max(bounds)
 
-    lower, upper = bounds
-    f_lower = f(lower)
-    f_upper = f(upper)
+    if factor < 1:
+        factor = 1/factor
+
+    # Ensure initial bounds are within the specified limits
+
+    lower = max(lower, lower_limit)
+    upper = min(upper, upper_limit)
+
+    f_lower_sign = np.sign(f(lower))
+    f_upper_sign = np.sign(f(upper))
+
+    if f_lower_sign != f_upper_sign:
+        return [lower, upper]
 
     iteration = 0
 
-    while np.sign(f_lower) == np.sign(f_upper) and iteration < max_iter:
-        # Extend bounds by multiplying with the factor
-        if f_lower < 0 and f_upper < 0:
-            # If both are negative, extend upper bound
-            lower = upper
-            upper *= factor
-        elif f_lower > 0 and f_upper > 0:
-            # If both are positive, reduce lower bound
-            upper = lower
-            lower /= factor
-        else:
-            # In case the signs are mixed or zero, we have proper bounds
+    # Expand bounds until a root is bracketed, limits are reached, or
+    # max iterations
+    while f_lower_sign == f_upper_sign and iteration < max_iter:
+        # Check if both bounds have reached their respective limits
+        if ((upper_limit is not None and upper >= upper_limit) and
+                (lower_limit is not None and lower <= lower_limit)):
+
+            # Both limits reached, cannot extend further
+            logger.info("Upper and lower bound limits reached in bound search")
             break
 
-        # Re-evaluate function at the new bounds
-        f_lower = f(lower)
-        f_upper = f(upper)
+        if lower_limit < upper < upper_limit:
+            upper = min(upper_limit, upper*factor)
+            if np.sign(f(upper)) != f_upper_sign:
+                from pdb import set_trace
+                set_trace()
+
+        if lower_limit < lower < upper_limit:
+            lower = max(lower_limit, lower/factor)
+            if np.sign(f(lower)) != f_lower_sign:
+                return lower, lower*factor
+
         iteration += 1
 
+    logger.info(f"Unable to find bounds after {iteration} iterations")
     # Return adjusted bounds
     return [lower, upper]

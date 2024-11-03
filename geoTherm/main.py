@@ -1472,7 +1472,6 @@ class Branch:
         else:
             DS_junction = self.DS_junction.name
 
-        print(self._w)
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
             # Evaluate the node

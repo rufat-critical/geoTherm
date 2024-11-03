@@ -1,8 +1,8 @@
 from .units import inputParser, output_converter
+from .utils import find_bounds
 import numpy as np
 from .thermostate import thermo
 from scipy.optimize import root_scalar
-from .logger import logger
 from .logger import logger
 
 
@@ -104,10 +104,9 @@ def _total_to_static(total, w_flux, supersonic=False, static=None):
 
         # Set static state based on entropy and PR-adjusted pressure
         static._SP = total._S, PR * total._P
-        # Calculate velocity using energy balance (difference in enthalpy)
 
         # Offset slightly for numerical stability near choking
-        return (w_flux - w_isen(total, static)) - 1e-8
+        return (w_flux - _w_isen(total, static)) - 1e-8
 
     if supersonic:
         P_bounds = [1e-2, PR_crit]
@@ -155,8 +154,8 @@ def _static_to_total(static, w_flux, total=None, PR_bounds=None):
 
         # Function to find outlet pressure that results in mass flow
         total._SP = static._S, static._P/PR
-        U = np.sqrt(2 * np.max([0, (total._H - static._H)]))
-        return w_flux - static._density * U
+
+        return w_flux - _w_isen(total, static)
 
     if PR_bounds is None:
         PR_bounds = [1e-2, 1]
@@ -568,7 +567,7 @@ def _w_isen(US_thermo, DS_thermo) -> float:
     outlet = thermo.from_state(US.state)
     outlet._SP = US._S, DS._P
 
-    U = np.sqrt(2*np.max([(US._H - outlet._H),0]))
+    U = np.sqrt(2*np.max([(US._H - outlet._H), 0]))
 
     # Check if the flow is sonic
     if U > outlet.sound:
@@ -577,12 +576,21 @@ def _w_isen(US_thermo, DS_thermo) -> float:
     # rho*U*A
     return outlet._density * U * flow_sign
 
-def _w_isen_max(US_thermo, static=None) -> float:
+def _w_isen_max(total, static=None) -> float:
     # Calculate maximum isentropic mass flux
 
-    outlet = sonic_isentropic_state(US_thermo, static)
+    if static is None:
+        # Temperory thermo object used for intermediate calcs
+        static = thermo.from_state(total.state)
 
-    return outlet.sound*outlet.density
+    PR_crit = critial_static_pressure_isentropic(total, static)
+    static._SP = total._S, total._P*PR_crit
+
+    if static.phase in ['gas', 'supercritical_gas']:
+        return static._sound*static._density
+
+    return _w_isen(total, static)
+
 
 @output_converter('PRESSURE')
 @inputParser
@@ -638,29 +646,6 @@ def _dP_isenthalpic_reverse(DS_thermo, w_flux,
     if w_flux == 0:
         return total
 
-
-    PR = .5
-    PR_fac = .5
-    i = 0
-    while True:
-
-        if DS_thermo._P/PR>1e8:
-            return 1e15
-
-        total._HP = DS_thermo._H, DS_thermo._P/PR
-        static._SP = total._S, DS_thermo._P
-
-        w_max = _w_isen(total, static)
-
-        if w_max > w_flux:
-            break
-        else:
-            PR*=PR_fac
-
-        if i>15:
-            from pdb import set_trace
-            set_trace()
-
     def hunt_PR(PR):
         total._HP = DS_thermo._H, DS_thermo._P/PR
 
@@ -668,8 +653,16 @@ def _dP_isenthalpic_reverse(DS_thermo, w_flux,
 
         return _w_isen(total, static) - w_flux
 
+    bounds = find_bounds(hunt_PR, [.5, 1],
+                         upper_limit=1,
+                         max_iter=10,
+                         factor=2)
+
+    if DS_thermo._P/bounds[0] > 1e8:
+        return 1e15
+
     PR = root_scalar(hunt_PR, method='brentq',
-                     bracket=[PR, PR/PR_fac]).root
+                     bracket=bounds).root
 
     total._HP = DS_thermo._H, DS_thermo._P/PR
 
