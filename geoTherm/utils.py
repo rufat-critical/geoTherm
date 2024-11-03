@@ -242,3 +242,28 @@ def parse_component_attribute(attribute_string):
             raise ValueError("Invalid attribute string format.")
     else:
         raise TypeError("Input should be a string.")
+
+
+class thermo_data:
+
+    def __init__(self, H, P, fluid, model):
+        self._H = H
+        self._P = P
+        self.fluid = fluid
+        self.model = model
+
+    def update(self, state):
+
+        self._H = state['H']
+        self._P = state['P']
+
+
+    @property
+    def state(self):
+
+        return {
+            'fluid': self.fluid,
+            'state': {'H': (self._H, 'J/kg'),
+                      'P': (self._P, 'Pa')},
+            'model': self.model
+        }

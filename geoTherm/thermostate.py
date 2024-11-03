@@ -41,7 +41,8 @@ def parseState(stateDict):
                   'TQ': {'T', 'Q'},
                   'PQ': {'P', 'Q'},
                   'TD': {'T', 'D'},
-                  'DS': {'D', 'S'}}
+                  'DS': {'D', 'S'},
+                  'HQ': {'H', 'Q'}}
 
     # Check if the set of stateVars matches any of the sets in quantities
     for code, vars in quantities.items():
@@ -196,7 +197,8 @@ class coolprop_wrapper:
             'TQ': (cp.QT_INPUTS, ('Q', 'T')),
             'PQ': (cp.PQ_INPUTS, ('P', 'Q')),
             'TD': (cp.DmassT_INPUTS, ('D', 'T')),
-            'DS': (cp.DmassSmass_INPUTS, ('D', 'S'))
+            'DS': (cp.DmassSmass_INPUTS, ('D', 'S')),
+            'HQ': (cp.HmassQ_INPUTS, ('H', 'Q'))
         }
 
         # Retrieve the appropriate CoolProp input pair and variable names
@@ -403,7 +405,7 @@ thermoGetters = ['_T', '_P', 'Q', '_H', '_S', '_U', '_cp', '_cv', '_density',
                  '_Tvap', '_conductivity', '_D']
 
 thermoSetters = ['TP', 'TS', 'HP', 'SP', 'DU', 'PU', 'DP', 'HS',
-                 'DH', 'TQ', 'PQ', 'TD','TPY', 'X', 'Y']
+                 'DH', 'HQ', 'TQ', 'PQ', 'TD','TPY', 'X', 'Y']
 
 
 @addThermoGetters(thermoGetters)
@@ -418,8 +420,8 @@ class thermo:
                  '_density', 'viscosity', '_viscosity', 'Y', 'X', 
                  'species_names', 'TP', '_TP', 'TD', '_TD', 'TQ', '_TQ',
                  'TH', '_TH', 'TS', '_TS', 'HP', '_HP', 'HS', '_HS',
-                 'DU', '_DU', 'TPY', '_TPY', 'thermo_model', 'sound', '_sound',
-                 '_Pvap', '_Tvap', '_conductivity']
+                 'DU', '_DU', 'TPY', '_TPY', 'model', 'sound', '_sound',
+                 '_Pvap', '_Tvap', '_conductivity', 'HQ', '_HQ']
 
     _units = {'T': 'TEMPERATURE',               # Temperature
               'P': 'PRESSURE',                  # Pressure
@@ -447,7 +449,7 @@ class thermo:
             model (str): Model to use ('coolprop').
         """
 
-        self.thermo_model = model
+        self.model = model
 
         # Parse fluid composition
         cDict = parseComposition(fluid)
@@ -460,10 +462,11 @@ class thermo:
             stateVars = parseState(state)
 
 
-        if self.thermo_model == 'coolprop':
+        if self.model == 'coolprop':
             self.pObj = coolprop_wrapper(cDict=cDict, state=state, stateVars=stateVars)
         else:
-            set_trace()
+            logger.critical(f'Invalid thermo model used in input: {model}'
+                            "The Valid Models are: 'coolprop'")
 
 
     def update_state(self, state, composition=None, cType='Y'):
@@ -586,7 +589,7 @@ class thermo:
             'fluid': self.Ydict,
             'state': {'H': (self._H, 'J/kg'),
                       'P': (self._P, 'Pa')},
-            'model': self.thermo_model
+            'model': self.model
         }
 
     @staticmethod
