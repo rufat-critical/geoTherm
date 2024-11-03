@@ -23,7 +23,7 @@ ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(Pin, 'bar'), T=(45.85
               gt.fixedFlowPump(name='Pump', rotor= 'Pump_Rotor', eta=0.7, PR=5, w=w, US='PumpIn', DS='PumpOut'),
               gt.Station(name='PumpOut', fluid=fluid),
               #gt.Qdot(name='ORC_Qdot', hot='WaterHEX'),
-              gt.Pipe(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, dP=(1,'bar'), D=(2, 'in'), L=3),
+              gt.Pipe(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, dP=(-1,'bar'), D=(2, 'in'), L=3),
               gt.Qdot(name='ORC_Heat', cool='ORC_HEX', Q=(3.2e6, 'BTU/hr')),
               #gt.staticHEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, Q=(1000, 'kW'), dP=(1,'bar'), D=(2, 'in'), L=3),
               #gt.staticHEX(name='ORC_HEX', US='PumpOut', DS='TurbIn',w=50, dP=(1,'bar')),
