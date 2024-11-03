@@ -267,3 +267,48 @@ class thermo_data:
                       'P': (self._P, 'Pa')},
             'model': self.model
         }
+
+
+def _extend_bounds(f, bounds, max_iter=10, factor=2):
+    """
+    Check and extend bounds to ensure that they bracket a root.
+
+    Args:
+        f (callable): Function for which the root is sought.
+        bounds (list): Initial bounds as a list [lower, upper].
+        max_iter (int, optional): Maximum number of iterations to extend
+                                  bounds. Default is 10.
+        factor (float, optional): Factor by which to extend the bounds.
+                                  Default is 2.
+
+    Returns:
+        list: Adjusted bounds that bracket the root.
+    """
+
+    lower, upper = bounds
+    f_lower = f(lower)
+    f_upper = f(upper)
+
+    iteration = 0
+
+    while np.sign(f_lower) == np.sign(f_upper) and iteration < max_iter:
+        # Extend bounds by multiplying with the factor
+        if f_lower < 0 and f_upper < 0:
+            # If both are negative, extend upper bound
+            lower = upper
+            upper *= factor
+        elif f_lower > 0 and f_upper > 0:
+            # If both are positive, reduce lower bound
+            upper = lower
+            lower /= factor
+        else:
+            # In case the signs are mixed or zero, we have proper bounds
+            break
+
+        # Re-evaluate function at the new bounds
+        f_lower = f(lower)
+        f_upper = f(upper)
+        iteration += 1
+
+    # Return adjusted bounds
+    return [lower, upper]

@@ -6,54 +6,60 @@ from .logger import logger
 from .logger import logger
 
 
-def _extend_bounds(f, bounds, max_iter=10, factor=1.5):
-    """
-    Check and extend bounds to ensure that they bracket a root.
+def _hunt_static_PR_M(PR, M, total, static):
+    # Objective function to find PR corresponding to specific Mach
+    static._SP = total._S, PR*total._P
+    U = np.sqrt(2 * np.max([0, (total._H - static._H)]))
+    return M - U/static._sound
 
-    Args:
-        f (callable): Function for which the root is sought.
-        bounds (list): Initial bounds as a list [lower, upper].
-        max_iter (int, optional): Maximum number of iterations to extend
-                                  bounds. Default is 10.
-        factor (float, optional): Factor by which to extend the bounds.
-                                  Default is 2.
+def _hunt_total_PR_M(PR, M, static, total):
+    # Objective function to find PR corresponding to specific Mach
+    total._SP = static._S, PR*static._P
+    U = np.sqrt(2 * np.max([0, (total._H - static._H)]))
+    return M - U/static._sound
 
-    Returns:
-        list: Adjusted bounds that bracket the root.
-    """
 
-    lower, upper = bounds
-    f_lower = f(lower)
-    f_upper = f(upper)
+def critial_static_pressure_isentropic(total, static=None):
 
-    iteration = 0
+    if static is None:
+        # Temperory thermo object used for intermediate calcs
+        static = thermo.from_state(total.state)
 
-    while iteration < max_iter:
-        # Extend bounds by multiplying with the factor
-        if f_lower < 0 and f_upper < 0:
-            # If both are negative, extend upper bound
-            lower = upper
-            upper *= factor
-            f_lower = f_upper
-            f_upper = f(upper)
-        elif f_lower > 0 and f_upper > 0:
-            # If both are positive, reduce lower bound
-            upper = lower
-            lower /= factor
-            f_upper = f_lower
-            f_lower = f(lower)
-        else:
-            # In case the signs are mixed or zero, we have proper bounds
-            return [lower, upper]
-
-        iteration += 1
-
-    # Check if f_upper and f_lower are the same sign
-    if np.sign(f_upper) == np.sign(f_lower):
-        return None
+    if total.phase in ['gas', 'supercritical_gas']:
+        PR_crit = root_scalar(_hunt_static_PR_M,
+                              args=(1, total, static),
+                              bracket=[0.1, 1.0],
+                              method='brentq').root
     else:
-        return [lower, upper]
+        PR_crit = total._Pvap/total._P
 
+    return PR_crit
+
+def critial_total_pressure_isentropic(static, total=None):
+
+    if total is None:
+        total = thermo.from_state(total.state)
+
+    if static.phase in ['gas', 'supercritical_gas']:
+        PR_crit = root_scalar(_hunt_total_PR_M,
+                              args=(1, total, static),
+                              bracket=[0.1, 1.0],
+                              method='brentq').root
+    else:
+        PR_crit = 0.5
+
+
+def sonic_isentropic_state(total, static=None):
+
+    if static is None:
+        # Temperory thermo object used for intermediate calcs
+        static = thermo.from_state(total.state)
+
+    PR_crit = critial_static_pressure_isentropic(total, static=static)
+
+    static._SP = total._S, PR_crit*total._P
+
+    return static
 
 
 def _total_to_static(total, w_flux, supersonic=False, static=None):
@@ -64,7 +70,7 @@ def _total_to_static(total, w_flux, supersonic=False, static=None):
     Args:
         total (thermo): Total (stagnation) thermodynamic state.
         w_flux (float): Mass flux (kg/s/m^2).
-        supersonic (bool): Indicates supersonic flow conditions.
+        supersonic (bool): Indicates if the flow is supersonic.
         static (thermo, optional): Pre-computed static thermodynamic state.
 
     Returns:
@@ -77,45 +83,50 @@ def _total_to_static(total, w_flux, supersonic=False, static=None):
         return static
 
     # Calculate critical pressure ratio for Mach 1
-    if total.phase in ['gas', 'supercritical gas']:
-        PR_crit = perfect_ratio_from_Mach(1, total.gamma, 'PR')
-    else:
-        PR_crit = 0.8
+    PR_crit = critial_static_pressure_isentropic(total, static)
 
     def hunt_PR(PR):
-        # Constrain PR to valid range
+        """
+        Function to solve for pressure ratio (PR) that balances
+        calculated mass flux with the given mass flux.
+
+        Args:
+            PR (float): Pressure ratio to adjust to balance mass flux.
+
+        Returns:
+            float: Difference between target and calculated mass flux.
+        """
+        # Constrain PR within a valid range
         if PR < 0:
             return (-PR + 10) * 1e5
         elif PR > 1:
             return (1 - PR - 10) * 1e5
 
-        # Compute velocity and mass flux balance
+        # Set static state based on entropy and PR-adjusted pressure
         static._SP = total._S, PR * total._P
-        U = np.sqrt(2 * max(0, total._H - static._H))
-        return w_flux - static._density * U
+        # Calculate velocity using energy balance (difference in enthalpy)
+
+        # Offset slightly for numerical stability near choking
+        return (w_flux - w_isen(total, static)) - 1e-8
 
     if supersonic:
         P_bounds = [1e-2, PR_crit]
     else:
         P_bounds = [PR_crit, 1]
 
-    # Extend bounds if the sign is the same
-    P_bounds = _extend_bounds(hunt_PR, P_bounds, max_iter=20, factor=1.5)
-
-    if not P_bounds:
-        logger.warn(
-            f"No static state solution for mass_flux of {w_flux}"
-            )
+    #P_bounds = _extend_bounds(hunt_PR, P_bounds, max_iter=20, factor=1.5)
+    try:
+        # Solve for pressure ratio (PR) using subsonic or supersonic bounds
+        PR = root_scalar(hunt_PR, method='brentq', bracket=P_bounds).root
+    except:
+        logger.warn(f"No static state possible with a mass flux: {w_flux} "
+                    f"and Total P: {total._P}, Total T: {total._T}")
         return None
-
-    # Solve for pressure ratio (PR) using subsonic or supersonic bounds
-    PR = root_scalar(hunt_PR, method='brentq', bracket=P_bounds).root
 
     static._SP = total._S, PR * total._P
     return static
 
-
-def _static_to_total(static, w_flux, supersonic=False, total=None):
+def _static_to_total(static, w_flux, total=None, PR_bounds=None):
     """
     Convert static state to total (stagnation) state given area and flow rate
     in SI units.
@@ -135,9 +146,6 @@ def _static_to_total(static, w_flux, supersonic=False, total=None):
     if w_flux == 0:
         return total
 
-    # Calculate Critical Pressure Ratio
-    PR_crit = perfect_ratio_from_Mach(1, total.gamma, 'PR')
-
     def hunt_PR(PR):
         # Enforce PR bounds for valid range
         if PR < 0:
@@ -145,29 +153,16 @@ def _static_to_total(static, w_flux, supersonic=False, total=None):
         elif PR > 1:
             return (1 - PR - 10) * 1e5
 
-        if supersonic:
-            if PR > PR_crit:
-                # Return to supersonic range
-                return (PR_crit - PR + 10) * 1e5
-        else:
-            if PR < PR_crit:
-                # Return to subsonic range
-                return (PR_crit - PR + 10) * 1e5
-
         # Function to find outlet pressure that results in mass flow
         total._SP = static._S, static._P/PR
         U = np.sqrt(2 * np.max([0, (total._H - static._H)]))
         return w_flux - static._density * U
 
-    if supersonic:
-        P_bounds = [1e-2, PR_crit]
-    else:
-        P_bounds = [PR_crit, 1]
+    if PR_bounds is None:
+        PR_bounds = [1e-2, 1]
 
-    # Extend bounds if the sign is the same
-    P_bounds = _extend_bounds(hunt_PR, P_bounds, max_iter=10, factor=1.5)
     # Solve for pressure ratio (PR) using subsonic or supersonic bounds
-    PR = root_scalar(hunt_PR, method='brentq', bracket=P_bounds).root
+    PR = root_scalar(hunt_PR, method='brentq', bracket=PR_bounds).root
 
     total._SP = static._S, static._P/PR
     return total
@@ -188,6 +183,8 @@ def total_to_static_Mach(total, M=1, static=None):
     if static is None:
         static = thermo.from_state(total.state)
 
+    from pdb import set_trace
+    set_trace()
     # Calculate critical pressure ratio for Mach 1
     PR_crit = perfect_ratio_from_Mach(1, total.gamma, 'PR')
 
@@ -203,16 +200,18 @@ def total_to_static_Mach(total, M=1, static=None):
         P_bounds = [1e-2, PR_crit]
 
     # Extend bounds if the sign is the same
-    P_bounds = _extend_bounds(hunt_PR, P_bounds, max_iter=10, factor=1.5)
+    #P_bounds = _extend_bounds(hunt_PR, P_bounds, max_iter=10, factor=1.5)
+    from pdb import set_trace
+    set_trace()
     PR = root_scalar(hunt_PR, method='brentq', bracket=P_bounds).root
 
     static._SP = total._S, PR * total._P
     return static
 
 
-def static_to_total_Mach(static, M=1, total=None):
+def static_to_total_Mach(static, M, total=None, PR_bounds=None):
     """
-    Calculate total state based on Mach number.
+    Calculate total state for perfect
 
     Args:
         static (thermo): Upstream thermodynamic state.
@@ -225,23 +224,17 @@ def static_to_total_Mach(static, M=1, total=None):
     if total is None:
         total = thermo.from_state(static.state)
 
-    # Calculate critical pressure ratio for Mach 1
-    PR_crit = perfect_ratio_from_Mach(1, total.gamma, 'PR')
-
     def hunt_PR(PR):
         total._SP = static._S, static._P / PR
         U = np.sqrt(2 * abs(total._H - static._H))
         return M - U / static._sound
 
     # Solve for pressure ratio (PR) using subsonic or supersonic bounds
-    if M <= 1:
-        P_bounds = [PR_crit, 1]
-    else:
-        P_bounds = [1e-5, PR_crit]
+    if PR_bounds is None:
+        PR_bounds = [1e-2, 1]
 
     # Extend bounds if the sign is the same
-    P_bounds = _extend_bounds(hunt_PR, P_bounds, max_iter=10, factor=1.5)
-    PR = root_scalar(hunt_PR, method='brentq', bracket=P_bounds).root
+    PR = root_scalar(hunt_PR, method='brentq', bracket=PR_bounds).root
 
     total._SP = static._S, static._P/PR
     return total
@@ -279,13 +272,16 @@ def _dH_isentropic(inlet_thermo, Pout):
         isentropic_outlet = thermo(
             fluid=inlet_thermo.Ydict,
             state={'S': inlet_thermo._S, 'P': Pout},
-            model=inlet_thermo.thermo_model
+            model=inlet_thermo.model
         )
     except Exception:
+        logger.info("Couldn't calculate Isentropic dH")
         # Check state and try isentropic or incompressible form
         if inlet_thermo.phase == 'liquid':
+            logger.info("Falling back on incompressible assumption")
             return _dH_incompressible(inlet_thermo, Pout)
         else:
+            logger.info("Falling back on compressible assumption")
             return _dH_isentropic_perfect(inlet_thermo, Pout)
 
     return isentropic_outlet._H - inlet_thermo._H
@@ -357,34 +353,32 @@ def _dH_incompressible(inlet_thermo, Pout):
     return (Pout - inlet_thermo._P) / inlet_thermo._density
 
 
-@output_converter('MASSFLOW')
+@output_converter('MASSFLUX')
 @inputParser
-def w_incomp(US_thermo, DS_thermo, cdA: 'AREA') -> float: # noqa
+def w_incomp(US_thermo, DS_thermo) -> float: # noqa
     """
     Calculate incompressible orifice flow rate.
 
     Args:
         US_thermo (thermo): Upstream thermodynamic state.
         DS_thermo (thermo): Downstream thermodynamic state.
-        cdA (float): Effective flow area.
 
     Returns:
-        float: Flow rate in geoTherm outout units.
+        float: Mass Flux in geoTherm outout units.
     """
-    return _w_incomp(US_thermo, DS_thermo, cdA)
+    return _w_incomp(US_thermo, DS_thermo)
 
 
-def _w_incomp(US_thermo, DS_thermo, cdA) -> float:
+def _w_incomp(US_thermo, DS_thermo) -> float:
     """
     Calculate incompressible orifice flow rate in SI units.
 
     Args:
         US_thermo (thermo): Upstream thermodynamic state.
         DS_thermo (thermo): Downstream thermodynamic state.
-        cdA (float): Flow area in square meters (m^2).
 
     Returns:
-        float: Flow rate (kg/s).
+        float: Mass Flux (kg/m^2/s).
     """
     # Determine the direction of flow based on the pressure difference
     if US_thermo._P > DS_thermo._P:
@@ -396,8 +390,8 @@ def _w_incomp(US_thermo, DS_thermo, cdA) -> float:
     Pvc = DS._P  # Vena Contracta Pressure
     dP = US._P - Pvc
 
-    # Orifice flow equation: w = cdA * sqrt(2 * rho * dP)
-    return flow_sign * cdA * np.sqrt(2 * US._density * dP)
+    # Orifice flow equation: w/cdA = sqrt(2 * rho * dP)
+    return flow_sign * np.sqrt(2 * US._density * dP)
 
 
 @output_converter('PRESSURE')
@@ -448,7 +442,7 @@ def w_comp(US_thermo, DS_thermo, cdA:'AREA') -> float:  # noqa
     return _w_comp(US_thermo, DS_thermo, cdA)
 
 
-def _w_comp(US_thermo, DS_thermo, cdA):
+def _w_comp(US_thermo, DS_thermo):
     """
     Calculate compressible orifice flow rate using isentropic approximation
     in SI units.
@@ -456,10 +450,9 @@ def _w_comp(US_thermo, DS_thermo, cdA):
     Args:
         US_thermo (thermo): Upstream thermodynamic state.
         DS_thermo (thermo): Downstream thermodynamic state.
-        cdA (float): Effective flow area (m^2).
 
     Returns:
-        float: Flow rate (kg/s).
+        w_flux (float): Mass flux (kg/s/m^2).
 
     Derivation:
     Starting with the mass flow rate equation:
@@ -496,7 +489,7 @@ def _w_comp(US_thermo, DS_thermo, cdA):
     PR = max(DS._P / US._P, PR_crit)
 
     # Compressible orifice flow equation:
-    return flow_sign * cdA * np.sqrt(
+    return flow_sign * np.sqrt(
         2 * gamma / (gamma - 1) * US._density * US._P *
         (PR ** (2. / gamma) - PR ** ((gamma + 1.) / gamma))
     )
@@ -536,9 +529,9 @@ def _dP_comp(US_thermo, w_flux) -> float:
     return US_thermo._P*(perfect_ratio_from_Mach(M, US_thermo.gamma, 'PR') - 1)
 
 
-@output_converter('MASSFLOW')
+@output_converter('MASSFLUX')
 @inputParser
-def w_isen(US_thermo, DS_thermo, cdA: 'AREA') -> float:     # noqa
+def w_isen(US_thermo, DS_thermo) -> float:     # noqa
     """
     Calculate the isentropic mass flow rate.
 
@@ -551,20 +544,19 @@ def w_isen(US_thermo, DS_thermo, cdA: 'AREA') -> float:     # noqa
         float: Mass flow rate in the geoTherm output units.
     """
 
-    return _w_isen(US_thermo, DS_thermo, cdA)
+    return _w_isen(US_thermo, DS_thermo)
 
 
-def _w_isen(US_thermo, DS_thermo, cdA) -> float:
+def _w_isen(US_thermo, DS_thermo) -> float:
     """
-    Calculate isentropic mass flow rate between two states.
+    Calculate isentropic mass flux between two states.
 
     Args:
         US_thermo (thermo): Upstream thermodynamic state.
         DS_thermo (thermo): Downstream thermodynamic state.
-        cdA (float): Flow area in square meters (m^2).
 
     Returns:
-        float: Mass flow rate (kg/s).
+        float: Mass flux (kg/s/m^2).
     """
 
     if US_thermo._P >= DS_thermo._P:
@@ -576,16 +568,21 @@ def _w_isen(US_thermo, DS_thermo, cdA) -> float:
     outlet = thermo.from_state(US.state)
     outlet._SP = US._S, DS._P
 
-    U = np.sqrt(2*(US._H - outlet._H + 1e-9))
+    U = np.sqrt(2*np.max([(US._H - outlet._H),0]))
 
     # Check if the flow is sonic
     if U > outlet.sound:
-        outlet = total_to_static_Mach(US, M=1, static=outlet)
-        U = np.sqrt(2 * (US._H - outlet._H))
+        return _w_isen_max(US, outlet) * flow_sign
 
     # rho*U*A
-    return outlet._density * U * cdA * flow_sign
+    return outlet._density * U * flow_sign
 
+def _w_isen_max(US_thermo, static=None) -> float:
+    # Calculate maximum isentropic mass flux
+
+    outlet = sonic_isentropic_state(US_thermo, static)
+
+    return outlet.sound*outlet.density
 
 @output_converter('PRESSURE')
 @inputParser
@@ -614,6 +611,70 @@ def _dP_isen(US_thermo, w_flux) -> float:
         # If no solution is found because mass flux is too high
         # then _total_to_static will output None, return None
         return static
+
+def _dP_isen_reverse(DS_thermo, w_flux) -> float:
+    """
+    Calculate the required dP pressure for isentropic flow through an orifice
+    """
+
+    total = _static_to_total(DS_thermo, w_flux)
+
+    if total:
+        return total._P - DS_thermo._P
+    else:
+        return total
+
+
+def _dP_isenthalpic_reverse(DS_thermo, w_flux,
+                            total=None,
+                            static=None) -> float:
+
+    if total is None:
+        total = thermo.from_state(DS_thermo.state)
+
+    if static is None:
+        static = thermo.from_state(DS_thermo.state)
+
+    if w_flux == 0:
+        return total
+
+
+    PR = .5
+    PR_fac = .5
+    i = 0
+    while True:
+
+        if DS_thermo._P/PR>1e8:
+            return 1e15
+
+        total._HP = DS_thermo._H, DS_thermo._P/PR
+        static._SP = total._S, DS_thermo._P
+
+        w_max = _w_isen(total, static)
+
+        if w_max > w_flux:
+            break
+        else:
+            PR*=PR_fac
+
+        if i>15:
+            from pdb import set_trace
+            set_trace()
+
+    def hunt_PR(PR):
+        total._HP = DS_thermo._H, DS_thermo._P/PR
+
+        static._SP = total._S, DS_thermo._P
+
+        return _w_isen(total, static) - w_flux
+
+    PR = root_scalar(hunt_PR, method='brentq',
+                     bracket=[PR, PR/PR_fac]).root
+
+    total._HP = DS_thermo._H, DS_thermo._P/PR
+
+    return total._P - DS_thermo._P
+
 
 def Mach_isentropic(US_thermo, DS_thermo) -> float:
     """
@@ -778,3 +839,46 @@ def perfect_Mach_from_ratio(ratio, gamma, property, supersonic=False):
     else:
         logger.critical(f"Invalid property type '{property}' specified\n"
                         "Supported properties are: PR, TR, DR, HR, soundR, AR")
+
+
+class flow_func:
+
+    def __init__(self, flow_func):
+        self.flow_func = flow_func
+    
+    @property
+    def flow_func(self):
+        return self._flow_func
+    
+    @flow_func.setter
+    def flow_func(self, flow_func):
+
+        if flow_func not in ['isentropic', 'incomp', 'comp']:
+            logger.critical("Invalid flow function. Support flows are: "
+                            "'isentropic', 'incomp', 'comp'")
+
+        self._flow_func = flow_func
+
+    def _dP(self, US_thermo, w_flux):
+
+        if self.flow_func == 'isentropic':
+            return _dP_isen(US_thermo, w_flux)
+        else:
+            from pdb import set_trace
+            set_trace()
+    
+    def _dP_reverse(self, DS_thermo, w_flux):
+
+        if self.flow_func == 'isentropic':
+            return _dP_isenthalpic_reverse(DS_thermo, w_flux)
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    def _w_flux(self, US_thermo, DS_thermo):
+        if self.flow_func == 'isentropic':
+            return _w_isen(US_thermo, DS_thermo)
+        elif self.flow_func == 'incomp':
+            return _w_incomp(US_thermo, DS_thermo)
+        elif self.flow_func == 'comp':
+            return _w_comp(US_thermo, DS_thermo)

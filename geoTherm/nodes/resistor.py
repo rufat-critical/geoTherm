@@ -1,8 +1,10 @@
 from ..units import inputParser, addQuantityProperty
 from .baseClasses import flowNode, fixedFlowNode
 from ..flow_funcs import (_w_incomp, _dP_incomp, _w_isen, _dP_isen,
-                          _w_comp, _dP_comp)
+                          _w_comp, _dP_comp, _w_isen_max)
+from ..flow_funcs import flow_func
 from .boundary import PBoundary
+import numpy as np
 from ..logger import logger
 
 
@@ -35,26 +37,90 @@ class resistor(flowNode):
             self._flow_func = _w_comp
             self._dP_func = _dP_comp
 
+        self.flow = flow_func(self.flow_func)
+
     def evaluate(self):
 
-        # Evaluate flow func to get flow rate
-        self._w = self._flow_func(self.US_node.thermo,
-                                  self.DS_node.thermo,
-                                  self._area)
+        # Get US, DS Thermo
+        US, DS, flow_sign = self._get_thermo()
+        self._w = self.flow._w_flux(US, DS)*self._area*flow_sign
+
 
     def get_outlet_state(self):
         # The enthalpy is equal but pressure drop is present
 
-        # Get US, DS Thermo
-        US, _ = self._get_thermo()
+        # I NEED TO FIGURE OUT HOW TO SPECIFY DOWNSTREAM TO GO UPSTREAM
+        # IF UPSTREAM IS HIGHER PRESSURE THAN DS, THEN DS WILL NOT
+        # BE RECOGNIZED AS UPSTREAM
 
-        self._dP = self._dP_func(US, self._w/self._area)
+
+        # Get US Thermo
+        if self._w > 0:
+            US = self.US_node.thermo
+            flow_sign = 1
+        else:
+            US = self.DS_node.thermo
+            flow_sign = -1
+
+        self._dP = self._dP_func(US, self._w/self._area*flow_sign)
 
         if self._dP:
             return {'H': US._H,
                     'P': US._P + self._dP}
         else:
             return self._dP
+
+
+    def get_inlet_state(self, w, DS):
+        # Get the inlet state
+
+        # Get DS Thermo
+        if DS is None:
+            if w > 0:
+                DS = self.DS_node.thermo
+            else:
+                DS = self.US_node.thermo
+
+        if w > 0:
+            self._dP = -self.flow._dP_reverse(DS, w/self._area)
+        else:
+            self.dP = -self.flow._dP_reverse(DS, -w/self._area)
+
+        if self._dP:
+            return {'H': DS._H,
+                    'P': DS._P - self._dP}
+        else:
+            return self._dP
+
+
+    def _set_flow2(self, w):
+
+        if w > 0:
+            US = self.US_node.thermo
+        else:
+            US = self.DS_node.thermo
+
+        if US.phase in ['gas', 'supercritical_gas']:
+            w_max = _w_isen_max(US)*self._area
+        else:
+            w_max = np.inf
+
+        self._w = w
+        return False
+        self.penalty = None
+        if w_max < np.abs(w):
+            penalty = (w_max-np.abs(w)-1)*1e3
+            self.penalty=penalty
+            return penalty
+
+        
+
+        return False
+
+class orifice(resistor):
+    pass
+
+
 
 @addQuantityProperty
 class fixedFlow(fixedFlowNode):
@@ -66,7 +132,7 @@ class fixedFlow(fixedFlowNode):
     @inputParser
     def __init__(self, name, US, DS,
                  w:'MASSFLOW',      # noqa
-                 dP:'PRESSURE'=None):  # noqa
+                 dP:'PRESSURE'=0):  # noqa
         """
         Initialize the fixedFlow node with given parameters.
 
@@ -81,7 +147,7 @@ class fixedFlow(fixedFlowNode):
         self.name = name
         self.US = US
         self.DS = DS
-        self.__dP = dP
+        self._dP = dP
 
         self.initialize_flow(w)
 
@@ -105,7 +171,8 @@ class fixedFlow(fixedFlowNode):
 
         # Check if pressure difference is specified and check if proper
         # US/DS node specified
-        if self.__dP is not None:  #
+        return
+        if self._dP is not None:  #
             if not isinstance(self.DS_node, PBoundary) and self._w > 0:
                 logger.critical(
                     f"fixedFlow Node {self.name} has dP specified and "
@@ -121,7 +188,7 @@ class fixedFlow(fixedFlowNode):
                 self.DS_node.update_thermo(self.get_outlet_state())
 
     @property
-    def _dP(self):
+    def _dP_old(self):
 
         if self.__dP is not None:
             return self.__dP
@@ -147,3 +214,15 @@ class fixedFlow(fixedFlowNode):
             self._dH = self._Q/self._w  # Calculate enthalpy change
 
         return {'H': US._H + self._dH, 'P': US._P + self._dP}  # Outlet state
+    
+    def get_inlet_state(self, w, DS):
+
+        if w == 0:
+            self._dH = 0
+        else:
+            self._dH = self._Q/self._w
+        
+        return {'H': DS._H - self._dH,
+                'P': DS._P - self._dP}
+        from pdb import set_trace
+        set_trace()

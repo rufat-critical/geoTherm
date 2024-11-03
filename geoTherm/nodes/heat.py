@@ -273,7 +273,7 @@ class Q_connector(Heat):
 @addQuantityProperty
 class Heatsistor(Heat):
 
-    _displayVars = ['Q', 'hot', 'cool']
+    _displayVars = ['Q', 'H', 'hot', 'cool']
     _units = {'Q': 'POWER'}
 
     @inputParser

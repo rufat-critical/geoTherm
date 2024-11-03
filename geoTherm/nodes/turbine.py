@@ -1,7 +1,8 @@
 import numpy as np
 from .baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters
 from ..units import addQuantityProperty
-from ..utils import dH_isentropic, turb_axial_eta, turb_radial_eta
+from ..utils import turb_axial_eta, turb_radial_eta
+from ..flow_funcs import _dH_isentropic
 from scipy.optimize import fsolve
 
 
@@ -27,7 +28,7 @@ class Turbine(Turbo, turbineParameters):
         US, _ = self._get_thermo()
 
         # Isentropic Enthalpy across Turbo Component
-        return dH_isentropic(US, US._P/self.PR)
+        return _dH_isentropic(US, US._P/self.PR)
 
 
     def _update_eta(self):

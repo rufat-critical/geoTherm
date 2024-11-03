@@ -1,7 +1,8 @@
 from .baseClasses import fixedFlowNode
 from .baseTurbo import Turbo, pumpParameters, fixedFlowTurbo
 from ..units import addQuantityProperty
-from ..utils import dH_isentropic, pump_eta
+from ..utils import pump_eta
+from ..flow_funcs import _dH_isentropic
 from ..logger import logger
 import numpy as np
 
@@ -47,7 +48,7 @@ class Pump(Turbo, pumpParameters):
         # Get Upstream Thermo
         US,_ = self._get_thermo()
 
-        return dH_isentropic(US, US._P*self.PR)
+        return _dH_isentropic(US, US._P*self.PR)
 
 
 

@@ -171,6 +171,16 @@ class BoundaryConnector(fixedFlowNode):
             DS = self.US_node.thermo
 
         return {'H': DS._H, 'P': DS._P}
+    
+    def get_inlet_state(self):
+        
+        if self._w >= 0:
+            US = self.US_node.thermo
+        else:
+            US = self.DS_node.thermo
+
+        return {'H': US._H, 'P': US._P}
+
 
     @property
     def _Q(self):
