@@ -77,11 +77,13 @@ class flowNode(Node):
         if self.US_node.thermo._P >= self.DS_node.thermo._P:
             US = self.US_node.thermo
             DS = self.DS_node.thermo
+            flow_sign = 1
         else:
             US = self.DS_node.thermo
             DS = self.US_node.thermo
+            flow_sign = -1
 
-        return US, DS
+        return US, DS, flow_sign
 
     def _set_flow(self, w):
         """
@@ -96,6 +98,7 @@ class flowNode(Node):
 
         self._w = w
 
+        return False
         # Get Downstream Node
         #if self._w >= 0:
         #    dsNode = self.model.node_map[self.name]['DS'][0]
@@ -138,18 +141,34 @@ class flowNode(Node):
 
         # Get Downstream Node
         if self._w >= 0:
-            dsNode = self.model.node_map[self.name]['DS'][0]
+            DS_node = self.model.node_map[self.name]['DS'][0]
         else:
-            dsNode = self.model.node_map[self.name]['US'][0]
+            DS_node = self.model.node_map[self.name]['US'][0]
 
         # Get the Outlet State
         DS_state = self.get_outlet_state()
 
         if DS_state:
             # Return the downstream node and downstream state
-            return dsNode, DS_state
+            return DS_node, DS_state
         else:
-            return dsNode, None
+            return DS_node, None
+
+    def get_US_state(self, w, DS_thermo=None):
+
+        # Get Upstream Node
+        if w >= 0:
+            US_name = self.US_node.name
+        else:
+            US_name = self.DS_node.name
+
+        # Get the Inlet State
+        US_state = self.get_inlet_state(w, DS_thermo)
+
+        if US_state:
+            return US_name, US_state
+        else:
+            return US_name, None
 
 
 class fixedFlowNode(flowNode):
@@ -379,6 +398,16 @@ class statefulFlowNode(flowNode):
         # Return outlet state
         return {'H': US._H + self._dH,
                 'P': US._P + self._dP}
+
+
+    def get_inlet_state(self, w, dH=0):
+        
+        self._w = w
+
+        US, DS = self._get_thermo()
+
+        return {'H': DS._H,
+                'P': DS._P}
 
 
 class Heat(Node):

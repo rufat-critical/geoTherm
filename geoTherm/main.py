@@ -12,6 +12,10 @@ from .utilities.network_graph import make_dot_diagram, make_graphml_diagram
 from .thermostate import thermo
 import pandas as pd
 from solvers.cvode import CVode_solver
+from .utils import thermo_data
+
+class GlobalLimits:
+    P = [1, 1e8]
 
 
 class Conditioner:
@@ -332,6 +336,12 @@ class Model(modelTable):
         for name, node in self.nodes.items():
             # Check if US defined in node
             if hasattr(node, 'US'):
+                if node.US not in nMap:
+                    logger.critical(
+                        f"'{node.name}' US Node '{node.US}' has not "
+                        "been defined in the model"
+                    )
+
                 # Check if it already exists in node_map
                 if node.US not in nMap[name]['US']:
                     # If not then append to node_map
@@ -575,6 +585,7 @@ class Model(modelTable):
 
             # Update to network state
             self.network.evaluate(x)
+
             if not self.converged:
                 logger.warn("Failed to converge with Network Solver, "
                             "will try Nodal Solver Next!")
@@ -1234,6 +1245,7 @@ class Branch:
         # Node for controlling mass flow
         self.fixed_flow_node = None
         self.penalty = False
+        self.solver = 'forward'
 
         self.initialized = False
 
@@ -1265,6 +1277,14 @@ class Branch:
 
     @property
     def xdot(self):
+        
+        if self.solver == 'forward':
+            return self.xdot_forward
+        elif self.solver == 'reverse':
+            return self.xdot_reverse
+
+    @property
+    def xdot_forward(self):
 
         if self.penalty is not False:
             return np.array([self.penalty])
@@ -1289,11 +1309,144 @@ class Branch:
             self.error = (np.sign(self.DS_target['P']-Pout)
                         * np.abs(self.DS_target['P']-Pout)**1.3
                         + (self.DS_target['P']-Pout)*10)
-        
+
+            self.error = (self.DS_target['P']-Pout)
+
+        return np.array([self.error])
+
+    @property
+    def xdot_reverse(self):
+
+        if self.penalty is not False:
+            return np.array([self.penalty])
+
+        if self._w < 0:
+            Pin = self.DSJunc.thermo._P
+        else:
+            Pin = self.USJunc.thermo._P
+
+        if self.fixedFlow:
+            from pdb import set_trace
+            set_trace()
+        else:
+            self.error = self.US_target['P']**2/Pin - Pin
         return np.array([self.error])
 
 
     def evaluate(self):
+
+        if self.solver == 'forward':
+            self.evaluate_forward()
+        elif self.solver == 'reverse':
+            self.evaluate_reverse()
+
+    def evaluate_reverse(self):
+
+        nodes = self.nodes
+
+        if self.fixedFlow:
+            self._w = self.fixed_flow_node._w
+
+        if self.penalty:
+            # If penalty was triggered then return
+            return
+
+        if self._w < 0:
+            US_junction = self.DS_junction
+            DS_junction = self.US_junction
+        else:
+            # Reverse node order
+            nodes = nodes[::-1]
+            US_junction = self.US_junction
+            DS_junction = self.DS_junction
+
+        DS_thermo = thermo_data(H=US_junction.thermo._H,
+                            P=DS_junction.thermo._P,
+                            fluid=US_junction.thermo.Ydict,
+                            model=US_junction.thermo.model)
+
+        Q = 0
+        for name, hot_nodes in self.hot_nodes.items():
+            for hot in hot_nodes:
+                Q +=self.model.nodes[hot]._Q
+
+
+        # I should put a try except state for updating DS thermo
+        # If fail then heat flux is too high and need to increase
+        # mass flow
+        DS_thermo._H += Q/(self._w+1e-8)
+
+        for inode, node in enumerate(nodes):
+
+            if node.name in self.hot_nodes:
+                DS_thermo._H -= Q/(self._w+1e-8)
+
+            if isinstance(node, gt.ThermoNode):
+                if not inode & 0x1:
+                    from pdb import set_trace
+                    set_trace()
+
+                continue
+
+            try:
+                dsThermo = gt.thermo.from_state(DS_thermo.state)
+            except:
+                # Flow is too hot and mass flow needs to go up
+                self.penalty = (self._w+10)*1e3
+                return
+
+            US_node, US_state = node.get_US_state(self._w, DS_thermo)
+
+            if US_state['P'] > 1e9:
+                self.penalty = -(US_state['P'])*1e5
+                return
+
+            DS_thermo.update(US_state)
+
+            if US_state is None:
+                from pdb import set_trace
+                set_trace()
+
+            if inode == len(nodes) - 1:
+                node.evaluate()
+                self.US_target = US_state
+
+                if US_node != US_junction.name:
+                    from pdb import set_trace
+                    set_trace()
+                break
+
+            if nodes[inode+1].name != US_node:
+                from pdb import set_trace
+                set_trace()
+
+            US_state = self._get_US_thermo(US_node, US_state)
+
+
+            error = self.model.nodes[US_node].update_thermo(US_state)
+            
+            if error:
+                from pdb import set_trace
+                set_trace()
+
+            try:
+                node.evaluate()
+            except:
+                from pdb import set_trace
+                set_trace()
+
+            if node._dH !=0:
+                from pdb import set_trace
+                set_trace()
+
+            if np.abs(node._w - self._w) > 1e-3:
+                from pdb import set_trace
+                set_trace()
+
+
+
+
+    def evaluate_forward(self):
         """
         Evaluate the branch by updating nodes and calculating errors.
 
@@ -1319,6 +1472,7 @@ class Branch:
         else:
             DS_junction = self.DS_junction.name
 
+        print(self._w)
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
             # Evaluate the node
@@ -1349,7 +1503,11 @@ class Branch:
                 pass
             else:
                 # Update the downstream state
-                node._set_flow(self._w)
+                error = node._set_flow(self._w)
+
+                if error:
+                    self.penalty = error
+                    return
 
             DS_node, DS_state = node.get_DS_state()
 
@@ -1369,6 +1527,9 @@ class Branch:
                 else:
                     # This is negative so use error to decrease mass flow
                     self.penalty = (-self._w-10*np.sign(self._w))*1e5
+                    if self.penalty > 0:
+                        from pdb import set_trace
+                        set_trace()
                 return
 
             if DS_state['P'] < 0:
@@ -1402,7 +1563,7 @@ class Branch:
                     from pdb import set_trace
                     set_trace()
                 return
-            
+
             if isinstance(node, (gt.flowNode, gt.Turbo)):
 
                 if nodes[inode+1].name != DS_node:
@@ -1469,6 +1630,12 @@ class Branch:
 
         return dsState
 
+    def _get_US_thermo(self, US_node, US_state):
+
+        # If Q are added then use this to sum stuff up
+        return US_state
+
+
     def initialize(self):
 
         # Define the states defining this dict
@@ -1481,14 +1648,26 @@ class Branch:
 
         self.istate = {}
         self.x = np.array([])
+        self.hot_nodes = {}
+
+        self.pressure_gain = False
 
         for inode, node in enumerate(self.nodes):
             # Something to add, bounds from each class 
             # If mass flow is above/below bounds then apply penalty
+            nMap = self.model.node_map[node.name]
+
+
+            if isinstance(node, (gt.fixedFlowNode,
+                                 gt.Pump)):
+                self.pressure_gain = True
+
+            if nMap['hot'] or nMap['cool']:
+                self.hot_nodes[node.name] = nMap['hot'] + nMap['cool']
 
             if isinstance(node, (gt.Station)):
                 # Check the node_map if there are heat nodes
-                nMap = self.model.node_map[node.name]
+                pass
 
             elif isinstance(node, gt.fixedFlowNode):
                 if self.fixedFlow:
@@ -1508,7 +1687,6 @@ class Branch:
 
                 # Turn on fixedFlow flag for this branch
                 self.fixedFlow = True
-
                 # Set Branch Mass Flow to this component flow
                 self._w = node._w
                 # Node that sets the mass flow
@@ -1545,7 +1723,6 @@ class Branch:
 
             self.fixedFlow = True
 
-        #if len(self._x) == 0:
         if self.fixedFlow:
             pass
         else:
