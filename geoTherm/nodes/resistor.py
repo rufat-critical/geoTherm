@@ -71,7 +71,7 @@ class resistor(flowNode):
             return self._dP
 
 
-    def get_inlet_state(self, w, DS):
+    def get_inlet_state(self, w, DS=None):
         # Get the inlet state
 
         # Get DS Thermo

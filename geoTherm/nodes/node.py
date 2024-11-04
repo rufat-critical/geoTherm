@@ -103,7 +103,7 @@ class Node:
         This method is called when the object is displayed in the console
         (e.g., by simply typing the object name in an interactive session).
         """
-        return self.__makeTable()
+        return f"Node: '{self.name}', Type: {type(self)}"
 
     def __str__(self):
         """

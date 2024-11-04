@@ -269,6 +269,7 @@ class flowController(Node):
         return [node for node in self._nodes]
 
 
+
 class statefulFlowNode(flowNode):
     """
     Node class with mass flow as state variable. This needs to be inherited
@@ -400,14 +401,37 @@ class statefulFlowNode(flowNode):
                 'P': US._P + self._dP}
 
 
-    def get_inlet_state(self, w, dH=0):
-        
+    def get_inlet_state(self, w, DS=None):
+
         self._w = w
 
-        US, DS = self._get_thermo()
+        if DS is None:
+            if w> 0:
+                DS = self.DS_node.thermo
+            else:
+                DS = self.US_node.thermo
+
+        if self.update_dP is False:
+            dP = self._dP
+
+        else:
+            from ..utils import dP_pipe
+            dP = self._get_dP()
+            #dP = dP_pipe(self.US_node.thermo,
+            #        self._U,
+            #        self._D,
+            #        self._L,
+            #        self._roughness)
+            
+            #dP = self._get_dP()
+            #state = {'H': DS._H, 'P': DS._P-dP}
+
+            #from pdb import set_trace
+            #set_trace()      
+
 
         return {'H': DS._H,
-                'P': DS._P}
+                'P': DS._P-dP}
 
 
 class Heat(Node):

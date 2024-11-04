@@ -2,7 +2,6 @@ from .baseClasses import Node
 from .heat import HTC
 from ..units import addQuantityProperty, inputParser
 import numpy as np
-from ..utils import Re_calc
 
 
 @addQuantityProperty

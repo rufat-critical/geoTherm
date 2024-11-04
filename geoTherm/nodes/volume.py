@@ -1,5 +1,5 @@
 from .baseClasses import ThermoNode
-from ..utils import Re_calc
+from ..utils import Re_
 import numpy as np
 from ..thermostate import thermo, addThermoAttributes
 from ..units import inputParser, addQuantityProperty
@@ -272,7 +272,7 @@ class flowVol(Node):
     def Re(self):
         # Calculate Hydraulic Diameter
         Dh = 4*self._A/self._Per
-        return Re_calc(self.thermo, self._flowU, Dh)
+        return Re_(thermo, Dh, self._w)
 
     @property
     def _flowV(self):

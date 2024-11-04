@@ -875,3 +875,4 @@ class flow_func:
             return _w_incomp(US_thermo, DS_thermo)
         elif self.flow_func == 'comp':
             return _w_comp(US_thermo, DS_thermo)
+

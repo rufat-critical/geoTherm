@@ -600,7 +600,8 @@ class Model(modelTable):
 
         x = conditioner.unscale_x(sol[0])
         self.steady_evaluate(x)
-
+        from pdb import set_trace
+        set_trace()
         if not self.converged:
             logger.warn("Failed to converge with Nodal Solver, "
                         "will try Transient Solver Next!")

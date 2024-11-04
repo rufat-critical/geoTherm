@@ -56,18 +56,15 @@ class flow(statefulFlowNode):
 
         if self.update_dP:
             return dP_pipe(US,
-                           self._U,
                            self._D,
                            self._L,
+                           self._w,
                            self._roughness)
         else:
             return self._dP
 
     def _get_dH(self):
 
-        US, DS = self._get_thermo()
-
-        # Q
         if self._w == 0:
             return 0
         else:

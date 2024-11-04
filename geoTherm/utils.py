@@ -3,88 +3,90 @@ import re
 from scipy.optimize import root_scalar
 from .logger import logger
 
-from .thermostate import thermo
-
 # Get Machine precision
 eps = np.finfo(float).eps
 
 
-def dP_pipe(thermo, U, Dh, L, roughness=2.5e-6):
-    """ Estimate pressure drop for pipe flow 
+def dP_pipe(thermo, Dh, L, w, roughness=2.5e-6):
+    """ Estimate pressure drop for pipe flow using mass flow.
 
     Args:
-        thermo (thermostate): geoTherm thermostate object
-        U (float): Flow Speed in m/s
+        thermo (thermostate): geoTherm thermostat object
         Dh (float): Hydraulic Diameter in m
         L (float): Pipe length in m
-        roughness (float, optional): Pipe roughness in m (Default = 1e-5 m)
+        w (float): Mass flow rate in kg/s
+        roughness (float, optional): Pipe roughness in m (Default = 2.5e-6 m)
 
     Returns:
-        Pipe pressure drop in Pa """
-
-    # Calculate friction factor
-    f = friction_factor(thermo, U, Dh, roughness=roughness)
-
-    # Calculate Friction Pressure loss
-    return -f*L/Dh*(.5*thermo._density*U**2)
+        float: Pipe pressure drop in Pa
+    """
+    K_pipe = pipe_K(thermo, L, Dh, w, roughness)
+    A = np.pi / 4 * Dh ** 2
+    return -K_pipe * (w / A) ** 2 / (2 * thermo._density)
 
 
-def Re_calc(thermo, U, L):
-    """ Calculate the Reynolds number
+def pipe_K(thermo, L, Dh, w, roughness=2.5e-6):
+    """ Calculate the loss coefficient for pipe flow.
 
     Args:
-        thermo (thermostate): geoTherm thermo Object
-        U (float): Flow Velocity in m/s
-        L (float): Characteristic Length in m
-
-    Returns:
-        Reynolds Number """
-
-    return thermo._density*U*L/thermo._viscosity
-
-
-def friction_factor(thermo, U, Dh, roughness=2.5e-6):
-    """ Get the friction factor for a pipe. 
-    
-    Args:
-        thermo (thermostate): geoTherm thermo Object
-        U (float): Flow Speed in m/s
+        thermo (thermostate): geoTherm thermostat object
+        L (float): Pipe length in m
         Dh (float): Hydraulic Diameter in m
+        w (float): Mass flow rate in kg/s
+        roughness (float, optional): Pipe roughness in m (Default = 2.5e-6 m)
 
     Returns:
-        friction factor """
-    
+        float: Loss coefficient
+    """
+    Re = Re_(thermo, Dh, w)
+    f = friction_factor(Re, roughness / Dh)
+    return f * L / Dh
 
-    # Calculate Reynolds number
-    Re = Re_calc(thermo, U, Dh)
 
-    # friction factor for laminar/turbulent
-    if Re<2100:
-        # Laminar flow friction factor
-        f = 64/Re
+def Re_(thermo, Dh, w):
+    """ Calculate Reynolds number based on mass flow.
+
+    Args:
+        thermo (thermostate): geoTherm thermostat object
+        Dh (float): Hydraulic Diameter in m
+        w (float): Mass flow rate in kg/s
+
+    Returns:
+        float: Reynolds Number
+    """
+    return 4 * np.abs(w) / (np.pi * Dh * thermo._viscosity)
+
+
+def friction_factor(Re, rel_roughness):
+    """ Calculate the friction factor based on Reynolds number and 
+        relative roughness.
+
+    Args:
+        Re (float): Reynolds Number
+        rel_roughness (float): Relative roughness (roughness/Dh)
+
+    Returns:
+        float: Friction factor
+    """
+    if Re < 2100:
+        return 64 / Re
     else:
-        # Use colebrook
-        
-        # Calculate relative roughness
-        k = roughness/Dh
-        f = colebrook(k, Re)
-
-    return f
+        return colebrook(rel_roughness, Re)
 
 def colebrook(k, Re):
     """ Get the friction factor using Colebook Equation 
-    
+
     Args:
         k (float): Relative Roughness
         Re (float): Reynolds Number 
-    
+
     Returns:
         friction factor """
-    
+
     def res(f):
         # Residual function
         return 1/np.sqrt(f) + 2*np.log10(k/3.7 + 2.51/(Re*np.sqrt(f)))
-    
+
     # Use root scalar to find root
     f = root_scalar(res, method='brentq', bracket=[1e-10, 1e4]).root
 
@@ -116,44 +118,6 @@ def dittus_boelter(Re, Pr, heating=True):
         n = 0.3
 
     return 0.023*Re*Pr**n
-
-
-def dH_isentropic(inlet_thermo, Pout):
-    # Calculate isentropic enthalpy change for isentropic change in pressure
-
-    try:
-        isentropic_outlet = thermo(fluid=inlet_thermo.Ydict,
-                                   state={'S': inlet_thermo._S,
-                                          'P': Pout},
-                                    model=inlet_thermo.thermo_model)
-    except:
-        # Check state and try isentropic or incompressible form
-        if inlet_thermo.phase == 'liquid':
-            return dH_isentropic_incompressible(inlet_thermo, Pout)
-        else:
-            return dH_isentropic_perfect(inlet_thermo, Pout)
-            from pdb import set_trace
-            set_trace()
-            # Check state and try isentropic or incompressible form
-            thermo(inlet_thermo.Ydict, state={'S': inlet_thermo._S, 'P': Pout}, model=inlet_thermo.thermo_model)
-
-    return isentropic_outlet._H - inlet_thermo._H
-
-def dH_isentropic_perfect(inlet_thermo, Pout):
-    # Calculate dH assuming incompressible fluid
-
-    gamma = inlet_thermo.gamma
-
-    cp = inlet_thermo._cp
-    P0 = inlet_thermo._P
-
-    return cp*P0*(1-(Pout/P0)**((gamma-1)/gamma))
-
-def dH_isentropic_incompressible(inlet_thermo, Pout):
-    # Isentropic incompressible dH
-    # dH = dP/rho
-
-    return (Pout-inlet_thermo._P)/inlet_thermo._density
 
 
 def pump_eta(phi):
