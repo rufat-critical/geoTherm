@@ -146,19 +146,30 @@ def _static_to_total(static, w_flux, total=None, PR_bounds=None):
         return total
 
     def hunt_PR(PR):
-        # Enforce PR bounds for valid range
+        """
+        Function to solve for pressure ratio (PR) that balances
+        calculated mass flux with the given mass flux.
+
+        Args:
+            PR (float): Pressure ratio to adjust to balance mass flux.
+
+        Returns:
+            float: Difference between target and calculated mass flux.
+        """
+        # Constrain PR within a valid range
         if PR < 0:
             return (-PR + 10) * 1e5
         elif PR > 1:
             return (1 - PR - 10) * 1e5
 
-        # Function to find outlet pressure that results in mass flow
+        # Set static state based on entropy and PR-adjusted pressure
         total._SP = static._S, static._P/PR
 
-        return w_flux - _w_isen(total, static)
+        # Offset slightly for numerical stability near choking
+        return (w_flux - _w_isen(total, static)) - 1e-8
 
-    if PR_bounds is None:
-        PR_bounds = [1e-2, 1]
+    
+    PR_bounds = find_bounds(hunt_PR, bounds=[.5, 1], upper_limit=1)
 
     # Solve for pressure ratio (PR) using subsonic or supersonic bounds
     PR = root_scalar(hunt_PR, method='brentq', bracket=PR_bounds).root
@@ -182,8 +193,6 @@ def total_to_static_Mach(total, M=1, static=None):
     if static is None:
         static = thermo.from_state(total.state)
 
-    from pdb import set_trace
-    set_trace()
     # Calculate critical pressure ratio for Mach 1
     PR_crit = perfect_ratio_from_Mach(1, total.gamma, 'PR')
 
@@ -198,10 +207,10 @@ def total_to_static_Mach(total, M=1, static=None):
     else:
         P_bounds = [1e-2, PR_crit]
 
-    # Extend bounds if the sign is the same
-    #P_bounds = _extend_bounds(hunt_PR, P_bounds, max_iter=10, factor=1.5)
     from pdb import set_trace
     set_trace()
+    # Extend bounds if the sign is the same
+    #P_bounds = _extend_bounds(hunt_PR, P_bounds, max_iter=10, factor=1.5)
     PR = root_scalar(hunt_PR, method='brentq', bracket=P_bounds).root
 
     static._SP = total._S, PR * total._P
@@ -838,11 +847,11 @@ class flow_func:
 
     def __init__(self, flow_func):
         self.flow_func = flow_func
-    
+
     @property
     def flow_func(self):
         return self._flow_func
-    
+
     @flow_func.setter
     def flow_func(self, flow_func):
 
@@ -859,7 +868,7 @@ class flow_func:
         else:
             from pdb import set_trace
             set_trace()
-    
+
     def _dP_reverse(self, DS_thermo, w_flux):
 
         if self.flow_func == 'isentropic':
@@ -876,3 +885,67 @@ class flow_func:
         elif self.flow_func == 'comp':
             return _w_comp(US_thermo, DS_thermo)
 
+class OneDflow:
+
+    def __init__(self, flow_type):
+        self.flow_type = flow_type
+
+    
+    def totalInlet_mass(self, total_state, w_flux, dP, dHt):
+        
+        inlet = _total_to_static(total_state, w_flux)
+        outlet = total_state.from_state(total_state.state)
+
+        Pe = inlet._P - dP
+        Hte = total_state._H - dHt
+
+        def find_outlet(S):
+            outlet._SP = inlet._S*S, Pe
+            
+            return Hte - (outlet._H+.5*(w_flux/outlet._density)**2)
+
+        
+        S = root_scalar(find_outlet, method='brentq', bracket = [.9, 1.5]).root
+        outlet._SP = inlet._S*S, Pe
+
+        from pdb import set_trace
+        set_trace()
+    
+
+
+
+
+    def totalInlet_mass2(self, total_state, Min, dP, dHt):
+        
+
+        #static_inlet = total_to_static_Mach(total_state, Min)
+
+        #PR = perfect_ratio_from_Mach(.6, 1.4, 'PR')
+
+        static_inlet = total_state.from_state(total_state.state)
+        static_inlet._SP = total_state._S, PR*total_state._P
+       # U = static_inlet.sound_speed*.6
+
+        #w_flux = static_inlet._density*U
+
+        #dP = 45/3*.02*static_inlet.
+        
+        from pdb import set_trace
+        set_trace()
+
+
+        dP2 = static_inlet._P - dP
+        dHT2 = total_state._H - dHt
+
+        outlet = total_state.from_state(total_state.state)
+        S1 = outlet._S
+        H2 = total_state._H - dHt
+
+        outlet._SP = S1*1.007035, dP2
+
+        outlet_total = _static_to_total(outlet, w_flux)
+
+        print(outlet_total._H -H2)
+
+        from pdb import set_trace
+        set_trace()

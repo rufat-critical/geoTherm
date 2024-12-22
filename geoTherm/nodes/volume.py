@@ -168,12 +168,13 @@ class Volume(Station):
         """
         try:
             # Attempt to update the thermodynamic state
-            self.thermo.update_state(state)
+            self.thermo._update_state(state)
             self._reinit_state_vars()
             return False
         except Exception as e:
             # If an error occurs, trigger debugging and return True
-            logger.error(f"Failed to update thermo state for {self.name}: {e}")
+            logger.error(f"Failed to update thermo state to state: {state} "
+                         f"for {self.name}:\n {e}")
             return True
 
     @property

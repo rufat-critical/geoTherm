@@ -289,6 +289,21 @@ class Heatsistor(Heat):
         T_cold = self.model[self.cool].thermo._T
         self._Q = self._H*(T_hot-T_cold)
 
+    def get_outlet_state(self):
+
+        # Check Temp
+        if self._Q > 0:
+            T_hot = self.model[self.hot].thermo._T
+            D = self.model[self.cool].thermo._density
+        else:
+            T_hot = self.model[self.cool].thermo._T
+            D = self.model[self.hot].thermo._density
+
+        return {'T': T_hot - self._Q/self._H,
+                'D': D}
+
+
+
 
 class discretizedHeat:
 

@@ -435,7 +435,26 @@ class statefulFlowNode(flowNode):
 
 
 class Heat(Node):
-    pass
+    
+    def _set_heat(self, Q):
+        self._Q = Q
+        return False
+    
+    def get_DS_state(self):
+
+        if self._Q > 0:
+            DS_node = self.model.node_map[self.name]['cool'][0]
+        else:
+            DS_node = self.model.node_map[self.name]['hot'][0]
+
+        DS_state = self.get_outlet_state()
+
+        if DS_state:
+            return DS_node, DS_state
+        else:
+            from pdb import set_trace
+            set_trace()
+        # Get the Outlet State
 
 
 class statefulHeatNode(Node):

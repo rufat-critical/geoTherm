@@ -94,12 +94,18 @@ class Conditioner:
     def _determine_network_scale(self, name):
         """Determine the scale for a network solver based on network elements.
         """
-        if name in self.model.network.branches:
-            branch = self.model.network.branches[name]
+        if name in self.model.network.flow_branches:
+            branch = self.model.network.flow_branches[name]
             if branch._bounds[0] != -np.inf and branch._bounds[1] != np.inf:
                 return 1 / (branch._bounds[1] - branch._bounds[0])
             else:
                 return 1
+        elif name in self.model.network.thermal_branches:
+            branch = self.model.network.thermal_branches[name]
+            if branch._bounds[0] != -np.inf and branch._bounds[1] != np.inf:
+                return 1 / (branch._bounds[1] - branch._bounds[0])
+            else:
+                return 1e-4            
         elif name in self.model.network.junctions:
             node = self.model.nodes[name]
             if isinstance(node, gt.Balance):
@@ -585,7 +591,8 @@ class Model(modelTable):
 
             # Update to network state
             self.network.evaluate(x)
-
+            from pdb import set_trace
+            #set_trace()
             if not self.converged:
                 logger.warn("Failed to converge with Network Solver, "
                             "will try Nodal Solver Next!")
@@ -788,62 +795,100 @@ class Network:
             self.model.initialize()
 
         # Get the branches and junctions from the model's node map
-        (branches, junctions, branch_connections,
-         node_classification) = self._identify_branches_and_junctions(
-            self.model.node_map
-        )
+        #(branches, junctions, branch_connections,
+        ## node_classification) = self._identify_branches_and_junctions(
+        #    self.model.node_map
+        #)
+        
+        ((flow_branches, flow_branch_connections),
+        (thermal_branches, thermal_branch_connections),
+        junctions)= self._identify_branches_and_junctions(
+            self.model.node_map)
+        
+        
+
         # Store branches and junctions
-        self.branches = dict(branches)
-        self.junctions = dict(junctions)
+        self.flow_branches = dict(flow_branches)
+        self.thermal_branches = dict(thermal_branches)
+        self.junctions = junctions
         self.istate = {}  # Index for state variables
         self.__x = []  # State vector
 
+
         # Initialize branches
-        for branch_id, nodes in branches.items():
+        for branch_id, nodes in flow_branches.items():
             # Create branch objects
-            self.branches[branch_id] = Branch(
+            self.flow_branches[branch_id] = FlowBranch(
                 name=branch_id,
                 nodes=nodes,
-                US_junction=branch_connections[branch_id]['US'],
-                DS_junction=branch_connections[branch_id]['DS'],
+                US_junction=flow_branch_connections[branch_id]['US'],
+                DS_junction=flow_branch_connections[branch_id]['DS'],
                 model=self.model
             )
 
+        for branch_id, nodes in thermal_branches.items():
+            self.thermal_branches[branch_id] = ThermalBranch(
+                name=branch_id,
+                nodes=nodes,
+                US_junction=thermal_branch_connections[branch_id]['hot'],
+                DS_junction=thermal_branch_connections[branch_id]['cool'],
+                model=self.model)
+
         # Initialize junctions
         for junction_id, junction_map in junctions.items():
-            upstream_branches = [self.branches[branch_id] for branch_id
+            US_flow_branches = [self.flow_branches[branch_id] for branch_id
                                  in junction_map['US']]
-            downstream_branches = [self.branches[branch_id] for branch_id
-                                   in junction_map['DS']]
+            DS_flow_branches = [self.flow_branches[branch_id] for branch_id
+                                 in junction_map['DS']]
+                                 
+            US_thermal_branches = [self.thermal_branches[branch_id] for branch_id
+                                   in junction_map['hot']]
+            DS_thermal_branches = [self.thermal_branches[branch_id] for branch_id
+                                   in junction_map['cool']]
+                                   
 
             self.junctions[junction_id] = Junction(
                 node=self.model.nodes[junction_id],
-                US_branches=upstream_branches,
-                DS_branches=downstream_branches,
+                US_flow_branches=US_flow_branches,
+                DS_flow_branches=DS_flow_branches,
+                US_thermal_branches=US_thermal_branches,
+                DS_thermal_branches=DS_thermal_branches,
                 model=self.model
             )
 
         # Initialize Branches and Junctions if not initialized
-        for branch_name, branch in self.branches.items():
-            if not branch.initialized:
-                from pdb import set_trace
-                set_trace()
+        #for branch_name, branch in self.branches.items():
+        #    if not branch.initialized:
+        #        from pdb import set_trace
+        #        set_trace()
 
-        for junction_name, junction in self.junctions.items():
-            if not junction.initialized:
-                from pdb import set_trace
-                set_trace()
+        #for junction_name, junction in self.junctions.items():
+        #    if not junction.initialized:
+        #        from pdb import set_trace
+        #        set_trace()
 
         # Initialize state vector for branches
-        for branch_name, branch in self.branches.items():
+        for branch_id, branch in self.flow_branches.items():
             if len(branch.x) == 0:
                 continue
 
             state_length = len(branch.x)
             current_length = len(self.__x)
-            self.istate[branch_name] = np.arange(current_length,
+            self.istate[branch_id] = np.arange(current_length,
                                                  current_length + state_length)
             self.__x = np.concatenate((self.__x, branch.x))
+
+        for branch_id, branch in self.thermal_branches.items():
+            if len(branch.x) == 0:
+                continue
+
+            state_length = len(branch.x)
+            current_length = len(self.__x)
+            self.istate[branch_id] = np.arange(current_length,
+                                                 current_length + state_length)
+            
+            self.__x = np.concatenate((self.__x, branch.x))
+
 
         # Initialize state vector for junctions
         for junc_name, junction in self.junctions.items():
@@ -903,7 +948,10 @@ class Network:
 
             if isinstance(node, (gt.Boundary)):
                 return True
+
             if node_map[node_name]['hot'] or node_map[node_name]['cool']:
+                from pdb import set_trace
+                set_trace()
                 if (len(node_map[node_name]['US']) == 0 and
                         len(node_map[node_name]['DS']) == 0):
                     return True
@@ -920,6 +968,9 @@ class Network:
                 junctions[node_name] = {'US': [], 'DS': [],
                                         'hot': [], 'cool': []}
                 node_classification[node_name] = node_name
+            else:
+                from pdb import set_trace
+                set_trace()
 
         # Remove junction nodes from remaining_nodes list
         remaining_nodes = [node for node in remaining_nodes
@@ -988,6 +1039,246 @@ class Network:
 
         return branches, junctions, branch_connections, node_classification
 
+
+    def _identify_branches_and_junctions(self, node_map):
+        """
+        Identify all flow branches, thermal branches, and junctions in the node map.
+
+        Args:
+            node_map (dict): A dictionary representing the node map of the
+                            geoTherm system.
+
+        Returns:
+            tuple: A tuple containing:
+                - flow_branches (dict): A dictionary of flow branches.
+                - thermal_branches (dict): A dictionary of thermal branches.
+                - flow_branch_connections (dict): A dictionary mapping flow
+                                                branches to their upstream and downstream junctions.
+                - thermal_branch_connections (dict): A dictionary mapping
+                                                    thermal branches to their upstream and downstream junctions.
+                - junctions (dict): A dictionary of junctions with their connections.
+        """
+
+        # Initialize data structures
+        remaining_nodes = set(node_map.keys())  # Nodes to be processed
+        flow_branches = {}        # Dictionary of flow branches
+        thermal_branches = {}     # Dictionary of thermal branches
+        flow_junctions = []
+        thermal_junctions = []
+        junctions = {}            # Dictionary of junctions
+        # Map flow branches to their connections
+        flow_branch_connections = {}
+        # Map thermal branches to their connections
+        thermal_branch_connections = {}
+        branch_counter = 0     # Identifier for flow branches
+
+        # Helper functions
+        def is_junction(node_name):
+            """
+            Determine if a node is a junction.
+
+            A junction can be a flow junction or a thermal junction based on
+                its connections.
+
+            Args:
+                node_name (str): The name of the node.
+
+            Returns:
+                bool: True if the node is a junction, False otherwise.
+            """
+            node = self.model.nodes[node_name]
+
+            flow_junction = False
+            thermal_junction = False
+            other_junction = False
+
+            US = len(node_map[node_name]['US'])
+            DS = len(node_map[node_name]['DS'])
+            hot = len(node_map[node_name]['hot'])
+            cool = len(node_map[node_name]['cool'])
+
+            # Check if there is flow
+            has_US = US >= 1
+            has_DS = DS >= 1
+
+            # Check if there is thermal flow
+            has_hot = hot >= 1
+            has_cool = cool >= 1
+
+            # Check flow connections
+            has_multiple_flow_connections = US > 1 or DS > 1
+            has_unequal_flow_connections = US != DS
+
+            # Check thermal connections
+            has_multiple_thermal_connections = hot > 1 or cool > 1
+            has_unequal_thermal_connections = hot != cool
+
+            # Determine if node is a junction based on connections
+            if (
+                has_multiple_flow_connections or
+                has_unequal_flow_connections
+            ):
+                flow_junction = True
+
+            if (
+                has_multiple_thermal_connections or
+                has_unequal_thermal_connections
+            ):
+                thermal_junction = True
+
+            if ((has_US or has_DS)
+                and (has_hot or has_cool)):
+                thermal_junction = True
+
+            if (not (has_US or has_DS)
+                and not thermal_junction):
+                other_junction = True
+
+
+            # Additional condition for boundary nodes
+            if isinstance(node, gt.Boundary):
+                if has_US and has_DS:
+                    flow_junction = True
+
+            return flow_junction, thermal_junction, other_junction
+
+        # Identify all junction nodes
+        # Iterate over a copy to allow removal
+        for node_name in list(remaining_nodes):
+
+            flow, thermal, other = is_junction(node_name)
+
+            if flow:
+                flow_junctions.append(node_name)
+
+            if thermal:
+                thermal_junctions.append(node_name)
+
+            if flow or thermal or other:
+                junctions[node_name] = {'US': [],
+                                        'DS': [],
+                                        'hot': [],
+                                        'cool': []}
+                
+                
+                remaining_nodes.remove(node_name)
+
+
+        # Define branch tracing functions
+        def trace_branch(current_node, current_branch, branch_type):
+            """
+            Trace a branch starting from the current node.
+
+            Args:
+                current_node (str): The current node to trace from.
+                branch_type (str): Type of branch to trace
+                                    ('flow' or 'thermal').
+
+            Returns:
+                tuple: (branch_nodes (list), downstream_junction (str))
+            """
+
+            if branch_type == 'flow':
+                DS = 'DS'
+                if current_node in flow_junctions:
+                    return current_node
+            elif branch_type == 'thermal':
+                DS = 'cool'
+                if current_node in [*thermal_junctions, *flow_junctions]:
+                    return current_node
+
+            current_branch.append(current_node)
+            if current_node in remaining_nodes:
+                remaining_nodes.remove(current_node)
+
+            downstream_nodes = node_map[current_node][DS]
+
+            if not downstream_nodes:
+                # Downstream junction
+                return current_node
+
+            if len(downstream_nodes) > 1:
+                from pdb import set_trace
+                set_trace()
+
+            downstream_node = downstream_nodes[0]
+
+            if branch_type == 'flow' and downstream_node in flow_junctions:
+                # Return downstream junction
+                return downstream_node
+            elif (branch_type == 'thermal' and downstream_node 
+                  in [*thermal_junctions, *flow_junctions]):
+                return downstream_node
+            else:
+                return trace_branch(downstream_node, current_branch, branch_type)
+
+        # Identify flow branches and connections
+        for junction in flow_junctions:
+            downstream_nodes = node_map[junction]['DS']
+            for downstream_node in downstream_nodes:
+                if (downstream_node in flow_junctions):
+                    # No branch between junctions or already processed
+                    continue
+
+                current_branch = []
+                downstream_junction = trace_branch(downstream_node,
+                                                   current_branch,
+                                                   'flow')
+
+                flow_branches[branch_counter] = current_branch
+
+                # Record connections
+                junctions[junction]['DS'].append(branch_counter)
+                if downstream_junction in junctions:
+                    junctions[downstream_junction]['US'].append(
+                        branch_counter)
+                else:
+                    from pdb import set_trace
+                    set_trace()
+                flow_branch_connections[branch_counter] = {
+                    'US': junction,
+                    'DS': downstream_junction
+                }
+                branch_counter += 1
+
+        for junction in thermal_junctions:
+            downstream_nodes = node_map[junction]['cool']
+            for downstream_node in downstream_nodes:
+                
+                if (downstream_node in junctions):
+                    # No branch between junctions or already processed
+                    continue
+
+                current_branch = []
+                downstream_junction = trace_branch(downstream_node,
+                                                   current_branch,
+                                                   'thermal')
+
+                thermal_branches[branch_counter] = current_branch
+                junctions[junction]['cool'].append(branch_counter)
+                if downstream_junction in junctions:
+                    junctions[downstream_junction]['hot'].append(
+                        branch_counter)
+                else:
+                    from pdb import set_trace
+                    set_trace()
+                thermal_branch_connections[branch_counter] = {
+                    'hot': junction,
+                    'cool': downstream_junction
+                }
+                branch_counter+=1
+
+        if len(remaining_nodes) != 0:
+            logger.warn("The following nodes were not recognized in "
+                        f"building the network map: {remaining_nodes}")
+            from pdb import set_trace
+            set_trace()
+
+        return ((flow_branches, flow_branch_connections),
+                (thermal_branches, thermal_branch_connections),
+                junctions)
+
+
     def update_state(self, x):
         """
         Update the state vector for the network.
@@ -999,10 +1290,15 @@ class Network:
 
         # Update Network
         for name, istate in self.istate.items():
-            if name in self.branches:
-                self.branches[name].update_state(x[istate])
-            else:
+            if name in self.flow_branches:
+                self.flow_branches[name].update_state(x[istate])
+            elif name in self.thermal_branches:
+                self.thermal_branches[name].update_state(x[istate])
+            elif name in self.junctions:
                 self.junctions[name].update_state(x[istate])
+            else:
+                from pdb import set_trace
+                set_trace()
 
     def evaluate(self, x):
         """
@@ -1017,13 +1313,16 @@ class Network:
         """
         self.update_state(x)
 
-        # Evaluate branches and junctions
-        for _, branch in self.branches.items():
-            branch.evaluate()
 
+        for _, branch in self.thermal_branches.items():
+            branch.evaluate()
+        
+        for _, branch in self.flow_branches.items():
+            branch.evaluate()
+            
         for _, junction in self.junctions.items():
             junction.evaluate()
-
+            
         return self.xdot
 
     @property
@@ -1036,11 +1335,16 @@ class Network:
         """
         xdot = []
 
-        for name, _ in self.istate.items():
-            if name in self.branches:
-                xdot.append(self.branches[name].xdot)
-            else:
+        for name, istate in self.istate.items():
+            if name in self.flow_branches:
+                xdot.append(self.flow_branches[name].xdot)
+            elif name in self.thermal_branches:
+                xdot.append(self.thermal_branches[name].xdot)
+            elif name in self.junctions:
                 xdot.append(self.junctions[name].xdot)
+            else:
+                from pdb import set_trace
+                set_trace()
 
         if len(xdot) > 0:
             return np.concatenate(xdot)
@@ -1108,7 +1412,8 @@ class Junction:
     to handle mass and energy conservation across these points.
     """
 
-    def __init__(self, node, US_branches, DS_branches, model):
+    def __init__(self, node, US_flow_branches, DS_flow_branches, 
+                 US_thermal_branches, DS_thermal_branches, model):
         """
         Initialize a Junction instance.
 
@@ -1121,11 +1426,12 @@ class Junction:
             model (Model): The geoTherm model.
         """
         self.node = node
-        self.US_branches = US_branches
-        self.DS_branches = DS_branches
+        self.US_flow_branches = US_flow_branches
+        self.DS_flow_branches = DS_flow_branches
+        self.US_thermal_branches = US_thermal_branches
+        self.DS_thermal_branches = DS_thermal_branches
         self.model = model
         self.initialized = False
-
         self.initialize()
 
     def initialize(self):
@@ -1134,36 +1440,13 @@ class Junction:
         """
         if isinstance(self.node, (gt.Boundary)):
             pass
-        elif isinstance(self.node, (gt.Heatsistor)):
-            self._Q = self.node._Q
-            self.__add_heatsistor_properties()
-            from pdb import set_trace
-            set_trace()
+        elif len(self.US_flow_branches) == len(self.DS_flow_branches) == 1:
+            pass
         elif hasattr(self.node, 'x'):
             # Add properties and method if self.node has attribute 'x'
             self.__add_dynamic_properties()
 
-
         self.initialized = True
-
-    def __add_heatsistor_properties(self):
-
-        def get_x(self):
-            return np.array([self._Q])
-        
-        def get_xdot(self):
-            self.node.evaluate()
-            xdot = self.node._Q - self._Q
-            self.node._Q = self._Q
-            return np.array([xdot])
-
-        def update_state(self, x):
-            self._Q = x[0]
-            self.node._Q = self._Q
-
-        setattr(self.__class__, 'x', property(get_x))
-        setattr(self.__class__, 'xdot', property(get_xdot))
-        setattr(self.__class__, 'update_state', update_state)
 
     def __add_dynamic_properties(self):
         """
@@ -1190,8 +1473,10 @@ class Junction:
         self.node.evaluate()
 
 
+
+
 @addQuantityProperty
-class Branch:
+class FlowBranch:
     """
     Represents a branch in the geoTherm model network.
 
@@ -1267,6 +1552,8 @@ class Branch:
         for node in self.nodes:
             if isinstance(node, (gt.flowNode,
                           gt.BoundaryConnector)):
+                
+                node.evaluate()
                 Wnet += node._w
                 flow_elements += 1
 
@@ -1445,8 +1732,6 @@ class Branch:
                 set_trace()
 
 
-
-
     def evaluate_forward(self):
         """
         Evaluate the branch by updating nodes and calculating errors.
@@ -1459,7 +1744,11 @@ class Branch:
 
         # Update mass flow if this is a fixed flow branch
         if self.fixedFlow:
-            self._w = self.fixed_flow_node._w
+            try:
+                self._w = self.fixed_flow_node._w
+            except:
+                from pdb import set_trace
+                set_trace()
 
         if self.penalty:
             # If penalty was triggered then return
@@ -1785,6 +2074,324 @@ class Branch:
             return np.array([self.error])
         else:
             return self.error
+
+        
+    
+
+@addQuantityProperty
+class BaseBranch:
+    """
+    Represents a generic branch in the geoTherm model network.
+
+    This base class encapsulates common properties and methods for both fluid and thermal branches.
+    """
+
+    _units = {}
+    _bounds = [-np.inf, np.inf]
+
+    def __init__(self, name, nodes, US_junction, DS_junction, model, x=0):
+        """
+        Initialize a BaseBranch instance.
+
+        Args:
+            name (str): Unique identifier for the Branch.
+            nodes (list): List of node names or instances in sequential order.
+            US_junction (str or instance): Upstream junction name or instance.
+            DS_junction (str or instance): Downstream junction name or instance.
+            model (object): The model containing all nodes and junctions.
+            x (float, optional): Flow-related property (mass flow rate or heat flow rate).
+        """
+        self.name = name
+
+        # Convert node names to instances if necessary
+        if isinstance(nodes[0], str):
+            self.nodes = [model.nodes[name] for name in nodes]
+        else:
+            self.nodes = nodes
+
+        # Assign upstream junction
+        if isinstance(US_junction, str):
+            self.USJunc = model.nodes[US_junction]
+            self.US_junction = model.nodes[US_junction]
+        else:
+            self.USJunc = US_junction
+            self.US_junction = US_junction
+
+        # Assign downstream junction
+        if isinstance(DS_junction, str):
+            self.DSJunc = model.nodes[DS_junction]
+            self.DS_junction = model.nodes[DS_junction]
+        else:
+            self.DSJunc = DS_junction
+            self.DS_junction = DS_junction
+
+        self.model = model
+        self._x = x
+
+        self.fixed_flow = False
+        self.backFlow = False
+
+        # Node for controlling flow or heat
+        self.fixed_flow_node = None
+        self.penalty = False
+        self.solver = 'forward'
+
+        self.initialized = False
+
+        #self.initialize()
+
+    @property
+    def x(self):
+        return self._x
+    
+    @x.setter
+    def x(self, x):
+        self._x = x
+
+    def __str__(self):
+        """
+        Return a string representation of the Flow Branch in a map-like format.
+        """
+        
+        US_junc_name = self.US_junction.name
+        DS_junc_name = self.DS_junction.name
+        node_names = [node.name for node in self.nodes]
+        
+        branch_path = f"{US_junc_name} => " + " => ".join(node_names) + f" => {DS_junc_name}"
+        return f"Flow Branch: {self.name}\n{branch_path}\nx: {self.x}"
+
+    def update_state(self, x):
+        """
+        Update the Branch state with a new state vector.
+
+        Args:
+            x (array): The new state vector.
+        """
+
+        # Store the original state
+        # We may need to revert if penalty are triggered
+
+        self._x0 = np.copy(self._x)
+        self._x = x
+        self.penalty = False
+
+        if x < self._bounds[0]:
+            self.penalty = (self._bounds[0] - x[0] + 10)*1e5
+            self.x = self._x0
+            return
+        elif x > self._bounds[1]:
+            self.penalty = (self._bounds[1] - x[0] - 10)*1e5
+            self.x = self._x0
+            return
+
+        if self.fixedFlow:
+            self.fixed_flow_node.update_state(x)
+            # Get the penalty from the setter object
+            self.penalty = self.fixed_flow_node.penalty
+        else:
+            if x[0] < 0 and not self.backFlow:
+                # If backflow is not enabled apply penalty
+                self.penalty = (10 - x[0])*1e5
+                return
+
+
+
+@addQuantityProperty
+class ThermalBranch(BaseBranch):
+    """
+    Represents a thermal branch in the geoTherm model network.
+
+    ThermalBranches are segments with thermal resistors in series
+    """
+
+    _units = {'Q': 'HEATFLOW'}
+    _bounds = [-np.inf, np.inf]
+    
+    def __init__(self, name, nodes, US_junction, DS_junction, model, Q=None):
+        """
+        Initialize a ThermalBranch instance.
+
+        Args:
+            name (str): Unique identifier for the ThermalBranch.
+            nodes (list): List of thermal node names or instances in sequential order.
+            US_junction (str or instance): Upstream thermal junction name or instance.
+            DS_junction (str or instance): Downstream thermal junction name or instance.
+            model (object): The model containing all thermal nodes and junctions.
+            Q (float, optional): Heat flow rate with a default value of 0.
+        """
+        super().__init__(name, nodes, US_junction, DS_junction, model, x=Q)
+
+        self.initialize()
+
+    @property
+    def _Q(self):
+        if self.fixed_flow:
+            return self.fixed_flow_node._Q
+        else:
+            return self._x[0]
+
+    @property
+    def average_Q(self):
+        
+        Qnet = 0
+        flow_elements = 0
+
+        if self.fixed_flow:
+            return self.fixed_flow_node._Q
+
+        for node in self.nodes:
+            if isinstance(node, (gt.Heatsistor)):
+                node.evaluate()
+                Qnet += node._Q
+                flow_elements +=1
+
+        if flow_elements == 0:
+            from pdb import set_trace
+            set_trace()
+
+        return float(Qnet/flow_elements)
+
+    def initialize(self):
+
+        
+        self.istate = {}
+        self.x = np.array([])
+
+        for inode, node in enumerate(self.nodes):
+            nMap = self.model.node_map[node.name]
+
+            if isinstance(node, (gt.Qdot)):
+                self.fixed_flow = True
+                self.fixed_flow_node = node
+                self.fixedFlow = True
+                self.initialized = True
+                return
+
+        self.x = np.array([self.average_Q])
+        self._x0 = np.copy(self.x)
+        self.initialized = True
+
+        self.fixedFlow = self.fixed_flow
+
+
+    def evaluate(self):
+        
+        nodes = self.nodes
+        
+        if self.fixed_flow:
+            if len(self.nodes) == 1:
+                return
+            from pdb import set_trace
+            set_trace()
+            self._x = self.fixed_flow_node
+        
+        if self.penalty:
+            return
+            
+        if self._x < 0:
+            nodes = nodes[::-1]
+            US_junction = self.DS_junction
+            DS_junction - self.US_junction
+        else:
+            US_junction = self.US_junction
+            DS_junction = self.DS_junction
+        
+        if US_junction.thermo._T > DS_junction.thermo._T:
+            if self._x > 0:
+                pass
+            else:
+                from pdb import set_trace
+                set_trace()
+        
+        elif US_junction.thermo._T < DS_junction.thermo._T:
+            if self._x < 0:
+                pass
+            else:
+                from pdb import set_trace
+                set_trace()    
+        else:
+            if self._x !=0:        
+                # Check Temperatures
+                from pdb import set_trace
+                set_trace()
+
+        
+        # Loop thru Branch nodes
+        for inode, node in enumerate(nodes):
+            # Evaluate the node
+            node.evaluate()
+
+            if isinstance(node, (gt.ThermoNode)):
+                # We're working with either a thermoNode or Station node.
+                # The expected pattern of connections is:
+                # flowNode => Station => flowNode
+                # The following logic checks and enforces this pattern.
+
+                # Perform a bitwise AND operation to check if 'inode' is even.
+                # '0x1' is the hexadecimal representation of the binary value
+                # '0001'. If 'inode & 0x1' results in 0, 'inode' is even,
+                # otherwise it's odd. If 'inode' is even, trigger the debugger
+                # to inspect the state.
+                if not inode & 0x1:
+                    from pdb import set_trace
+                    set_trace()
+
+                # Skip the rest of the loop iteration for this node
+                continue
+
+            elif isinstance(node, (gt.Heatsistor)):
+                # Update the downstream state
+                error = node._set_heat(self._Q)
+
+                if error:
+                    self.penalty = error
+                    return
+                
+            DS_node, DS_state = node.get_DS_state()
+
+            if DS_state is None:
+                from pdb import set_trace
+                set_trace()
+            
+            if DS_state['T']<0:
+                self.penalty = (DS_state['T']-10)*1e5
+
+            if inode == len(nodes) - 1:
+                self.DS_target = DS_state
+                if DS_node != DS_junction.name:
+                    from pdb import set_trace
+                    set_trace()
+                return
+            
+            self.model.nodes[DS_node].update_thermo(DS_state)
+
+
+
+        from pdb import set_trace
+        set_trace()
+    
+
+    @property
+    def xdot(self):
+
+        if self.penalty is not False:
+            return np.array([self.penalty])
+        
+        if self._x < 0:
+            Tout = self.US_junction.thermo._T
+        else:
+            Tout = self.DS_junction.thermo._T
+        
+        if self.fixed_flow:
+            from pdb import set_trace
+            set_trace()
+        else:
+            self.error = (self.DS_target['T'] - Tout)
+
+        return np.array([self.error])
+
+
+
 
 
 class Solution:
