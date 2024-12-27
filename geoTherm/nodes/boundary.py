@@ -1,17 +1,17 @@
-from .baseClasses import ThermoNode
+from .baseNodes.baseThermo import baseThermo
 from ..logger import logger
 import numpy as np
 
 
-class Boundary(ThermoNode):
+class Boundary(baseThermo):
     pass
 
 
-class PBoundary(ThermoNode):
-    """ Thermodynamic state with a specified Pressure but density
-    calculated based on conservation """
+class PressureBoundary(Boundary):
+    """ Thermodynamic state with a specified Pressure but enthalpy
+        calculated from inlet streams """
 
-    _displayVars = ['P', 'T']
+    _displayVars = ['P', 'T', 'H']
 
     def update_state(self, x):
 
@@ -31,82 +31,27 @@ class PBoundary(ThermoNode):
             self.thermo._DP = X0, P0
             self.penalty = (X0-x)*1e5
 
-    @property
-    def x(self):
-        # Return the object state (enthalpy)
-        return np.array([self.thermo._density])
+    def evaluate(self):
+        
+        H = 0
+        wnet = 0
+        # Maybe write a method to have inlet/outlet flux calc
+        for node in self.US_nodes:
+            node.evaluate()
+            upVol = node.US_node.thermo
+            w = node._w
+            wnet = node._w
+            out = self.US_nodes[0].get_outlet_state(upVol, w)
+            H += out['H']*w/wnet
 
-    @property
-    def xdot(self):
-        return self.error
-
-    @property
-    def error(self):
-
-        wnet,Hnet, Qnet, Wnet = self.model.getFlux(self)
-
-        if self.penalty is not False:
-            return self.penalty
-        from pdb import set_trace
-        #set_trace()
-        return np.array([wnet])
-
-
-class TBoundary(ThermoNode):
-    """ Thermodynamic state with a specified Temperature but density
-    calculated based on conservation """
-
-    _displayVars = ['P', 'T', 'H', 'phase']
-
-    def initialize(self, model):
-        super().initialize(model)
-        self.penalty = False
-
-    def update_state(self, x):
-
-        # Get the initial state
-        X0 = self.x
-
+        outlet_state = {'P': self.thermo._P, 'H': H}
         try:
-            # Update the thermodynamic state
-            self.thermo._TD = self.thermo._T, x[0]
-            self.penalty = False
-        except:
-            self.thermo._TD = self.thermo._T, X0
-            self.penalty = (X0-x)*1e5
+            self.thermo.update_state(outlet_state)
+        except Exception as e:
+            logger.warn(f"Failed to update outlet state to: {outlet_state}")
 
-    def update_thermo(self, dsState):
 
-        if 'P' not in dsState:
-            from pdb import set_trace
-            set_trace()
-        else:
-            self.thermo._TP = self.thermo._T, dsState['P']
-
-        if self.thermo._P > 1e8:
-            from pdb import set_trace
-            #set_trace()
-
-    @property
-    def x(self):
-        # Return the object state (Density)
-        return np.array([self.thermo._density])
-
-    @property
-    def error(self):
-
-        wNet, _, _,_ = self.model.getFlux(self)
-
-        if self.penalty is not False:
-            return self.penalty
-
-        return np.array([wNet])
-
-    @property
-    def xdot(self):
-        return self.error
-
-class Outlet(ThermoNode):
+class Outlet(Boundary):
     """ Outlet Node where the state is determined by outlet properties"""
 
     # @inputParser
@@ -191,11 +136,16 @@ class Outlet(ThermoNode):
         # Evaluate the upstream node
         self.US_nodes[0].evaluate()
 
+        # Get the upstream volume node
+        upVol = self.US_nodes[0].US_node.thermo
+        w = self.US_nodes[0]._w
+
         # Update thermo state to US node outlet state
-        outlet_state = self.US_nodes[0].get_outlet_state()
+        outlet_state = self.US_nodes[0].get_outlet_state(upVol, w)
 
         #Update Outlet State
         try:
             self.thermo.update_state(outlet_state)
-        except:
-            pass
+        except Exception as e:
+            logger.warn(f"Failed to update outlet state to: {outlet_state}")
+        

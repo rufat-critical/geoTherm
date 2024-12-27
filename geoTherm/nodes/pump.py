@@ -1,5 +1,4 @@
-from .baseClasses import fixedFlowNode
-from .baseTurbo import Turbo, pumpParameters, fixedFlowTurbo
+from .baseNodes.baseTurbo import Turbo, pumpParameters, fixedFlowTurbo
 from ..units import addQuantityProperty
 from ..utils import pump_eta
 from ..flow_funcs import _dH_isentropic
@@ -26,12 +25,31 @@ class Pump(Turbo, pumpParameters):
     # Bounds on flow variables
     _bounds = [1, 1000]
 
+    def thermostates(self):
+        """
+        Get the inlet and outlet thermo states based on Pressure
+        """
+
+        # Handle Backflow
+        if self.US_node.thermo._P <= self.DS_node.thermo._P:
+            US = self.US_node.thermo
+            DS = self.DS_node.thermo
+            flow_sign = 1
+        else:
+            US = self.DS_node.thermo
+            DS = self.US_node.thermo
+            flow_sign = -1
+
+        return US, DS, flow_sign
+
     def _get_dP(self):
         """Get delta P across Pump."""
 
-        US, _ = self._get_thermo()
+        US, _, _ = self.thermostates
 
         return US._P*(self.PR-1)
+    
+
 
     def _get_dH(self):
         """Get enthalpy change across Pump."""
@@ -42,14 +60,45 @@ class Pump(Turbo, pumpParameters):
         return self._dH_is/self.eta
 
     @property
+    def _dP(self):
+        US, _, _ = self.thermostates
+
+        return US._P*(self.PR-1)
+
+    @property
+    def _dH(self):
+        return self._dH_is/self.eta
+
+    @property
     def _dH_is(self):
         # Isentropic Enthalpy across Turbo Component
 
         # Get Upstream Thermo
-        US,_ = self._get_thermo()
+        #US,_,_ = self.thermostates()
+
+        US = self.US_node.thermo
+
 
         return _dH_isentropic(US, US._P*self.PR)
 
+    
+    def get_outlet_state(self, US, w):
+        
+        dP = US._P*(self.PR-1)
+        dH_is = _dH_isentropic(US, US._P*self.PR)
+        return {'P': US._P + dP,
+                'H': US._H + dH_is/self.eta}
+
+    def evaluate(self):
+        pass
+        #US, _, flow_sign = self.thermostates()
+        #US = self.US_node.thermo
+        #self._dP = US._P*(self.PR-1)
+        #self._dH = _dH_isentropic(US, US._P*self.PR)/self.eta
+
+
+    def _set_flow(self, w):
+        self._w = w
 
 
 class fixedFlowPump(fixedFlowTurbo, Pump):
@@ -59,63 +108,12 @@ class fixedFlowPump(fixedFlowTurbo, Pump):
     # In the future can make a control class to check/update bounds
     _bounds = [1, 500]
 
-    @property
-    def x(self):
-        """
-        fixedWPump PR pressure ratio state.
+    def evaluate(self):
 
-        Returns:
-            np.array: Pressure ratio.
-        """
-        return np.array([self.PR])
+        self.PR = self.DS_node.thermo._P/self.US_node.thermo._P
 
-    def update_state(self, x):
-        """
-        Update the state of the Pump.
+    def get_outlet_state(self, US, PR):
+        
+        dH = _dH_isentropic(US, US._P*self.PR)/self.eta
 
-        Args:
-            x (float): New state value to set.
-        """
-
-        # Update X if it is within boudns or apply penalty
-        if x < self._bounds[0]:
-            self.penalty = (self._bounds[0] - x[0] + 10)*1e5
-            self.PR = self._bounds[0]
-        elif x > self._bounds[1]:
-            self.penalty = (self._bounds[1] - x[0] - 10)*1e5
-            self.PR = self._bounds[1]
-        else:
-            self.penalty = False
-            self.PR = x[0]
-
-    def __init__(self, *args, **kwargs):
-        self._w_correction = 0
-        # Run init method
-        super().__init__(*args, **kwargs)
-
-    @property
-    def error(self):
-        if self.penalty is not False:
-            return self.penalty
-        else:
-            return (self.DS_node.thermo._P/self.US_node.thermo._P
-                    - self.PR)
-
-    @property
-    def _w2(self):
-        # Correction Term
-        #if hasattr(self, 'DS_node'):
-        #    corr = (self.DS_node.thermo._P/self.US_node.thermo._P
-        #                - self.PR)
-        #else:
-        #    corr = 0
-        #return self._w_setpoint + corr*.1
-
-        from pdb import set_trace
-        set_trace()
-
-        return self._w_setpoint*(1+self._w_correction)
-
-    @_w2.setter
-    def _w2(self, w):
-        self._w_setpoint = w
+        return {'H': US._H + dH, 'P': US._P*PR}

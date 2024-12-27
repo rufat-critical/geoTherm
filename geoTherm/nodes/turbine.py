@@ -1,5 +1,6 @@
 import numpy as np
-from .baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters
+#from .baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters
+from .baseNodes.baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters
 from ..units import addQuantityProperty
 from ..utils import turb_axial_eta, turb_radial_eta
 from ..flow_funcs import _dH_isentropic
@@ -22,15 +23,21 @@ class Turbine(Turbo, turbineParameters):
         return self._dH_is*self.eta
 
     @property
+    def _dH(self):
+        return self._dH_is*self.eta
+
+    @property
     def _dH_is(self):
 
         # Get Upstream Thermo
-        US, _ = self._get_thermo()
+        US, _,_ = self.thermostates()
 
         # Isentropic Enthalpy across Turbo Component
         return _dH_isentropic(US, US._P/self.PR)
 
-
+    def _set_flow(self, w):
+        self._w = w
+        
     def _update_eta(self):
         # Update Turbine efficiency using efficiency curves
 
@@ -65,6 +72,14 @@ class Turbine(Turbo, turbineParameters):
             self._update_eta()
 
         super().evaluate()
+
+    def get_outlet_state(self, US, w):
+
+        dP = US._P*(1/self.PR - 1)
+        dH_is  = _dH_isentropic(US, US._P/self.PR)
+
+        return {'P': US._P + dP,
+                'H': US._H + dH_is*self.eta}
 
 
 class Turbine_sizer(Turbine, TurboSizer):
@@ -113,38 +128,11 @@ class fixedFlowTurbine(fixedFlowTurbo, Turbine):
     # In the future can make a control class to check/update bounds
     _bounds = [1, 100]
 
-    @property
-    def x(self):
-        """
-        fixedWTurbine PR pressure ratio state.
+    def get_outlet_state(self, US, PR):
+        
+        dH = _dH_isentropic(US, US._P*self.PR)*self.eta
 
-        Returns:
-            np.array: Pressure ratio.
-        """
-        return np.array([self.PR])
+        return {'H': US._H + dH, 'P': US._P*PR}
 
-    def update_state(self, x):
-        """
-        Update the state of the turbine.
-
-        Args:
-            x (float): New state value to set.
-        """
-
-        # Update X if it is within boudns or apply penalty
-        if x < self._bounds[0]:
-            self.penalty = (self._bounds[0] - x[0] + 10)*1e5
-            self.PR = self._bounds[0]
-        elif x > self._bounds[1]:
-            self.penalty = (x[0] - self._bounds[1] - 10)*1e5
-            self.PR = self._bounds[1]
-        else:
-            self.penalty = False
-            self.PR = x[0]
-
-    @property
-    def xdot(self):
-        if self.penalty is not False:
-            return self.penalty
-        else:
-            return (self.US_node.thermo._P/self.DS_node.thermo._P - self.PR)
+    def evaluate(self):
+       self.PR = self.US_node.thermo._P/self.DS_node.thermo._P

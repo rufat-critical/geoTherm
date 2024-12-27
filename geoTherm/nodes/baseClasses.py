@@ -114,7 +114,7 @@ class flowNode(Node):
         #else:
         #    return dsNode, None
 
-    def get_outlet_state(self):
+    def get_outlet_state(self, US, w):
         """
         Placeholder method to be overwritten by specific flow nodes.
         """
@@ -137,8 +137,9 @@ class flowNode(Node):
                         "_get_dP(self, US, DS) method")
 
 
-    def get_DS_state(self):
-
+    def get_DS_state(self, DS, w):
+        from pdb import set_trace
+        set_trace()
         # Get Downstream Node
         if self._w >= 0:
             DS_node = self.model.node_map[self.name]['DS'][0]
@@ -153,6 +154,9 @@ class flowNode(Node):
             return DS_node, DS_state
         else:
             return DS_node, None
+
+
+
 
     def get_US_state(self, w, DS_thermo=None):
 
@@ -456,6 +460,31 @@ class Heat(Node):
             set_trace()
         # Get the Outlet State
 
+    def get_US_state(self):
+        if self._Q > 0:
+            US_node = self.model.node_map[self.name]['hot'][0]
+        else:
+            US_node = self.model.node_map[self.name]['cool'][0]
+
+        US_state = self.get_inlet_state()
+
+        return US_state, US_node
+
+    def initialize(self, model):
+
+        super().initialize(model)
+
+        if self.cool is not None:
+            if not isinstance(self.model.nodes[self.cool],
+                              ThermoNode):
+                logger.critical(f"Thermal Component {self.name} can only "
+                                "be attached to a thermo node")
+        if self.hot is not None:
+            if not isinstance(self.model.nodes[self.hot],
+                              ThermoNode):
+                logger.critical(f"Thermal Component {self.name} can only "
+                                "be attached to a thermo node")         
+
 
 class statefulHeatNode(Node):
 
@@ -469,7 +498,7 @@ class statefulHeatNode(Node):
 
 @addThermoAttributes
 @addQuantityProperty
-class ThermoNode(Node):
+class ThermoNode5(Node):
     """
     Base thermodynamic node for handling thermodynamic states
 
@@ -568,7 +597,7 @@ class ThermoNode(Node):
         """
         try:
             # Attempt to update the thermodynamic state
-            self.thermo.update_state(state)
+            self.thermo._update_state(state)
             return False
         except Exception as e:
             # If an error occurs, trigger debugging and return True

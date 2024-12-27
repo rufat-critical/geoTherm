@@ -15,5 +15,5 @@ def test_turb():
     PR = foo.nodes['Turb'].PR
     Pin = foo.nodes['Inlet'].thermo._P
     Pout = foo.nodes['Outlet'].thermo._P
-    
+
     assert(math.isclose(PR, Pin/Pout, abs_tol = 1e-5))

@@ -432,6 +432,34 @@ def _dP_incomp(US_thermo, w_flux) -> float:
     # Pressure drop equation: dP = (w / A)^2 / (2 * rho)
     return -(w_flux) ** 2 / (2 * US_thermo._density)
 
+def _dP_incomp_reverse(DS_thermo, w_flux, US_thermo=None) -> float:
+    
+    if US_thermo is None:
+        US_thermo = thermo.from_state(DS_thermo.state)
+    
+    # Calculate w_flux using US_thermo density
+    dP = (w_flux) ** 2 / (2 * US_thermo._density)
+    
+    US_thermo._HP = DS_thermo._H, DS_thermo._P + dP
+
+    _w_incomp(US_thermo, DS_thermo)
+    
+    def hunt_dP(dP):
+        US_thermo._HP = DS_thermo._H, DS_thermo._P + dP
+
+        return w_flux -_w_incomp(US_thermo, DS_thermo) 
+
+    bounds = find_bounds(hunt_dP, [dP, dP*5],
+                        upper_limit=dP*100,
+                        lower_limit=0,
+                        max_iter=10,
+                        factor=2)
+
+    dP = root_scalar(hunt_dP, method='brentq',
+                        bracket=bounds).root
+    
+    return dP
+
 
 @output_converter('MASSFLOW')
 @inputParser
@@ -865,14 +893,18 @@ class flow_func:
 
         if self.flow_func == 'isentropic':
             return _dP_isen(US_thermo, w_flux)
+        elif self.flow_func == 'incomp':
+            return _dP_incomp(US_thermo, w_flux)
         else:
             from pdb import set_trace
             set_trace()
 
-    def _dP_reverse(self, DS_thermo, w_flux):
+    def _dP_reverse(self, DS_thermo, w_flux, US_thermo=None):
 
         if self.flow_func == 'isentropic':
             return _dP_isenthalpic_reverse(DS_thermo, w_flux)
+        elif self.flow_func == 'incomp':
+            return _dP_incomp_reverse(DS_thermo, w_flux, US_thermo=None)
         else:
             from pdb import set_trace
             set_trace()

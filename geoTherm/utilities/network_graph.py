@@ -1,4 +1,5 @@
-from ..nodes.baseClasses import ThermoNode, flowNode
+from ..nodes.baseNodes.baseThermo import baseThermo
+from ..nodes.baseNodes.baseFlow import baseFlow
 from ..nodes.rotor import Rotor
 from ..nodes.turbine import Turbine
 from ..nodes.pump import Pump
@@ -36,7 +37,7 @@ def generate_dot_code(model):
     for name, node in nodes.items():
 
         # Define properties for different node types
-        if isinstance(node, ThermoNode):
+        if isinstance(node, baseThermo):
             shape = 'circle'
             if node.thermo.phase == 'gas':
                 color = 'red'
@@ -60,7 +61,7 @@ def generate_dot_code(model):
                 f"{name}\nw: {node.w:.2f} {u['MASSFLOW']}\n"
                 f"W: {node.W:.1f} {u['POWER']}\nPR: {node.PR:.2f}"
             )
-        elif isinstance(node, flowNode):
+        elif isinstance(node, baseFlow):
             if node.name == 'Turb':
                 from pdb import set_trace
                 set_trace()
@@ -178,7 +179,7 @@ def make_graphml_diagram(model, file_path):
         label = f'{name}\n'
 
         # Define properties for different node types
-        if isinstance(node, ThermoNode):
+        if isinstance(node, baseThermo):
             shape = 'ellipse'
             if node.thermo.phase == 'liquid':
                 border_color = '#0000FF'  # Blue
@@ -225,7 +226,7 @@ def make_graphml_diagram(model, file_path):
                 f"w: {node.w:.2f} {u['MASSFLOW']}\n"
                 f"Q: {node.Q:.1f} {u['POWER']}\n"
                 f"dP: {node.dP:.1f} {u['PRESSURE']}\n")
-        elif isinstance(node, flowNode):
+        elif isinstance(node, baseFlow):
             shape = 'diamond'
             border_color = '#000000'  # Black
             fill_color = '#FFFFFF'  # White
@@ -242,8 +243,8 @@ def make_graphml_diagram(model, file_path):
         # Estimate size based on the label content
         width, height = estimate_label_size(label)
 
-        # Enforce square aspect ratio for thermoNode instances
-        if isinstance(node, ThermoNode):
+        # Enforce square aspect ratio for baseThermo instances
+        if isinstance(node, baseThermo):
             width = min([width, height])*1.5
             height = width
 

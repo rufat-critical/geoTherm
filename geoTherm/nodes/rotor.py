@@ -1,4 +1,4 @@
-from .node import Node
+from .baseNodes.baseNode import Node
 from ..units import addQuantityProperty, inputParser
 import numpy as np
 

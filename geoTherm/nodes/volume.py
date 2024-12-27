@@ -1,13 +1,13 @@
-from .baseClasses import ThermoNode
 from ..utils import Re_
 import numpy as np
 from ..thermostate import thermo, addThermoAttributes
 from ..units import inputParser, addQuantityProperty
 from ..logger import logger
 from .node import Node
+from .baseNodes.baseThermo import baseThermo
 
 
-class Station(ThermoNode):
+class Station(baseThermo):
     """
     Station Node where the thermodynamic state is defined.
     """
@@ -27,6 +27,9 @@ class Station(ThermoNode):
         # can sometimes try to update thermo state to negative
         # density, the penalty helps tell fsolve to step back
         self.penalty = False
+
+    def update_thermo(self, state):
+        return self._update_thermo(state)
 
     @property
     def x(self) -> np.ndarray:
@@ -166,12 +169,18 @@ class Volume(Station):
         Returns:
             bool: False if successful, True if an error occurs.
         """
+
+        x0 = self.x
+        mass0, U0 = self._mass, self._U
         try:
             # Attempt to update the thermodynamic state
             self.thermo._update_state(state)
             self._reinit_state_vars()
             return False
         except Exception as e:
+            from pdb import set_trace
+            set_trace()
+            self.update_state(x0)
             # If an error occurs, trigger debugging and return True
             logger.error(f"Failed to update thermo state to state: {state} "
                          f"for {self.name}:\n {e}")
@@ -188,6 +197,64 @@ class Volume(Station):
 
         return np.array([self._mass, self._U])
 
+@addQuantityProperty
+class lumpedMass(Volume):
+    "Lumped Mass with Constant Density"
+    _bounds = [50, 3500]
+
+    def initialize(self, model):
+        super().initialize(model)
+
+        self._reinit_state_vars()
+
+    def _reinit_state_vars(self):
+        self._x = np.array([self.thermo._T])
+
+    def update_thermo(self, state):
+
+        x0 = self.x
+
+        error = self._update_thermo(state)
+
+        if error:
+            # Update state back to OG state
+            self.update_state(x0)
+
+        self._reinit_state_vars()
+
+        return error
+
+    @property
+    def x(self):
+        return self._x
+
+    def update_state(self, x):
+
+        T0 = self.thermo._T
+        self._x = x
+        state0 = {'D': self.thermo._density,
+                  'T': self.thermo._T}
+
+        try:
+            self.thermo._TD = x[0], self.thermo._density
+            self.penalty = False
+        except Exception:
+            # If thermo fails to update, log it and revert to the initial state
+            logger.warn(f"Failed to update thermostate for {self.name} to:\n"
+                        f"T:{x[0]}, resetting to T0: {T0}")
+
+            self.thermo._TD = T0, self.thermo._density
+            self.penalty = (T0 - x)*1e5            
+
+    @property
+    def xdot(self):
+
+        if self.penalty is not False:
+            return self.penalty
+
+        _, _, _, Qnet = self.model.get_flux(self)
+
+        return np.array([Qnet])
 
 @addThermoAttributes
 class flowVol(Node):

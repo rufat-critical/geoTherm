@@ -1,7 +1,7 @@
-from .node import Node
+from .baseNodes.baseNode import Node
 from ..utils import parse_component_attribute
 import numpy as np
-from .baseClasses import ThermoNode
+from .baseNodes.baseThermo import baseThermo
 from ..logger import logger
 
 
@@ -116,10 +116,10 @@ class Balance(BaseController):
 
         if not isinstance(self, ThermoBalance):
             # If this is not ThermoBalance, ensure knob_node is not a
-            # ThermoNode. Check what type of node is specified
-            if isinstance(self.knob_node, ThermoNode):
+            # baseThermo. Check what type of node is specified
+            if isinstance(self.knob_node, baseThermo):
                 logger.critical(f"Knob '{self.knob}' in Balance '{self.name}' "
-                                "is associated with a thermoNode. You need to "
+                                "is associated with a baseThermo. You need to "
                                 "use a thermoBalance Object!"
                                 )
 
@@ -175,7 +175,7 @@ class Balance(BaseController):
 
 class ThermoBalance(Balance):
     """
-    A specialized Balance controller for ThermoNode objects.
+    A specialized Balance controller for baseThermo objects.
 
     This controller ensures that one state variable is varied while keeping
     another state variable constant.
@@ -208,7 +208,7 @@ class ThermoBalance(Balance):
 
         """
         Initialize the ThermoBalance controller, ensuring that the knob node
-        is a ThermoNode and the constant_var is a valid thermodynamic property.
+        is a baseThermo and the constant_var is a valid thermodynamic property.
 
         Args:
             model: The model containing the components to be controlled.
@@ -216,11 +216,11 @@ class ThermoBalance(Balance):
 
         super().initialize(model)
 
-        # Ensure that the knob_node is a ThermoNode
-        if not isinstance(self.knob_node, ThermoNode):
+        # Ensure that the knob_node is a baseThermo
+        if not isinstance(self.knob_node, baseThermo):
             raise TypeError(
                 f"Knob '{self.knob}' in ThermoBalance '{self.name}' "
-                "must be associated with a thermoNode."
+                "must be associated with a baseThermo."
             )
 
         if (self.constant_var not in ['T', 'P', 'H', 'S', 'U', 'Q']):
@@ -238,7 +238,7 @@ class ThermoBalance(Balance):
 
     def set_knob(self, value):
         """
-        Set the knob value and update the state of the ThermoNode while
+        Set the knob value and update the state of the baseThermo while
         keeping the constant state variable fixed.
 
         Args:
