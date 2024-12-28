@@ -1,8 +1,9 @@
-from .baseNodes.baseFlow import baseFlow
-
+from .baseNodes.baseFlow import baseFlow, baseInertantFlow
+from ..units import inputParser
 
 class fixedFlow(baseFlow):
 
+    @inputParser
     def __init__(self, name, US, DS,
                  w:"MASSFLOW"):
 
@@ -32,3 +33,31 @@ class fixedFlow(baseFlow):
 
         return {'H': DS._H,
                 'P': DS._P/PR}
+
+
+class PressureController(baseFlow):
+    
+    @inputParser
+    def __init__(self, name, US, DS,
+                 w:'MASSFLOW',
+                 dP:'PRESSURE'=0):
+        
+        super().__init__(name, US, DS)
+
+        self.w_setpoint = w
+        self.dP_setpoint = dP
+
+    
+    @property
+    def _w(self):
+        US, DS, _ = self.thermostates()
+
+        from pdb import set_trace
+        set_trace()
+        return (self._w_setpoint + (DS._P - US._P)
+                - self.dP_setpoint)
+                            
+                             
+    def get_outlet_state(self, US, w):
+        from pdb import set_trace
+        set_trace()

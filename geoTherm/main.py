@@ -16,8 +16,10 @@ from .nodes.baseNodes.baseNode import Node
 from .nodes.baseNodes.baseThermal import baseThermal
 from .solvers.network.network import Network
 
+
 class GlobalLimits:
     P = [1, 1e8]
+
 
 class Conditioner:
     def __init__(self, model, conditioning_type='constant'):

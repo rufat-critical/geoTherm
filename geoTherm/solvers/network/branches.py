@@ -63,7 +63,7 @@ class baseBranch:
         # Flags
 
         self.fixed_flow = False
-        self._backFlow = False
+        self._back_flow = False
 
         # Node for controlling flow or heat
         self.fixed_flow_node = None
@@ -81,17 +81,15 @@ class baseBranch:
         self.initialize()
 
     @property
-    def backflow(self):
-        from pdb import set_trace
-        set_trace()
-        return self._backflow
+    def back_flow(self):
+        return self._back_flow
 
-    @backflow.setter
-    def backflow(self, flag):
+    @back_flow.setter
+    def back_flow(self, flag):
 
-        self._backFlow = flag
+        self._back_flow = flag
 
-        if self._backFlow:
+        if self._back_flow:
             self._bounds = [-self._bounds[1],
                             self._bounds[1]]
 
@@ -151,12 +149,12 @@ class baseBranch:
             self.x = self._x0
             return
 
-        if self.fixedFlow:
+        if self.fixed_flow:
             self.fixed_flow_node.update_state(x)
             # Get the penalty from the setter object
             self.penalty = self.fixed_flow_node.penalty
         else:
-            if x[0] < 0 and not self.backFlow:
+            if x[0] < 0 and not self.back_flow:
                 # If backflow is not enabled apply penalty
                 self.penalty = (10 - x[0])*1e5
                 return
@@ -985,7 +983,6 @@ class ThermalBranch(baseBranch):
             if isinstance(node, (gt.Qdot)):
                 self.fixed_flow = True
                 self.fixed_flow_node = node
-                self.fixedFlow = True
                 self.initialized = True
                 self.stateful = False
 
@@ -999,8 +996,6 @@ class ThermalBranch(baseBranch):
         self._x = np.array([self.average_Q])
         self._x0 = np.copy(self.x)
         self.initialized = True
-
-        self.fixedFlow = self.fixed_flow
 
 
     def evaluate_reverse(self):
@@ -1063,11 +1058,11 @@ class ThermalBranch(baseBranch):
         if self.penalty:
             return
 
-        if self._Q < 0:
+        if self._Q <= 0:
             # Reverse nodes if heat flux is negative
             nodes = nodes[::-1]
             US_junction = self.DS_junction.node
-            DS_junction - self.US_junction.node
+            DS_junction = self.US_junction.node
         else:
             US_junction = self.US_junction.node
             DS_junction = self.DS_junction.node

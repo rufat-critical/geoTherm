@@ -428,7 +428,6 @@ class Network:
             [*flow_junctions, *thermal_junctions, *other_junctions],
             net_map)
 
-
     def update_state(self, x):
         """
         Update the state vector for the network.
@@ -463,18 +462,15 @@ class Network:
         """
         self.update_state(x)
 
-
         for _, branch in self.thermal_branches.items():
             branch.evaluate()
-        
+
         for _, branch in self.flow_branches.items():
             branch.evaluate()
-        
-        from pdb import set_trace
-        #set_trace()
+
         for _, junction in self.junctions.items():
             junction.evaluate()
-            
+
         return self.xdot
 
     @property
