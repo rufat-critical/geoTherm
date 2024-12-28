@@ -1,11 +1,12 @@
 from .node import Node
-from .baseClasses import Heat, statefulHeatNode, flowNode
-from .flow import flow
+#from .baseClasses import Heat, statefulHeatNode, flowNode
+#from .flow import flow
 from ..units import inputParser, addQuantityProperty
 from ..logger import logger
 from ..utils import dP_pipe
 import numpy as np
 from pdb import set_trace
+from .baseNodes.baseThermal import baseThermal
 from scipy.optimize import fsolve
 import geoTherm as gt
 
@@ -179,7 +180,7 @@ class staticHEX(flow):
     pass
 
 
-class simpleHEX(flow):
+class simpleHEX(flow, baseThermal):
 
     @inputParser
     def __init__(self, name, US, DS,
@@ -242,7 +243,7 @@ class QController(statefulHeatNode):
 
 
 @addQuantityProperty
-class Qdot(Heat):
+class Qdot(baseThermal):
 
     _displayVars = ['Q', 'hot', 'cool']
     _units = {'Q': 'POWER'}
@@ -251,11 +252,12 @@ class Qdot(Heat):
     def __init__(self, name, hot=None, cool=None,
                  Q:'POWER'=0):
         self.name = name
-        if hot is not None:
-            self.hot = hot
-        if cool is not None:
-            self.cool = cool
+
+        self.hot = hot
+        self.cool = cool
+        
         self._Q = Q
+
 
 
 @addQuantityProperty
@@ -271,23 +273,23 @@ class Q_connector(Heat):
         self._Q = Q
 
 @addQuantityProperty
-class Heatsistor(Heat):
+class Heatsistor(baseThermal):
 
-    _displayVars = ['Q', 'H', 'hot', 'cool']
-    _units = {'Q': 'POWER'}
+    _displayVars = ['Q', 'R', 'hot', 'cool']
+    _units = {'Q': 'POWER', 'R': 'THERMALRESISTANCE'}
 
     @inputParser
-    def __init__(self, name, hot, cool, H:'CONVECTION'):
+    def __init__(self, name, hot, cool, R:'THERMALRESISTANCE'):
         # Specify either Q or H
         self.name = name
         self.hot = hot
         self.cool = cool
-        self._H = H
+        self._R = R
 
     def evaluate(self):
         T_hot = self.model[self.hot].thermo._T
         T_cold = self.model[self.cool].thermo._T
-        self._Q = self._H*(T_hot-T_cold)
+        self._Q = (T_hot-T_cold)/self._R
 
     def get_outlet_state(self):
 
@@ -299,10 +301,20 @@ class Heatsistor(Heat):
             T_hot = self.model[self.cool].thermo._T
             D = self.model[self.hot].thermo._density
 
-        return {'T': T_hot - self._Q/self._H,
+        return {'T': T_hot - self._Q*self._R,
                 'D': D}
 
+    def get_inlet_state(self):
 
+        if self._Q >0:
+            T_cold = self.model[self.cool].thermo._T
+            D = self.model[self.hot].thermo._density
+        else:
+            T_cold = self.model[self.hot].thermo._T
+            D = self.model[self.cool].thermo._density
+
+        return {'T': T_cold + self._Q*self._R,
+                'D': D}
 
 
 class discretizedHeat:
@@ -326,7 +338,7 @@ class discretizedHeat:
 
 
 @addQuantityProperty
-class HEX(Heat):
+class HEX(baseThermal):
 
     _displayVars = ['w_hot', 'w_cool']
     _units = {'w_hot': 'MASSFLOW', 'w_cool': 'MASSFLOW', 'Q': 'POWER', 
@@ -1043,7 +1055,7 @@ class HEX2(Heat):
 
 
 @addQuantityProperty
-class HEX(Heat):
+class HEX(baseThermal):
 
     _displayVars = ['w_tube', 'w_shell', 'Q', 'L']
     _units = {'w_tube': 'MASSFLOW', 'w_shell': 'MASSFLOW', 'Q': 'POWER', 

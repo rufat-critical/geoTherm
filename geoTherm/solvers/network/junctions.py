@@ -1,6 +1,6 @@
 import numpy as np
 from ...nodes.boundary import Boundary
-from ...nodes.heat import Qdot
+from ...nodes.heatsistor import Qdot
 from ...nodes.volume import lumpedMass
 from ...logger import logger
 

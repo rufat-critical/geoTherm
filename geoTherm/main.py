@@ -604,8 +604,6 @@ class Model(modelTable):
 
             # Update to network state
             self.network.evaluate(x)
-            from pdb import set_trace
-            #set_trace()
             if not self.converged:
                 logger.warn("Failed to converge with Network Solver, "
                             "will try Nodal Solver Next!")

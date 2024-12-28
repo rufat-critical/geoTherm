@@ -5,7 +5,6 @@ from .units import units, unit_converter
 from .utilities.thermo_plotter import thermoPlotter
 from .utilities.flowcalc import flowCalc
 from .nodes.volume import *
-from .nodes.flow import *
 from .nodes.boundary import *
 from .nodes.rotor import *
 from .nodes.cycleCloser import *
@@ -16,10 +15,8 @@ from .nodes.turbine import *
 from .nodes.pump import *
 from .nodes.pipe import *
 from .nodes.resistor import *
-from .nodes.surfaces import *
-#from .nodes.schedule import *
+#from .nodes.surfaces import *
 from .nodes.controller import *
+from .nodes.schedule import *
 from .thermostate import thermo
 from . import flow_funcs
-
-#from .nodes.heat import simpleHEX

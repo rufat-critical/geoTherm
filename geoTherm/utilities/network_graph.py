@@ -1,9 +1,10 @@
 from ..nodes.baseNodes.baseThermo import baseThermo
 from ..nodes.baseNodes.baseFlow import baseFlow
+from ..nodes.pipe import Pipe
 from ..nodes.rotor import Rotor
 from ..nodes.turbine import Turbine
 from ..nodes.pump import Pump
-from ..nodes.heat import staticHEX, Heat
+from ..nodes.baseNodes.baseThermal import baseThermal
 from ..units import units
 from ..logger import logger
 import pyyed
@@ -72,7 +73,7 @@ def generate_dot_code(model):
             color = 'black'
             shape = 'box'
             label = f"{name}\n N:{node.N:.2f}\n {u['ROTATIONSPEED']}"
-        elif isinstance(node, Heat):
+        elif isinstance(node, baseThermal):
             shape = 'circle'
             color = 'red'
             label = (
@@ -190,7 +191,7 @@ def make_graphml_diagram(model, file_path):
                 f"T: {node.T:.1f} {u['TEMPERATURE']}\n"
                 f"P: {node.P:.1f} {u['PRESSURE']}"
             )
-        elif isinstance(node, Heat):
+        elif isinstance(node, baseThermal):
             shape = 'ellipse'
             if node._Q > 0:
                 border_color = '#FF0000'  # Red
@@ -218,13 +219,12 @@ def make_graphml_diagram(model, file_path):
                 f"W: {node.W:.1f} {u['POWER']}\nPR: {node.PR:.2f}\n"
                 f"\u03B7: {node.eta:.1f}"
                 )
-        elif isinstance(node, staticHEX):
+        elif isinstance(node, Pipe):
             shape = 'diamond'
             border_color = '#000000'  # Black
             fill_color = '#FFFFFF'  # White
             label += (
                 f"w: {node.w:.2f} {u['MASSFLOW']}\n"
-                f"Q: {node.Q:.1f} {u['POWER']}\n"
                 f"dP: {node.dP:.1f} {u['PRESSURE']}\n")
         elif isinstance(node, baseFlow):
             shape = 'diamond'

@@ -1,5 +1,4 @@
 from .node import Node
-from .flow import flow
 from .baseNodes.baseFlow import baseInertantFlow
 from ..units import inputParser, addQuantityProperty
 from ..utils import dP_pipe
