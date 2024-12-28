@@ -26,7 +26,7 @@ class fixedFlow(baseFlow):
 
         # Get US, DS Thermo
         #US = self.model.nodes[self.US].thermo
-        return {'H': US._H, 'P': US*PR}
+        return {'H': US._H, 'P': US._P*PR}
 
     def get_inlet_state(self, DS, PR):
 

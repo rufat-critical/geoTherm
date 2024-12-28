@@ -195,11 +195,10 @@ class FlowBranch(baseBranch):
     _units = {'w': 'MASSFLOW'}
     _bounds = [-np.inf, np.inf]
 
-    def __init__(self, name, nodes, US_junction, DS_junction, thermal, network):
+    def __init__(self, *args, **kwargs):
 
-        super().__init__(name, nodes, US_junction, DS_junction, network)
+        super().__init__(*args, **kwargs)
 
-        self.thermal_branches = thermal
    
         self.state = 'massflow'
     # Checks
@@ -210,16 +209,10 @@ class FlowBranch(baseBranch):
 
     def get_Q(self, node):
 
-        Q = 0
-        if node.name in self.thermal_branches:
-            thermal_map = self.thermal_branches[node.name]
-            for branch in thermal_map['hot']:
-                Q+=self.network.thermal_branches[branch].Q
-
-            for branch in thermal_map['cool']:
-                Q-=self.network.thermal_branches[branch].Q
-
-        return Q
+        if node.name in self.thermal_junctions:
+            return self.thermal_junctions[node.name].Q_flux
+        else:
+            return 0
 
 
     def initialize(self):
@@ -229,12 +222,15 @@ class FlowBranch(baseBranch):
         # If PR Turbine then set PR as state controller
         # Otherwise massflow as controller => For that mass flow needs to be fixed
         
+        thermal_junctions = self.network.net_map[self.name]['thermal']
+
+        self.thermal_junctions = {name:self.network.junctions[name] for name in thermal_junctions}
+
 
         self.istate = {}
         self._x = np.array([])
         self.hot_nodes = {}
         self.node_types = []
-
 
         # Check if fixed_flow
         # If outlet or dP downstream
@@ -932,24 +928,6 @@ class ThermalBranch(baseBranch):
     _units = {'Q': 'POWER'}
     _bounds = [-np.inf, np.inf]
     
-    def __init__2(self, name, nodes, US_junction, DS_junction, model, Q=None):
-        """
-        Initialize a ThermalBranch instance.
-
-        Args:
-            name (str): Unique identifier for the ThermalBranch.
-            nodes (list): List of thermal node names or instances in sequential order.
-            US_junction (str or instance): Upstream thermal junction name or instance.
-            DS_junction (str or instance): Downstream thermal junction name or instance.
-            model (object): The model containing all thermal nodes and junctions.
-            Q (float, optional): Heat flow rate with a default value of 0.
-        """
-        super().__init__(name, nodes, US_junction, DS_junction, model, x=Q)
-
-        self.solver = 'forward'
-
-        self.initialize()
-
     @property
     def _Q(self):
         if self.fixed_flow:

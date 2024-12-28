@@ -2,18 +2,30 @@ import numpy as np
 from ...nodes.boundary import Boundary
 from ...nodes.heat import Qdot
 from ...nodes.volume import lumpedMass
+from ...logger import logger
 
 
 class Junction:
 
     _bounds = [-np.inf, np.inf]
-    def __init__(self, name, node, model):
+    def __init__(self, name, node, network):
 
         self.name = name
         self.node = node
-        self.model = model
+        self.network = network
+        self.model = self.network.model
         self.penalty = False
         self.update_bounds()
+
+    def initialize(self):
+        
+        net_map = self.network.net_map[self.name]
+
+        self.US_branches = [self.network.branches[name] for name in net_map['US']]
+        self.DS_branches = [self.network.branches[name] for name in net_map['DS']]
+        self.hot_branches = [self.network.branches[name] for name in net_map['hot']]
+        self.cool_branches = [self.network.branches[name] for name in net_map['cool']]
+
 
     def update_bounds(self):
 
@@ -42,7 +54,6 @@ class Junction:
             return np.array([])
 
     def update_state(self, x):
-
         if self._bounds[0] <= x <= self._bounds[1]:
             self.node.update_state(x)
             self.penalty = False
@@ -55,27 +66,31 @@ class Junction:
 
 
 class ThermalJunction(Junction):
-
+    # Temperature Bounds
     _bounds = [50, 5000]
-    def __init__(self, name, node, US_thermal_branches, DS_thermal_branches, stateful, model):
-        """
-        Initialize a Junction instance.
 
-        Args:
-            node (Node): The node associated with the junction.
-            upstream_branches (list): List of upstream branches connected
-                                      to the junction.
-            downstream_branches (list): List of downstream branches connected
-                                        to the junction.
-            model (Model): The geoTherm model.
-        """
+    def initialize(self):
 
-        super().__init__(name, node, model)
+        super().initialize()
 
-        self.US_thermal_branches = US_thermal_branches
-        self.DS_thermal_branches = DS_thermal_branches
-        self.penalty = False
-        self.stateful = stateful
+        if len(self.network.net_map[self.name]['flow']) != 0:
+            # This is associated with a flow branch and state
+            # is updated in the branch
+            self.stateful = False
+        else:
+            # Need to update state
+            self.stateful = True
+
+    @property
+    def Q_flux(self):
+        # Get Heat Flux
+        Q = 0
+        for branch in self.hot_branches:
+            Q += branch._Q
+        for branch in self.cool_branches:
+            Q -= branch._Q
+
+        return Q
 
     @property
     def x(self):
@@ -118,25 +133,6 @@ class ThermalJunction(Junction):
 
 
 class BoundaryJunction(Junction):
-    def __init__(self, name, node, US_flow_branches, DS_flow_branches, 
-                 US_thermal_branches, DS_thermal_branches, model):
-        """
-        Initialize a Junction instance.
-
-        Args:
-            node (Node): The node associated with the junction.
-            upstream_branches (list): List of upstream branches connected
-                                      to the junction.
-            downstream_branches (list): List of downstream branches connected
-                                        to the junction.
-            model (Model): The geoTherm model.
-        """
-        super().__init__(name, node, model)
-        self.US_flow_branches = US_flow_branches
-        self.DS_flow_branches = DS_flow_branches
-        self.US_thermal_branches = US_thermal_branches
-        self.DS_thermal_branches = DS_thermal_branches
-
     @property
     def x(self):
         return np.array([])
@@ -144,6 +140,24 @@ class BoundaryJunction(Junction):
     @property
     def xdot(self):
         return np.array([])
+
+
+class OutletJunction(BoundaryJunction):
+    """
+    Boundary Junction but Outlet is dependent on inlet branches.
+    Should be used with a fixedFlow Branch"""
+
+    def initialize(self):
+        super().initialize()
+
+        if len(self.DS_branches) > 0:
+            logger.critical("Can't have US for outlet")
+        elif len(self.US_branches) != 1:
+            logger.critical("Can only have 1 DS for outlet")
+        elif not self.US_branches[0].fixed_flow:
+            logger.critical("This can only be used with fixedFlow")
+
+
 
 
 class FlowJunction(Junction):
@@ -154,8 +168,7 @@ class FlowJunction(Junction):
     to handle mass and energy conservation across these points.
     """
     _bounds = []
-    def __init__(self, name, node, US_flow_branches, DS_flow_branches, 
-                 US_thermal_branches, DS_thermal_branches, model):
+    def __init__(self, name, node, network):
         """
         Initialize a Junction instance.
 
@@ -167,12 +180,8 @@ class FlowJunction(Junction):
                                         to the junction.
             model (Model): The geoTherm model.
         """
-        super().__init__(name, node, model)
+        super().__init__(name, node, network)
 
-        self.US_flow_branches = US_flow_branches
-        self.DS_flow_branches = DS_flow_branches
-        self.US_thermal_branches = US_thermal_branches
-        self.DS_thermal_branches = DS_thermal_branches
         self.initialized = False
 
         self.thermal_junction=False 
@@ -182,7 +191,9 @@ class FlowJunction(Junction):
         self.lumped_mass = False
 
         self.stateless = False
-        self.initialize()
+        #self.initialize()
+        from pdb import set_trace
+        set_trace()
 
 
     def initialize(self):
