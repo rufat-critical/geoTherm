@@ -1,6 +1,7 @@
 from .baseNodes.baseThermal import baseThermal
 from ..units import inputParser, addQuantityProperty
 
+
 @addQuantityProperty
 class Heatsistor(baseThermal):
 
@@ -9,7 +10,6 @@ class Heatsistor(baseThermal):
 
     @inputParser
     def __init__(self, name, hot, cool, R:'THERMALRESISTANCE'):
-        # Specify either Q or H
         self.name = name
         self.hot = hot
         self.cool = cool
@@ -58,5 +58,5 @@ class Qdot(baseThermal):
 
         self.hot = hot
         self.cool = cool
-        
+
         self._Q = Q

@@ -1,26 +1,26 @@
 from rich.console import Console
 from rich.table import Table
 
+
 class Node:
-    """ The Base Node Class that makes a pretty
-    node printout
+    """
+    Base Node Class that provides a structured and formatted node
+    representation.
 
-    THIS should be inherited and NOT Standalone"""
+    This class is intended to be inherited by specific node types and should
+    not be used standalone.
+    """
 
-    _displayVars = []
+    _displayVars = []  # Variables to display in the node table
+    _units = {}  # Dictionary of quanities with associated units
 
     def initialize(self, model):
         """
-        Initialize the component by attaching a reference to the model.
-
-        This method sets the `model` attribute of the component to the
-        provided model. It is used to link the component to a model instance,
-        allowing the component to interact with the model.
+        Attach the model to the component.
 
         Args:
-            model: The model instance to attach to the component.
+            model: The model instance to link with the component.
         """
-        # Initialize component by attaching reference to model
         self.model = model
 
     def __repr__(self):
@@ -82,7 +82,7 @@ class Node:
         """
 
         # Initialize a list to hold the formatted variables
-        Vars = []
+        vars_str = []
 
         # Iterate over each display variable in the node
         for dVar in self._displayVars:
@@ -94,19 +94,24 @@ class Node:
 
             try:
                 val = getattr(self, var)
-            except:
+            except AttributeError:
                 val = 'error'
 
             # Format the variable depending on its type
             if isinstance(val, (int, float)):
                 # Format numeric variables with 5 significant digits
-                Vars.append(f"{dVar}:{val:0.5g}")
+                vars_str.append(f"{dVar}:{val:0.5g}")
             else:
                 # Format non-numeric variables as is
-                Vars.append(f"{dVar}: {val}")
+                vars_str.append(f"{dVar}: {val}")
 
         # Join the formatted variables into a single string
-        return ' |'.join(Vars)
+        return ' |'.join(vars_str)
 
     def evaluate(self):
+        """
+        Placeholder for component evaluation logic.
+
+        Subclasses should implement this method.
+        """
         pass

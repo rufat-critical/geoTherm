@@ -1,9 +1,21 @@
 from .baseNode import Node
 from .baseThermo import baseThermo
 from ...logger import logger
+from ...units import addQuantityProperty
 
 
+@addQuantityProperty
 class baseThermal(Node):
+    """
+    Base class for thermal components, extending the Node class.
+
+    Attributes:
+        _displayVars (list): Variables displayed in the table.
+        _units (dict): Units for the variables.
+    """
+
+    _displayVars = ['Q', 'hot', 'cool']
+    _units = {"Q": "POWER"}
 
     def __init__(self, name, hot=None, cool=None):
         self.name = name
@@ -12,11 +24,19 @@ class baseThermal(Node):
         self.cool = cool
 
     def _set_heat(self, Q):
+        """
+        Set the heat transfer value (Q).
+        """
         self._Q = Q
         return False
-    
-    def get_DS_state(self):
 
+    def get_DS_state(self):
+        """
+        Get the downstream state based on the heat transfer direction.
+
+        Returns:
+            tuple: Downstream node and its state.
+        """
         if self._Q > 0:
             DS_node = self.model.node_map[self.name]['cool'][0]
         else:
@@ -27,10 +47,16 @@ class baseThermal(Node):
         if DS_state:
             return DS_node, DS_state
         else:
-            from pdb import set_trace
-            set_trace()
+            return None
 
     def get_US_state(self):
+        """
+        Get the upstream state based on the heat transfer direction.
+
+        Returns:
+            tuple: Upstream node and its state.
+        """
+
         if self._Q > 0:
             US_node = self.model.node_map[self.name]['hot'][0]
         else:
