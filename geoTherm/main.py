@@ -15,6 +15,7 @@ from .nodes.baseNodes.baseThermo import baseThermo
 from .nodes.baseNodes.baseNode import Node
 from .nodes.baseNodes.baseThermal import baseThermal
 from .solvers.network.network import Network
+from .solvers.network.junctions import FlowJunction
 
 
 class GlobalLimits:
@@ -36,11 +37,8 @@ class Conditioner:
         if isinstance(model, Model):
             self.model = model
             self.solver = 'nodal'
-        elif isinstance(model, Network):
-            self.model = model.model
-            self.solver = 'network'
         else:
-            logger.critical("Model must be of type 'Model' or 'Network'")
+            logger.critical("Model must be of type 'Model' '")
 
         self.initialize()
 
@@ -49,13 +47,9 @@ class Conditioner:
         if self.conditioning_type == 'constant':
             if self.solver == 'nodal':
                 self._nodal_scaling()
-            elif self.solver == 'network':
-                self._network_scaling()
         elif self.conditioning_type == 'None':
             if self.solver == 'nodal':
                 self.x_scale = np.ones(len(self.model.x))
-            elif self.solver == 'network':
-                self.x_scale = np.ones(len(self.model.network.x))
         elif self.conditioning_type == 'jacobian':
             pass
 
@@ -80,54 +74,19 @@ class Conditioner:
             return 1 / (node._bounds[1] - node._bounds[0])
         elif isinstance(node, gt.lumpedMass):
             return np.array([1e-1])
-        elif isinstance(node, baseThermo):#gt.ThermoNode):
-            return np.array([1e-1, 1e-5])
+        elif isinstance(node, gt.PStation):
+            return np.array([1e-6])
+        elif isinstance(node, gt.Station):
+            return np.array([1/10325, 1e-6])
+        elif isinstance(node, baseThermo):
+            #return np.array([1, 1])
+            return np.array([1e-2, 1e-6])
         else:
             return 1
 
-    def _network_scaling(self):
-        """Compute scaling factors for network solver."""
-        self.x_func = {'x': [], 'xi': {}, 'xdot': {}}
-        self.x_scale = np.ones(len(self.model.network.x))
-
-        for name, indx in self.model.network.istate.items():
-            scale = self._determine_network_scale(name)
-            self.x_scale[indx] *= scale
-
-
-    def _determine_network_scale(self, name):
-        """Determine the scale for a network solver based on network elements.
-        """
-        if name in self.model.network.flow_branches:
-            branch = self.model.network.flow_branches[name]
-            if branch._bounds[0] != -np.inf and branch._bounds[1] != np.inf:
-                return 1 / (branch._bounds[1] - branch._bounds[0])
-            else:
-                return 1
-        elif name in self.model.network.thermal_branches:
-            branch = self.model.network.thermal_branches[name]
-            if branch._bounds[0] != -np.inf and branch._bounds[1] != np.inf:
-                return 1 / (branch._bounds[1] - branch._bounds[0])
-            else:
-                print('skiiping')
-                return 1
-                return 1e-4            
-        elif name in self.model.network.junctions:
-            node = self.model.nodes[name]
-            if isinstance(node, gt.Balance):
-                if np.isinf(node.knob_max) or np.isinf(node.knob_min):
-                    return 1
-                else:
-                    return 1 / (node.knob_max - node.knob_min)
-            elif isinstance(node, gt.Heatsistor):
-                return 1e-4
-        return 1
-
     def _jacobian(self, x):
         """Compute the Jacobian matrix for the current solver."""
-        if self.solver == 'network':
-            return self.model.network.jacobian(x)
-        elif self.solver == 'nodal':
+        if self.solver == 'nodal':
             return self.model.jacobian(x)
 
     def scale_x(self, x):
@@ -150,7 +109,7 @@ class Conditioner:
         """Wrap a function with scaling and unscaling logic."""
         def wrapper(x):
             x_unscaled = self.unscale_x(x)
-            xdot_unscaled = func(x_unscaled)
+            xdot_unscaled = func(x_unscaled)#/abs(x_unscaled)**.25
             return self.scale_x(xdot_unscaled)
         return wrapper
 
@@ -415,6 +374,14 @@ class Model(modelTable):
         return self.xdot
 
     def steady_evaluate(self, x, t=0):
+
+        #v1 = self.evaluate(t, x)
+
+        #v2 = self.evaluate(t, x)
+
+        #if all(v1 != v2):
+        ##    from pdb import set_trace
+         #   set_trace()
         return self.evaluate(t, x)
 
     def evaluate_nodes(self):
@@ -587,24 +554,12 @@ class Model(modelTable):
         if netSolver:
             # Initialize the network solver
             self.network = Network(self)
-            # Check if this is a stateless network model
-            if len(self.network.x) == 0:
-                # We don't need to solve anything
-                return self.network.x
 
-            # Use Network Conditioner
-            conditioner = Conditioner(self.network)
-            conditioned = conditioner.conditioner(self.network.evaluate)
-            # Scale the state vector for fsolve
-            x_scaled = conditioner.scale_x(self.network.x)
-            # Run fsolve with scaling
-            sol = fsolve(conditioned, x_scaled, full_output=True)
-            # Unscale/re-scale the solution back to normal
-            x = conditioner.unscale_x(sol[0])
+            self.network.solve()
 
-            # Update to network state
-            self.network.evaluate(x)
             if not self.converged:
+                from pdb import set_trace
+                #set_trace()
                 logger.warn("Failed to converge with Network Solver, "
                             "will try Nodal Solver Next!")
             else:
@@ -620,6 +575,7 @@ class Model(modelTable):
 
         x = conditioner.unscale_x(sol[0])
         self.steady_evaluate(x)
+
         if not self.converged:
             logger.warn("Failed to converge with Nodal Solver, "
                         "will try Transient Solver Next!")
@@ -628,7 +584,7 @@ class Model(modelTable):
 
         # USE SIM TO TRY AND SOVLE MODEL
         from pdb import set_trace
-        set_trace()
+        #set_trace()
 
     def draw(self, file_path='geoTherm_model_diagram.svg', auto_open=True):
         """

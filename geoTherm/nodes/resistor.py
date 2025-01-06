@@ -47,10 +47,10 @@ class resistor(baseFlowResistor):
 
     def get_outlet_state(self, US, w):
 
-        dP = self._dP_func(US, w/self._area)
-        
+        dP = self._dP_func(US, np.abs(w)/self._area)
+
         if dP is None:
-            dP = 1e9
+            dP = -1e9
 
         return {'H': US._H, 'P': US._P + dP}
 

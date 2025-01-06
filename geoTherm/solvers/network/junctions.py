@@ -1,7 +1,7 @@
 import numpy as np
 from ...nodes.boundary import Boundary
 from ...nodes.heatsistor import Qdot
-from ...nodes.volume import lumpedMass
+from ...nodes.volume import lumpedMass, Volume, Station
 from ...logger import logger
 
 
@@ -63,6 +63,8 @@ class Junction:
             else:
                 self.penalty = (self._bounds[1] -x[0] - 10)*1e5
 
+    def error_check(self):
+        pass
 
 
 class ThermalJunction(Junction):
@@ -147,17 +149,19 @@ class OutletJunction(BoundaryJunction):
     Boundary Junction but Outlet is dependent on inlet branches.
     Should be used with a fixedFlow Branch"""
 
-    def initialize(self):
-        super().initialize()
+    def error_check(self):
+        super().error_check()
 
         if len(self.DS_branches) > 0:
-            logger.critical("Can't have US for outlet")
+            logger.critical(f"The Outlet Boundary Condition '{self.name}' "
+                            "cannot have any upstream branches")
         elif len(self.US_branches) != 1:
-            logger.critical("Can only have 1 DS for outlet")
+            logger.critical(f"The Outlet Boundary Condition '{self.name}' "
+                            "can only have 1 downstream connection")
         elif not self.US_branches[0].fixed_flow:
-            logger.critical("This can only be used with fixedFlow")
-
-
+            logger.critical(f"The Outlet Boundary Condition '{self.name}' "
+                            "requires a fixedFlow object to be defined "
+                            "upstream")
 
 
 class FlowJunction(Junction):
@@ -167,7 +171,8 @@ class FlowJunction(Junction):
     Junctions are points where multiple branches meet, allowing the solver
     to handle mass and energy conservation across these points.
     """
-    _bounds = []
+    _bounds = [[1, 1e9], [-np.inf, np.inf]]
+    #_bounds = [[-np.inf, np.inf], [-np.inf, np.inf]]
     def __init__(self, name, node, network):
         """
         Initialize a Junction instance.
@@ -183,109 +188,172 @@ class FlowJunction(Junction):
         super().__init__(name, node, network)
 
         self.initialized = False
-
-        self.thermal_junction=False 
-        self.type = None
-        
-        self.thermal = False
-        self.lumped_mass = False
-
-        self.stateless = False
-        #self.initialize()
-        from pdb import set_trace
-        set_trace()
-
+        self.solve_energy = True
+        self.constant_density = False
 
     def initialize(self):
         """
         Initialize the Junction by adding dynamic properties if necessary.
         """
-        if isinstance(self.node, (Boundary, Qdot)):
-            self.__x = np.array([])
-            self.__xdot = np.array([])
-            from pdb import set_trace
-            set_trace()
-            pass
-        elif isinstance(self.node, (lumpedMass)):
-            self.lumped_mass = True
-            self.__x = np.array([self.node.thermo._T])
-            self.__xdot = self.node.xdot
-            from pdb import set_trace
-            set_trace()
-        elif len(self.US_flow_branches) == len(self.DS_flow_branches) == 1:
-            self.__x = np.array([])
-            self.__xdot = np.array([])
-            from pdb import set_trace
-            set_trace()
-            pass
-        elif ((len(self.US_flow_branches) == len(self.DS_flow_branches) == 0)
-              and self.US_thermal_branches or self.DS_thermal_branches):
-            self.thermal = True
-            self.__x = np.array([self.node.thermo._T])
-            self.__xdot = np.array([self.node.xdot[1]])
 
-        elif hasattr(self.node, 'x'):
-            # Add properties and method if self.node has attribute 'x'
+        super().initialize()
+
+        if not isinstance(self.node, (Volume, Station)):
             from pdb import set_trace
             set_trace()
-            self.__add_dynamic_properties()
+
+        
+        #if len(self.US_branches) == 1:
+            # The energy can be determined solely using
+            # US BC
+        #    self.solve_energy = False
+        #else:
+        #    self.solve_energy = True
+
+
+        #self.solve_energy = False
+
+
+        self.initialize_state()
+
+
+    def initialize_state(self):
+
+        if self.solve_energy:
+            self.state = np.array([self.node.thermo._P,
+                                self.node.thermo._H])
         else:
-            self.__x = np.array([])
-            self.__xdot = np.array([])            
-
-        self.initialized = True
+            self.state = np.array([self.node.thermo._P])      
 
     @property
     def x(self):
+        return self.state
 
-        try:
-            return self.__x
-        except:
-            from pdb import set_trace
-            set_trace()
 
     @property
     def xdot(self):
-        if self.lumped_mass:
-            return self.node.xdot
+        if self.penalty is not False:
+            return self.penalty
+
+        wNet, Hnet, Wnet, Qnet = self.node.flux
+
+        if self.solve_energy:
+            return np.array([wNet,
+                             Hnet+Wnet+Qnet])
         else:
-            pass
-        return self.__xdot
-    
+            return np.array([wNet])    
+
+
     def update_state(self, x):
-        
-        if self.thermal_junction:
+
+
+        self.penalty = False
+        penalty0 = False
+        penalty1 = False
+        self.state = x
+        if self._bounds[0][0] <= x[0] <= self._bounds[0][1]:
+            penalty0 = False
+        else:
+            if x[0] <= self._bounds[0][0]:
+                penalty0 = (self._bounds[0][0] - x[0] + 1)*1e5
+            else:
+                penalty0 = (self._bounds[0][0] - x[0] - 1)*1e5
+
+            self.penalty = np.array([penalty0])
+
+        if self.solve_energy:
+            if self._bounds[1][0] <= x[1] <= self._bounds[1][1]:
+                penalty1 = False
+            else:
+                if x[1] <= self._bounds[1][0]:
+                    penalty1 = (self._bounds[1][0] - x[1] + 1)*1e5
+                else:
+                    penalty1 = (self._bounds[1][0] - x[1] - 1)*1e5
+
+        if penalty0 or penalty1:
+            if self.solve_energy:
+                self.penalty = np.array([1., 1.])
+            if penalty0:
+                self.penalty[0] = penalty0
+            elif penalty1:
+                self.penalty[1] = penalty1
+
+            return
+
+
+        if self.solve_energy is False:
+            state = {'P': x[0], 'H': self.node.thermo._H}
+        else:
+            state = {'P': x[0], 'H': x[1]}
+
+        if state['P'] < 0:
             from pdb import set_trace
             set_trace()
-            if x < 50:
-                self.penalty = (50-x+10)*1e5
-                return
-            else:
-                state = {'D': self.node.thermo._density,
-                        'T': x[0]}
-                self.node.update_thermo(state)                
 
-        if self.lumped_mass:
-            self.node.update_state(x)
+        error = self.node.update_thermo(state)
 
 
-        self.__x = x
+        if error:
+            from pdb import set_trace
+            set_trace()
+        else:
+            pass
+            #self.state = state
+        
+        return
+
+        #else:
+        #    Hmix = self.mix_H()
+
+        #    state = {'P': x[0], 'H': Hmix}
+
+        from pdb import set_trace
+        #set_trace()
+
+        if state['P'] < 0:
+            from pdb import set_trace
+            set_trace()
+
+        if self.solve_energy is False:
+            from pdb import set_trace
+            set_trace()
+
+        error = self.node.update_thermo(state)
+
+        if error:
+            from pdb import set_trace
+            set_trace()
+        else:
+            self.state = state
+                
+    def update_thermo(self, state):
 
 
-    def __add_dynamic_properties(self):
-        """
-        Dynamically add x, xdot, update_state properties
-        """
-        def get_x(self):
-            return self.node.x
+        error = self.node.update_thermo(state)
 
-        def get_xdot(self):
-            return self.node.xdot
 
-        def update_state(self, x):
-            self.node.update_state(x)
+        self.initialize_state()
 
-        # Dynamically add properties and methods
-        setattr(self.__class__, 'x', property(get_x))
-        setattr(self.__class__, 'xdot', property(get_xdot))
-        setattr(self.__class__, 'update_state', update_state)
+
+    def mix_H(self):
+
+        win = 0
+        H= 0
+        for node in self.node.US_nodes:
+            if node._w > 0:
+                win += node._w
+                H += node.US_node.thermo._H*node._w
+
+        for node in self.node.DS_nodes:
+            if node._w < 0:
+                win += -node._w
+                H+= node.DS_node.thermo._H*(-node._w)  
+
+
+        if H == 0:
+            Hmix = self.node.thermo._H
+        else:
+            Hmix = H/(win+1e-10)
+
+
+        return Hmix

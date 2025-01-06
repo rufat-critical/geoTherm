@@ -25,7 +25,7 @@ def critial_static_pressure_isentropic(total, static=None):
         # Temperory thermo object used for intermediate calcs
         static = thermo.from_state(total.state)
 
-    if total.phase in ['gas', 'supercritical_gas']:
+    if total.phase in ['gas', 'supercritical_gas', 'supercritical']:
         PR_crit = root_scalar(_hunt_static_PR_M,
                               args=(1, total, static),
                               bracket=[0.1, 1.0],
@@ -562,6 +562,9 @@ def _dP_comp(US_thermo, w_flux) -> float:
 
     M = _Mach_total_perfect(US_thermo, w_flux)
 
+    if M is None:
+        return None
+
     return US_thermo._P*(perfect_ratio_from_Mach(M, US_thermo.gamma, 'PR') - 1)
 
 
@@ -607,10 +610,10 @@ def _w_isen(US_thermo, DS_thermo) -> float:
     U = np.sqrt(2*np.max([(US._H - outlet._H), 0]))
 
     # Check if the flow is sonic
-    if U > outlet.sound:
+    if U > (outlet.sound*1.001):
         return _w_isen_max(US, outlet) * flow_sign
 
-    # rho*U*A
+
     return outlet._density * U * flow_sign
 
 def _w_isen_max(total, static=None) -> float:
@@ -761,6 +764,11 @@ def _Mach_total_perfect(total, w_flux, supersonic=False):
         M_bounds = [1, 30]
     else:
         M_bounds = [0, 1]
+
+    if np.sign(hunt_Mach(M_bounds[0])) == np.sign(hunt_Mach(M_bounds[1])):
+        # If no solution is found because mass flux is too high
+        # then _total_to_static will output None, return None   
+        return None
 
     M = root_scalar(hunt_Mach, method='brentq',
                     bracket=M_bounds).root

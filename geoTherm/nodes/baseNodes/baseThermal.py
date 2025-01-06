@@ -2,10 +2,12 @@ from .baseNode import Node
 from .baseThermo import baseThermo
 from ...logger import logger
 
+
 class baseThermal(Node):
 
     def __init__(self, name, hot=None, cool=None):
         self.name = name
+
         self.hot = hot
         self.cool = cool
 
@@ -48,6 +50,8 @@ class baseThermal(Node):
 
         super().initialize(model)
 
+        node_map = self.model.node_map[self.name]
+
         if self.cool is not None:
             if not isinstance(self.model.nodes[self.cool],
                               baseThermo):
@@ -58,3 +62,13 @@ class baseThermal(Node):
                               baseThermo):
                 logger.critical(f"Thermal Component {self.name} can only "
                                 "be attached to a thermo node")         
+
+        if node_map['hot']:
+            self.hot_node = model.nodes[node_map['hot'][0]]
+        else:
+            self.hot_node = []
+
+        if node_map['cool']:
+            self.cool_node = model.nodes[node_map['cool'][0]]
+        else:
+            self.cool_node = []

@@ -85,6 +85,7 @@ class baseThermo(Node):
         Returns:
             bool: False if successful, True if an error occurs.
         """
+
         try:
             # Attempt to update the thermodynamic state
             self.thermo._update_state(state)
@@ -121,3 +122,4 @@ class baseThermo(Node):
                             " a geoTherm model before flux can be calculated")
 
         return self.model.get_flux(self)
+    

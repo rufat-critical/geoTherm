@@ -7,6 +7,137 @@ from .branches import ThermalBranch, FlowBranch
 from ...nodes.boundary import Outlet, Boundary
 from ...nodes.heatsistor import Qdot
 from ...logger import logger
+import geoTherm as gt
+from scipy.optimize import fsolve
+
+
+class Conditioner:
+    def __init__(self, model, conditioning_type='constant'):
+        """
+        Initialize the Conditioner.
+
+        Parameters:
+        - model: The model object containing state information.
+        - conditioning_type: The scaling type ('constant' or 'jacobian').
+        """
+        self.conditioning_type = conditioning_type
+        self.x_scale = None
+        self.xdot_scale = None
+
+        self.model = model.model
+
+        self.initialize()
+
+    def initialize(self):
+        """Initialize scaling based on solver type and conditioning type."""
+        if self.conditioning_type == 'constant':
+            self._network_scaling()
+        elif self.conditioning_type == 'None':
+            self.x_scale = np.ones(len(self.model.network.x))
+        elif self.conditioning_type == 'jacobian':
+            pass
+
+    def _network_scaling(self):
+        """Compute scaling factors for network solver."""
+        self.x_func = {'x': [], 'xi': {}, 'xdot': {}}
+        self.x_scale = np.ones(len(self.model.network.x))
+        self.xdot_scale = np.ones(len(self.model.network.x))
+
+        for name, indx in self.model.network.istate.items():
+            try:
+                x_scale, xdot_scale = self._determine_network_scale(name)
+            except:
+                from pdb import set_trace
+                set_trace()
+
+            self.x_scale[indx] *= x_scale
+            self.xdot_scale[indx] *= xdot_scale
+
+
+    def _determine_network_scale(self, name):
+        """Determine the scale for a network solver based on network elements.
+        """
+        if name in self.model.network.flow_branches:
+            branch = self.model.network.flow_branches[name]
+            
+            x_scale = np.array([1])
+            xdot_scale = np.array([1e-6])
+
+            return x_scale, xdot_scale
+            
+            if branch._bounds[0] != -np.inf and branch._bounds[1] != np.inf:
+                scale = 1 / (branch._bounds[1] - branch._bounds[0])
+                xdot_scale = 1/scale
+                return scale, xdot_scale
+            else:
+                return 1, 1
+        elif name in self.model.network.thermal_branches:
+            branch = self.model.network.thermal_branches[name]
+            if branch._bounds[0] != -np.inf and branch._bounds[1] != np.inf:
+                return 1 / (branch._bounds[1] - branch._bounds[0])
+            else:
+                x_scale = np.array([1e-4])
+                xdot_scale = np.array([1e-4])
+                return x_scale, xdot_scale
+        elif name in self.model.network.junctions:
+            node = self.model.nodes[name]
+            junction = self.model.network.junctions[name]
+            if isinstance(node, gt.Balance):
+                if np.isinf(node.knob_max) or np.isinf(node.knob_min):
+                    return 1, 1
+                else:
+                    x_scale = 1 / (node.knob_max - node.knob_min)
+                    xdot_scale = 1/x_scale
+                    return x_scale, xdot_scale
+            elif isinstance(node, gt.Heatsistor):
+                return 1e-4
+            elif isinstance(junction, FlowJunction):
+                if junction.solve_energy:
+                    x_scale = np.array([1e-6, 1e-6])
+                    xdot_scale = np.array([1, 1/1e-6])
+                    return x_scale, xdot_scale
+                else:
+                    x_scale = np.array([1e-6])
+                    xdot_scale = np.array([1])
+                    return x_scale, xdot_scale
+        
+        return 1, 1
+
+    def _jacobian(self, x):
+        """Compute the Jacobian matrix for the current solver."""
+        if self.solver == 'network':
+            return self.model.network.jacobian(x)
+        elif self.solver == 'nodal':
+            return self.model.jacobian(x)
+
+    def scale_x(self, x):
+        """Scale the input vector x based on the conditioning type."""
+        if self.conditioning_type == 'jacobian':
+            J = self._jacobian(x)
+            return np.linalg.solve(J, x)
+
+        return x * self.x_scale
+
+    def unscale_x(self, x):
+        """Unscale the input vector x based on the conditioning type."""
+        if self.conditioning_type == 'jacobian':
+            J = self._jacobian(x)
+            return J @ x
+
+        return x / self.x_scale
+
+    def scale_xdot(self, xdot):
+        return xdot * self.xdot_scale
+
+
+    def conditioner(self, func):
+        """Wrap a function with scaling and unscaling logic."""
+        def wrapper(x):
+            x_unscaled = self.unscale_x(x)
+            xdot_unscaled = func(x_unscaled)#/abs(x_unscaled)**.25
+
+            return self.scale_xdot(xdot_unscaled)
+        return wrapper
 
 
 class Network:
@@ -26,9 +157,14 @@ class Network:
                            and junctions.
         """
         self.model = model
-        self.initialize()
 
-    def initialize(self):
+        # Flags to control solvers
+        self.constant_density = False
+        self.solve_energy = False
+
+        self.initialize_network()
+
+    def initialize_network(self):
         """
         Initialize the network by setting up branches and junctions.
 
@@ -47,10 +183,9 @@ class Network:
         self.net_map = net_map
         self.flow_branches = dict(flow_branches)
         self.thermal_branches = dict(thermal_branches)
+        self.thermal_junctions = {}
+        self.flow_junctions = {}
         self.junctions = dict.fromkeys(junctions, None)
-
-        self.istate = {}  # Maps state indices for each network component
-        self.__x = []  # State vector
 
         # Loop and generate junction objects
         for junction_id in junctions:
@@ -87,11 +222,26 @@ class Network:
                     name=junction_id,
                     node=node,
                     network=self)
+
+                self.junctions[junction_id].constant_density = \
+                    self.constant_density
+                self.junctions[junction_id].solve_energy = \
+                    self.solve_energy
+
             else:
                 self.junctions[junction_id] = Junction(
                     name=junction_id,
                     node=node,
                     network=self)
+
+            # Organize the flow and thermal junctions
+            if US or DS:
+                self.flow_junctions[junction_id] = \
+                    self.junctions[junction_id]
+            if hot or cool:
+                self.thermal_junctions[junction_id] = \
+                    self.junctions[junction_id]
+
 
         # Initialize branches
         for branch_id, nodes in flow_branches.items():
@@ -120,22 +270,121 @@ class Network:
 
         self.branches = {**self.flow_branches, **self.thermal_branches}
 
-        for junction in self.junctions.values():
+
+    def initialize_flow_states(self):
+        self.istate = {}  # Maps state indices for each network component
+        self.state = []  # State vector       
+
+        #self.initialize_network_objects()
+
+        for junction in self.flow_junctions.values():
             junction.initialize()
 
-        # Initialize state vector for branches
-        for obj_id, obj in {**self.branches, **self.junctions}.items():
+        for branch in self.flow_branches.values():
+            branch.initialize()
+
+        
+        for obj_id, obj in {**self.flow_branches, **self.flow_junctions}.items():
+            # Run error checker
+            obj.error_check()
+
             state_length = len(obj.x)
             if state_length == 0:
                 continue
 
-            current_length = len(self.__x)
+            current_length = len(self.state)
             self.istate[obj_id] = np.arange(current_length,
                                             current_length + state_length)
-            self.__x = np.concatenate((self.__x, obj.x))
+            self.state = np.concatenate((self.state, obj.x))
+
+        # Evaluate Network
+        self.evaluate_flow(self.x)
+
+    def initialize_thermal_states(self):
+        self.istate = {}  # Maps state indices for each network component
+        self.state = []  # State vector       
+
+        #self.initialize_network_objects()
+
+        for junction in self.thermal_junctions.values():
+            junction.initialize()
+
+        for branch in self.thermal_branches.values():
+            branch.initialize()
+
+        for obj_id, obj in {**self.thermal_branches, **self.thermal_junctions}.items():
+            # Run error checker
+            obj.error_check()
+
+            state_length = len(obj.x)
+            if state_length == 0:
+                continue
+
+            current_length = len(self.state)
+            self.istate[obj_id] = np.arange(current_length,
+                                            current_length + state_length)
+            self.state = np.concatenate((self.state, obj.x))      
+
+        self.evaluate_thermal(self.x)
+
+
+    def initialize_network_objects(self):
+        for junction in self.junctions.values():
+            junction.initialize()
+
+        for branch in self.branches.values():
+            branch.initialize()
+
+
+    def initialize_states(self, flow=True, thermal=True):
+        self.istate = {}  # Maps state indices for each network component
+        self.state = []  # State vector
+
+        for junction in self.junctions.values():
+            junction.initialize()
+
+        for branch in self.branches.values():
+            branch.initialize()
+
+        # Initialize state vector for branches
+        for obj_id, obj in {**self.branches, **self.junctions}.items():
+            # Run error checker
+            obj.error_check()
+
+            state_length = len(obj.x)
+            if state_length == 0:
+                continue
+
+            current_length = len(self.state)
+            self.istate[obj_id] = np.arange(current_length,
+                                            current_length + state_length)
+            self.state = np.concatenate((self.state, obj.x))
 
         # Evaluate Network
         self.evaluate(self.x)
+
+    def initialize_initial_states(self):
+
+        state0 = self.state
+
+        for name, branch in self.flow_branches.items():
+            if name in self.istate:
+                state0[self.istate[name]] = np.array([1])
+
+        for name, junc in self.junctions.items():
+            if isinstance(junc, BoundaryJunction):
+                
+                HP = junc.node.thermo._HP
+
+
+                for flow_junc in self.junctions.values():
+                    if isinstance(flow_junc, FlowJunction):
+                        flow_junc.node.thermo._HP = HP
+                        flow_junc.initialize()
+                        state0[self.istate[flow_junc.name]] = flow_junc.x
+
+                return state0
+
 
     def _identify_branches_and_junctions(self, node_map):
         """
@@ -428,6 +677,217 @@ class Network:
             [*flow_junctions, *thermal_junctions, *other_junctions],
             net_map)
 
+
+    def solve_flow(self, thermal=True):
+        # Solves for the flow-field ignoring thermal junctions
+
+        if thermal:
+            self._solve_thermal_on()
+        else:
+            self._solve_thermal_off()
+
+        self.initialize_flow_states()
+
+        if len(self.x) == 0:
+            return
+
+        conditioner = Conditioner(self)
+        conditioned = conditioner.conditioner(self.evaluate_flow)
+        x_scaled = conditioner.scale_x(self.x)
+        sol = fsolve(conditioned, x_scaled, full_output=True)
+
+        x = conditioner.unscale_x(sol[0])
+        self.evaluate_flow(x)
+
+
+    def solve_thermal(self):
+
+        self.initialize_thermal_states()
+
+
+        conditioner = Conditioner(self)
+        conditioned = conditioner.conditioner(self.evaluate_thermal)
+        x_scaled = conditioner.scale_x(self.x)
+        sol = fsolve(conditioned, x_scaled, full_output=True)
+
+        x = conditioner.unscale_x(sol[0])
+        self.evaluate_thermal(x)
+
+
+    
+    def solve_coupled(self):
+        from pdb import set_trace
+        set_trace()
+
+    
+    # For Flow
+    # Flow initialize_states(flow=True)
+    # Only
+    # Evaluate_flow(self, flow_State)
+    
+    # For thermal
+    # Thermal in
+    
+    # Initialize_network_objects
+    # Initialize_flow
+    # Solve with no thermal
+    # Solve with thermal
+    # Flow
+
+    def _solve_thermal_off(self):
+        for junction in self.flow_junctions.values():
+            if isinstance(junction, FlowJunction):
+                junction.solve_energy = False
+
+        for branch in self.flow_branches.values():
+            branch.solve_thermal = False        
+
+    def _solve_thermal_on(self):
+        for junction in self.flow_junctions.values():
+            if isinstance(junction, FlowJunction):
+                junction.solve_energy = True
+
+        for branch in self.flow_branches.values():
+            branch.solve_thermal = True
+
+
+    def check_penalty(self):
+
+        for stateful in self.istate:
+            if stateful in self.junctions:
+                penalty = self.junctions[stateful].penalty
+                if penalty is not False:
+                    from pdb import set_trace
+                    set_trace()
+            else:
+                penalty = self.branches[stateful].penalty
+                if penalty is not False:
+                    from pdb import set_trace
+                    set_trace()
+
+
+    def solve(self):
+
+        self.initialize_network_objects()
+
+        self.solve_flow(thermal=False)
+
+
+        for name, junction in self.flow_junctions.items():
+            
+            if not isinstance(junction, FlowJunction):
+                continue
+            
+            H_mix = junction.mix_H()
+
+            junction.update_thermo({'H': H_mix,
+                                    'P': junction.node.thermo._P})
+
+
+        #for name, junction in self.flow_junctions.items():
+            
+        #    if not isinstance(junction, FlowJunction):
+        #        continue
+            
+        #    H_mix = junction.mix_H()
+
+        #    junction.update_thermo({'H': H_mix,
+        #                            'P': junction.node.thermo._P})
+
+        self.solve_flow(thermal=False)
+
+
+        # Initialize state vector
+        #self.initialize_states()
+        # If state vector is 0 then return
+
+        
+
+
+        self._solve_thermal_on()
+
+
+
+        self.initialize_states()
+
+        if len(self.x) == 0:
+            return self.x
+
+        # Don't Solve for thermal
+
+
+        conditioner = Conditioner(self)
+
+        conditioned = conditioner.conditioner(self.evaluate)
+
+        x_scaled = conditioner.scale_x(self.x)
+
+        # Solve with energy disabled
+
+        # Initialize initial states
+        #state0 = self.initialize_initial_states()
+        #state0[:] = 0
+        from pdb import set_trace
+        #set_trace()
+        #x_scaled = conditioner.scale_x(state0)
+        #conditioned(x_scaled)
+        #from pdb import set_trace
+        #set_trace()
+
+        #x = np.array([ 16835.12445385, -17503.49023621])
+        #self.evaluate(x)
+        self.check_penalty()
+        sol = fsolve(conditioned, x_scaled, full_output=True)
+        
+        # UPDATE THIS SHIT
+
+        # MAKE IT SOLVE WITHOUT HEAT FIRST
+
+        # POST PROCESS ADD HEAT
+
+        # THEN SOLVE WITH HEAT
+
+
+        # Update Energy
+        x = conditioner.unscale_x(sol[0])
+        self.evaluate(x)
+        from pdb import set_trace
+        #set_trace()
+        return
+
+        for junction in self.junctions.values():
+            if isinstance(junction, FlowJunction):
+                junction.solve_energy = True
+                print(junction.name)
+
+        for branch in self.flow_branches.values():
+            branch.solve_thermal = True
+
+        from pdb import set_trace
+        set_trace()
+        self.initialize_states(initialize_junctions=False,
+                               initialialize_flow_branches=False)
+
+        from pdb import set_trace
+        set_trace()
+
+
+        conditioner.initialize() 
+        x_scaled = conditioner.scale_x(self.x)
+
+        sol = fsolve(conditioned, x_scaled, full_output=True)
+
+        # Solve with energy enabled
+
+        x = conditioner.unscale_x(sol[0])
+
+        self.evaluate(x)
+
+        from pdb import set_trace
+        set_trace()
+
+
+
     def update_state(self, x):
         """
         Update the state vector for the network.
@@ -435,7 +895,7 @@ class Network:
         Args:
             x (array): The new state vector to update.
         """
-        self.__x = x
+        self.state = x
 
         # Update Network
         for name, istate in self.istate.items():
@@ -448,6 +908,31 @@ class Network:
             else:
                 from pdb import set_trace
                 set_trace()
+
+    def evaluate_flow(self, x):
+
+        self.update_state(x)
+
+        for _, branch in self.flow_branches.items():
+            branch.evaluate()
+
+        for _, junction in self.flow_junctions.items():
+            junction.evaluate()       
+
+        return self.xdot
+
+    def evaluate_thermal(self, x):
+
+        self.update_state(x)
+
+        for _, branch in self.thermal_branches.items():
+            branch.evaluate()
+
+        for _, junction in self.thermal_junctions.items():
+            junction.evaluate()
+
+        return self.xdot
+
 
     def evaluate(self, x):
         """
@@ -462,14 +947,24 @@ class Network:
         """
         self.update_state(x)
 
-        for _, branch in self.thermal_branches.items():
+        for _, branch in self.flow_branches.items():
             branch.evaluate()
 
-        for _, branch in self.flow_branches.items():
+        for _, branch in self.thermal_branches.items():
             branch.evaluate()
 
         for _, junction in self.junctions.items():
             junction.evaluate()
+
+        #for _, junction in self.junctions.items():
+        #    if isinstance(junction, FlowJunction):
+        #        Hmix = junction.mix_H()
+        #        state = {'P': junction.node.thermo._P, 'H': Hmix}
+        #        junction.node.update_thermo(state)
+
+        #    for _, branch in self.flow_branches.items():
+        #        branch.evaluate()
+
 
         return self.xdot
 
@@ -495,7 +990,7 @@ class Network:
                 set_trace()
 
         if len(xdot) > 0:
-            return np.concatenate(xdot)
+            return np.concatenate(xdot)*1e5
         else:
             return xdot
 
@@ -507,7 +1002,7 @@ class Network:
         Returns:
             np.array: The current state vector.
         """
-        return self.__x
+        return self.state
 
     def _jacobian(self, x):
         """

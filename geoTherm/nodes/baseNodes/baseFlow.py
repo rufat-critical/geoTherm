@@ -28,7 +28,10 @@ class baseFlow(Node):
         Args:
             model: The model containing the node map and other nodes.
         """
-        node_map = model.node_map[self.name]
+        
+        super().initialize(model)
+        
+        node_map = self.model.node_map[self.name]
 
         # Validate node connections
         if len(node_map['US']) != 1 or len(node_map['DS']) != 1:
@@ -71,6 +74,7 @@ class baseFlow(Node):
             US = self.DS_node.thermo
             DS = self.US_node.thermo
             flow_sign = -1
+
 
         return US, DS, flow_sign
 

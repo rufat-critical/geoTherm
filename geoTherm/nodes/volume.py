@@ -28,12 +28,26 @@ class Station(baseThermo):
         # density, the penalty helps tell fsolve to step back
         self.penalty = False
 
+        # This is the current state
+        self.state = np.array([self.thermo._P, self.thermo._H])
+        
+        #self._x = np.array([self.thermo._H, self.thermo._P])
+        # This is the latest state that didn't make thermostate
+        # complain
+        self._state = np.array([self.thermo._P, self.thermo._H])
+        #self.__x = np.array([self.thermo._H, self.thermo._P])
+
     def update_thermo(self, state):
-        return self._update_thermo(state)
+        self._update_thermo(state)
+
+        self._reinit_state_vars()
+
+    def _reinit_state_vars(self):
+        self.state = np.array([self.thermo._P, self.thermo._H])
 
     @property
     def x(self) -> np.ndarray:
-        return np.array([self.thermo._density, self.thermo._U])
+        return self.state
 
     @property
     def xdot(self) -> np.ndarray:
@@ -49,9 +63,9 @@ class Station(baseThermo):
             return self.penalty
 
         # Calculate fluxes (net mass and energy flow)
-        wNet, Hnet, Wnet, Qnet = self.model.getFlux(self)
+        wNet, Hnet, Wnet, Qnet = self.flux
 
-        return np.array([wNet, Hnet + Wnet + Qnet])
+        return np.array([wNet, (Hnet + Wnet + Qnet)])
 
     def update_state(self, x):
         """
@@ -61,21 +75,117 @@ class Station(baseThermo):
         Args:
             x (np.ndarray): State vector [density, internal energy].
         """
-        x0 = self.x
+
+        # Store the state
+        self.state = x
         try:
-            self.thermo._DU = x[0], x[1]
+            #self.thermo._DU = x[0], x[1]
+            self.thermo._HP = x[1], x[0]
             self.penalty = False
+            # If thermo did not complain then update __x
+            self._state = x
         except Exception:
             logger.warn(f'Failed to update thermo state for {self.name} to:'
-                        f'D, U: {x}, resetting to D0, U0: {x0}')
-            self.thermo._DU = x0
-            self.penalty = (x0 - x) * 1e5
+                        f'H, P: {x}, resetting to H0, P0: {self._state}')
+            # If thermo complained then revert it back to __x state
+            #self.thermo._DU = x0
+            self.thermo._HP = self._state
+            # Point penalty in direction of working state
+            self.penalty = (self._state - x) * 1e5
+
+
+class PStation(Station):
+
+    
+    def initialize(self, model):
+        super().initialize(model)
+
+        self._reinit_state_vars()
+        self.__x = np.array([self.thermo._H, self.thermo._P])
+        
+
+    def _reinit_state_vars(self):
+        self._x = np.array([self.thermo._P])
+    
+
+
+    @property
+    def xdot(self):
+
+        if self.penalty is not False:
+            return self.penalty
+        wNet, _, _, _ = self.flux
+
+        return np.array([wNet*1e6])
+    
+
+    @property
+    def x(self):
+        return self._x
+    
+    def update_energy(self):
+
+        win = 0
+        H= 0
+        for node in self.US_nodes:
+            if node._w > 0:
+                win += node._w
+                H += node.US_node.thermo._H*node._w
+
+        for node in self.DS_nodes:
+            if node._w < 0:
+                win += -node._w
+                H+= node.DS_node.thermo._H*(-node._w)  
+
+
+        if H == 0:
+            Hmix = self.thermo._H
+        else:
+            Hmix = H/(win+1e-10)
+
+
+        return Hmix
+        try:
+            self.thermo._HP = Hmix, self.thermo._P
+        except:
+            print('Failed')
+            pass
+
+
+    def update_state(self, x):
+
+        self._x = x[0]
+        
+        Hmix = self.update_energy()
+
+        try:
+            self.thermo._HP = Hmix, x[0]
+        except:
+            from pdb import set_trace
+            set_trace()
+
+
+
+        try:
+            self.thermo._HP = Hmix, x[0]
+            #self.thermo._HP = self.thermo._H, x[0]
+            self.penalty = False
+            self.__x = np.array([self.thermo._H, x[0]])
+        except:
+            self.thermo._HP = self.__x
+            print('penalty triggered: ')
+            self.penalty = np.array([(self.__x[0] - x[0])*1e5])
+
+
+
+        from pdb import set_trace
+        #set_trace()
 
 
 @addQuantityProperty
 class Volume(Station):
     """
-    Volume Node where the thermodynamic state is defined via mass and energy 
+    Volume Node where the thermodynamic state is defined via mass and energy
     state properties.
     """
 
@@ -112,13 +222,18 @@ class Volume(Station):
         super().__init__(name, fluid, P, T, H, S, Q, state)
         self._volume = volume
 
-    def initialize(self, model):
-        """
-        Initialize the Volume node.
+        self._mass = self.thermo._density*self._volume
+        self._U = self.thermo._U*self._mass
 
-        Args:
-            model: The model instance to which this node belongs.
-        """
+        #self._x = np.array([self._mass, self._U])
+
+    def initialize(self, model):
+        #"""
+        #Initialize the Volume node.
+
+        #Args:
+        #    model: The model instance to which this node belongs.
+        #"""
 
         # Initialize using the Stations's initialization process
         super().initialize(model)
@@ -131,6 +246,9 @@ class Volume(Station):
         """
         self._mass = self.thermo._density*self._volume
         self._U = self.thermo._U*self._mass
+        
+        self._x = np.array([self._mass, self._U])
+
 
     def update_state(self, x):
         """
@@ -141,19 +259,24 @@ class Volume(Station):
         """
 
         # Save the initial state for potential rollback
-        x0 = self.x
-        mass0, U0 = self._mass, self._U
+        #x0 = self.x
 
+        self._x = x
+
+        mass0, U0 = self._mass, self._U
         try:
             # Update the state with new values
             self._mass, self._U = x
+            # Try to update
             self.thermo._DU = self._mass/self._volume, self._U/self._mass
             self.penalty = False
         except Exception:
+            x0 = np.array([mass0, U0])
             # If thermo fails to update, log it and revert to the initial state
             logger.warn(f"Failed to update thermostate for {self.name} to:\n"
                         f"Mass, U:{x}, resetting to D0, U0: {x0}")
 
+            
             # Reset Mass and U
             self._mass, self._U = mass0, U0
             self.thermo._DU = self._mass/self._volume, self._U/self._mass
@@ -178,8 +301,6 @@ class Volume(Station):
             self._reinit_state_vars()
             return False
         except Exception as e:
-            from pdb import set_trace
-            set_trace()
             self.update_state(x0)
             # If an error occurs, trigger debugging and return True
             logger.error(f"Failed to update thermo state to state: {state} "
@@ -194,8 +315,11 @@ class Volume(Station):
         Returns:
             np.ndarray: State vector [mass, internal energy].
         """
-
+        return self._x
         return np.array([self._mass, self._U])
+
+
+
 
 @addQuantityProperty
 class lumpedMass(Volume):
