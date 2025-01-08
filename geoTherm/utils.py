@@ -2,6 +2,7 @@ import numpy as np
 import re
 from scipy.optimize import root_scalar
 from .logger import logger
+import geoTherm as gt
 
 # Get Machine precision
 eps = np.finfo(float).eps
@@ -299,3 +300,39 @@ def find_bounds(f, bounds, upper_limit=np.inf, lower_limit=-np.inf,
     logger.info(f"Unable to find bounds after {iteration} iterations")
     # Return adjusted bounds
     return [lower, upper]
+
+
+def has_cycle(node_map, node_list):
+    # Detect if node_map has recirculation or not
+
+    # Helper function to perform DFS
+    def dfs(node, visited, stack):
+        visited.add(node)
+        stack.add(node)
+
+        # Traverse all downstream nodes
+        for neighbor in node_map[node]['DS']:
+            if neighbor not in visited:
+                # Recur for unvisited nodes
+                if dfs(neighbor, visited, stack):
+                    return True
+            elif neighbor in stack:
+                # If neighbor is in stack, we found a cycle
+                return True
+
+        # Remove the node from the stack after visiting all its neighbors
+        stack.remove(node)
+        return False
+
+    visited = set()
+    stack = set()
+
+    # Check each node in the graph
+    for node in node_map:
+        if node not in visited:
+            if dfs(node, visited, stack):
+                if isinstance(node_list[node], gt.Boundary):
+                    continue
+                else:
+                    return True
+    return False

@@ -583,8 +583,6 @@ class Model(modelTable):
             return self.x
 
         # USE SIM TO TRY AND SOVLE MODEL
-        from pdb import set_trace
-        #set_trace()
 
     def draw(self, file_path='geoTherm_model_diagram.svg', auto_open=True):
         """
@@ -981,3 +979,5 @@ class Solution:
 
         # Save the DataFrame to CSV with modified headers
         self.df.to_csv(file_path, header=modified_headers, index=False)
+
+

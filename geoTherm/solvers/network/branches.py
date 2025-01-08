@@ -13,6 +13,7 @@ from ...utils import thermo_data
 import numpy as np
 import geoTherm as gt
 from ...thermostate import thermo
+from ...nodes.heatsistor import Qdot
 from ...nodes.pump import Pump
 from ...nodes.turbine import Turbine
 from ...utils import eps
@@ -787,6 +788,7 @@ class FlowBranch(baseBranch):
         for inode, node in enumerate(nodes):
             # Evaluate the node
             node.evaluate()
+            Qin = 0
             if inode == len(nodes) - 1:
                 if not self.stateful:
                     self._w = node._w
@@ -873,11 +875,10 @@ class FlowBranch(baseBranch):
                 return
 
             if DS_node.name in self.thermal_junctions and self.solve_thermal:
-                DS_state['H'] += (self.thermal_junctions[DS_node.name].Q_flux
-                                  / (abs(self._w) + eps))
+                self.thermal_junctions[DS_node.name].penalty = False
+                Qin += (self.thermal_junctions[DS_node.name].Q_flux / (abs(self._w) + eps))
+                DS_state['H'] += Qin
 
-                #from pdb import set_trace
-                #set_trace()
             # Last node error check
             if inode == len(nodes) - 1:
                 # What the DS Junction Node state should be
@@ -893,6 +894,13 @@ class FlowBranch(baseBranch):
                     logger.warn("Failed to update thermostate in Branch "
                                 f" evaluate call for '{DS_node.name}' to state: "
                                 f"{DS_state}")
+
+                    if Qin != 0:
+                        DS_state['H'] -= Qin
+                        error = DS_node.update_thermo(DS_state)
+
+                        if error is False:
+                            logger.warn(f"Heat flow into node '{DS_node.name}' is too high")
 
                     # Reduce Mass Flow
                     if self.fixed_flow:
@@ -948,6 +956,15 @@ class ThermalBranch(baseBranch):
     _units = {'Q': 'POWER'}
     _bounds = [-np.inf, np.inf]
     
+
+    def __init__(self, name, nodes, hot_junction, cold_junction, network):
+
+        super().__init__(name, nodes, hot_junction, cold_junction, network)
+
+        self.hot_junction = hot_junction
+        self.cold_junction = cold_junction
+
+
     @property
     def _Q(self):
         if self.fixed_flow:
@@ -984,12 +1001,8 @@ class ThermalBranch(baseBranch):
         self.state = np.array([])
 
         if len(self.nodes) == 1:
-            if (isinstance(self.US_junction, BoundaryJunction)
-                and isinstance(self.DS_junction, ThermalJunction)):
-                self.stateful = False
-                return
-            elif (isinstance(self.DS_junction, BoundaryJunction)
-                  and isinstance(self.US_junction, ThermalJunction)):
+            if isinstance(self.nodes[0], Qdot):
+                # The heat is specified via the Qdot object
                 self.stateful = False
                 return
             elif (isinstance(self.US_junction, BoundaryJunction) and
@@ -1078,63 +1091,33 @@ class ThermalBranch(baseBranch):
         if self.penalty:
             return
 
-        if self._Q <= 0:
+        if self._Q < 0:
             # Reverse nodes if heat flux is negative
             nodes = nodes[::-1]
             US_junction = self.DS_junction.node
             DS_junction = self.US_junction.node
+            hot_junction = self.DS_junction.node
+            cool_junction = self.US_junction.node
         else:
             US_junction = self.US_junction.node
             DS_junction = self.DS_junction.node
+            hot_junction = self.US_junction.node
+            cool_junction = self.DS_junction.node
     
-        US_junction = self.US_junction.node
-        DS_junction = self.DS_junction.node
-
+        #US_junction = self.US_junction.node
+        #DS_junction = self.DS_junction.node
 
         if not self.fixed_flow:
-            if self.US_junction.node.thermo._T > self.DS_junction.node.thermo._T:
-                if self._Q > 0:
-                    pass
-                else:
-                    # Heat can't flow from cold to hot
-                    self.penalty = (-self.state[0]-10)*1e10
-                    logger.warn(f"Thermal Branch {self.name} has heat flowing from cold to hot")
-                    return
-            elif self.US_junction.node.thermo._T < self.DS_junction.node.thermo._T:
+            if hot_junction.thermo._T < cool_junction.thermo._T:
                 if self._Q < 0:
-                    pass
+                    self.penalty = (-self.state[0] + 10)*1e10
                 else:
-                    # Heat can't flow from cold to hot
-                    self.penalty = (-self.state[0]-10)*1e10
-                    logger.warn(f"Thermal Branch {self.name} has heat flowing from cold to hot")
-                    return
+                    self.penalty = (-self.state[0] - 10)*1e10
 
-            
-            if False:
-                if US_junction.thermo._T > DS_junction.thermo._T:
-                    if self._Q > 0:
-                        pass
-                    else:
-                        # Heat can't flow from cold to hot
-                        self.penalty = (-self.state[0]-10)*1e10
-                        logger.warn(f"Thermal Branch {self.name} has heat flowing from cold to hot")
-                        return
-                        
-                elif US_junction.thermo._T < DS_junction.thermo._T:
-                    if self._Q < 0:
-                        pass
-                    else:
-                        # Heat can't flow from cold to hot
-                        self.penalty = (-self.state[0]-10)*1e10
-                        logger.warn(f"Thermal Branch {self.name} has heat flowing from cold to hot")
-                        return
-                else:
-                    if self.state !=0:        
-                        # Check Temperatures
-                        from pdb import set_trace
-                        set_trace()
+                logger.warn(f"Thermal Branch {self.name} has heat flowing from cold to hot")
+                return
 
-        # Loop thru Branch nodes
+        hot_thermo = hot_junction.thermo
         for inode, node in enumerate(nodes):
             # Evaluate the node
             node.evaluate()
@@ -1154,6 +1137,7 @@ class ThermalBranch(baseBranch):
                     from pdb import set_trace
                     set_trace()
 
+                hot_node = node.thermo
                 # Skip the rest of the loop iteration for this node
                 continue
             
@@ -1171,15 +1155,17 @@ class ThermalBranch(baseBranch):
                     from pdb import set_trace
                     set_trace()
                     return
-                
-            DS_node, DS_state = node.get_DS_state()
+            
+            #node.get_cool_state()
 
-            if DS_state is None:
+            cool_state = node.cool_state(hot_thermo, self._Q)
+
+            if cool_state is None:
                 from pdb import set_trace
                 set_trace()
 
-            if DS_state['T']<0:
-                self.penalty = (DS_state['T']-10)*1e5
+            if cool_state['T']<0:
+                self.penalty = (cool_state['T']-10)*1e5
 
                 logger.warn(f"Thermal Branch {self.name} heat flow: {self._Q} "
                             "is too high and results in negative temperature")
@@ -1187,12 +1173,11 @@ class ThermalBranch(baseBranch):
                 return
 
             if inode == len(nodes) - 1:
-                self.DS_target = DS_state
-                if DS_node != DS_junction.name:
-                    from pdb import set_trace
-                    set_trace()
+                self.cool_target = cool_state
                 return
 
+            from pdb import set_trace
+            set_trace()
             self.model.nodes[DS_node].update_thermo(DS_state)
 
 
@@ -1216,29 +1201,18 @@ class ThermalBranch(baseBranch):
 
         if self.penalty is not False:
             return np.array([self.penalty])
-        
+
         if self._Q < 0:
             Tout = self.US_junction.node.thermo._T
         else:
             Tout = self.DS_junction.node.thermo._T
-        
+
         if self.fixed_flow:
             from pdb import set_trace
             set_trace()
         else:
-            self.error = (self.DS_target['T'] - Tout)/Tout
+            # Error is proportional to Q
+            # Maybe in the future implement relative and absolute error?
+            error = (self.cool_target['T'] - Tout)/np.abs(self._Q+eps)**.25
 
-
-            self.error = (self.DS_target['T'] - Tout)/np.abs(self._Q)**.25*np.sign(self._Q)
-            #self.error = self.error/self.nodes[0]._R - self._Q
-
-            #dT = self.US_junction.node.thermo._T - self.DS_junction.node.thermo._T
-            #dQ = dT/self.nodes[0]._R
-
-            #self.error = (dQ - self._Q)/np.abs(self._Q)**.25
-
-            from pdb import set_trace
-            #set_trace()
-
-
-        return np.array([self.error])
+        return np.array([error])

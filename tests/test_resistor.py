@@ -92,7 +92,7 @@ def series_parallel_network(flow_func):
 
     # Define boundaries
     model += gt.Boundary('Inlet', fluid='water', T=(200, 'degC'), P=(10, 'bar'))
-    model += gt.Station('V1', fluid='water')
+    model += gt.Station('V1', fluid='water', T=(200, 'degC'), P=(10, 'bar'))
     model += gt.Station('V2', fluid='water')
     model += gt.Station('V3', fluid='water')
 
@@ -111,7 +111,7 @@ def series_parallel_network(flow_func):
 # Test to check if the model converges for each network and flow_func
 @pytest.mark.parametrize("flow_func", ["incomp", "isentropic", "comp"])
 @pytest.mark.parametrize("network_func", ["series_network", "parallel_network", "series_parallel_network"])
-def network_convergence(flow_func, network_func):
+def test_network_convergence(flow_func, network_func):
     """
     Test if each network converges for various flow_func options.
     """
@@ -126,3 +126,4 @@ def network_convergence(flow_func, network_func):
 
     # Check steady-state convergence
     assert model.converged, f"Model {network_func} did not converge for flow_func={flow_func}"
+    

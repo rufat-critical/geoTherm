@@ -189,7 +189,9 @@ class FlowJunction(Junction):
 
         self.initialized = False
         self.solve_energy = True
+        self.update_energy = False
         self.constant_density = False
+        self.error = 'relative'
 
     def initialize(self):
         """
@@ -217,11 +219,20 @@ class FlowJunction(Junction):
         self.initialize_state()
 
 
+    def evaluate(self):
+
+        self.node.evaluate()
+
+        if self.update_energy:
+            self.update_thermo({'H': self.mix_H(),
+                                'P': self.node.thermo._P})
+
+
     def initialize_state(self):
 
         if self.solve_energy:
             self.state = np.array([self.node.thermo._P,
-                                self.node.thermo._H])
+                                   self.node.thermo._H])
         else:
             self.state = np.array([self.node.thermo._P])      
 
@@ -238,11 +249,14 @@ class FlowJunction(Junction):
         wNet, Hnet, Wnet, Qnet = self.node.flux
 
         if self.solve_energy:
-            return np.array([wNet,
-                             Hnet+Wnet+Qnet])
+            error = np.array([wNet, Hnet+Wnet+Qnet])
         else:
-            return np.array([wNet])    
+            error = np.array([wNet])
 
+        if self.error == 'relative':
+            return error/self.state
+        else:
+            return error
 
     def update_state(self, x):
 

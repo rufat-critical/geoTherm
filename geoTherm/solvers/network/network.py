@@ -7,6 +7,7 @@ from .branches import ThermalBranch, FlowBranch
 from ...nodes.boundary import Outlet, Boundary
 from ...nodes.heatsistor import Qdot
 from ...logger import logger
+from ...utils import has_cycle
 import geoTherm as gt
 from scipy.optimize import fsolve
 
@@ -162,6 +163,9 @@ class Network:
         self.constant_density = False
         self.solve_energy = False
 
+        # Only if the network is directed
+        self.update_energy = False
+
         self.initialize_network()
 
     def initialize_network(self):
@@ -258,17 +262,29 @@ class Network:
             )
 
         for branch_id, nodes in thermal_branches.items():
-            US_junction = self.junctions[self.net_map[branch_id]['hot']]
-            DS_junction = self.junctions[self.net_map[branch_id]['cool']]
+            hot_junction = self.junctions[self.net_map[branch_id]['hot']]
+            cold_junction = self.junctions[self.net_map[branch_id]['cool']]
 
             self.thermal_branches[branch_id] = ThermalBranch(
                 name=branch_id,
                 nodes=nodes,
-                US_junction=US_junction,
-                DS_junction=DS_junction,
+                hot_junction=hot_junction,
+                cold_junction=cold_junction,
                 network=self)
 
         self.branches = {**self.flow_branches, **self.thermal_branches}
+
+
+        # Check if the model has recirculation
+        if has_cycle(self.model.node_map, self.model.nodes):
+            from pdb import set_trace
+            set_trace()
+        elif len(self.thermal_branches) == 0:
+            # This is a directed graph we can update energy sequentially
+            self.update_energy = True
+            self._solve_thermal_off(update_energy=True)
+        else:
+            self._solve_thermal_on
 
 
     def initialize_flow_states(self):
@@ -329,6 +345,7 @@ class Network:
 
 
     def initialize_network_objects(self):
+
         for junction in self.junctions.values():
             junction.initialize()
 
@@ -559,7 +576,6 @@ class Network:
         # Identify flow branches and connections
         for junction in flow_junctions:
             downstream_nodes = node_map[junction]['DS']
-            US_node = self.model.nodes[junction]
             for downstream_node in downstream_nodes:
                 if (downstream_node in flow_junctions):
                     # No branch between junctions or already processed
@@ -588,65 +604,32 @@ class Network:
 
                 branch_counter += 1
 
-            cool_nodes = node_map[junction]['cool']
-            for downstream_node in cool_nodes:
-                DS_node = self.model.nodes[downstream_node]
-                if downstream_node in [flow_junctions, thermal_junctions]:
-                    downstream_junction = downstream_node
-                    from pdb import set_trace
-                    set_trace()
-                else:
-                    current_branch = []
-                    downstream_junction = trace_branch(downstream_node,
-                                                       current_branch,
-                                                       'thermal')
-
-                    if isinstance(US_node, Qdot):
-                        current_branch = [junction, *current_branch]
-                    elif isinstance(downstream_junction, Qdot):
-                        current_branch = [*current_branch, junction]
-
-                thermal_branches[branch_counter] = current_branch
-
-                thermal_nodes = []
-                for node in current_branch:
-                    if node in thermal_junctions:
-                        thermal_nodes.append(node)
-
-                net_map[junction]['cool'].append(branch_counter)
-                net_map[downstream_junction]['hot'].append(branch_counter)
-                net_map[branch_counter] = {'US': [],
-                                           'DS': [],
-                                           'hot': junction,
-                                           'cool': downstream_junction}
-
-                branch_counter += 1
-
         for junction in thermal_junctions:
 
-            downstream_nodes = node_map[junction]['cool']
-            US_node = self.model.nodes[junction]
+            cool_node_names = node_map[junction]['cool']
+            HOT_junction = self.model.nodes[junction]
 
-            for downstream_node in downstream_nodes:
-                DS_node = self.model.nodes[downstream_node]
-                if downstream_node in [*flow_junctions, *thermal_junctions]:
-                    downstream_junction = downstream_node
-                    if isinstance(US_node, Qdot):
+            for cool_node_name in cool_node_names:
+                COOL_node = self.model.nodes[cool_node_name]
+
+                if cool_node_name in [*flow_junctions, *thermal_junctions]:
+                    cool_junction = cool_node_name
+                    if isinstance(HOT_junction, Qdot):
                         current_branch = [junction]
-                    elif isinstance(DS_node, Qdot):
-                        current_branch = [downstream_junction]
+                    elif isinstance(COOL_node, Qdot):
+                        current_branch = [cool_junction]
                     else:
                         from pdb import set_trace
                         set_trace()
                 else:
                     current_branch = []
-                    downstream_junction = trace_branch(downstream_node,
-                                                       current_branch,
-                                                       'thermal')
+                    cool_junction = trace_branch(cool_node_name,
+                                                 current_branch,
+                                                 'thermal')
 
-                    if isinstance(US_node, Qdot):
+                    if isinstance(HOT_junction, Qdot):
                         current_branch = [junction, *current_branch]
-                    elif isinstance(downstream_junction, Qdot):
+                    elif isinstance(cool_junction, Qdot):
                         current_branch = [*current_branch, junction]
 
                 thermal_branches[branch_counter] = current_branch
@@ -657,10 +640,10 @@ class Network:
                         thermal_nodes.append(node)
 
                 net_map[junction]['cool'].append(branch_counter)
-                net_map[downstream_junction]['hot'].append(branch_counter)
+                net_map[cool_junction]['hot'].append(branch_counter)
                 net_map[branch_counter] = {'US': [], 'DS': [],
                                            'hot': junction,
-                                           'cool': downstream_junction}
+                                           'cool': cool_junction}
 
                 branch_counter += 1
 
@@ -734,18 +717,20 @@ class Network:
     # Solve with thermal
     # Flow
 
-    def _solve_thermal_off(self):
+    def _solve_thermal_off(self, update_energy=False):
         for junction in self.flow_junctions.values():
             if isinstance(junction, FlowJunction):
                 junction.solve_energy = False
+                junction.update_energy = update_energy
 
         for branch in self.flow_branches.values():
-            branch.solve_thermal = False        
+            branch.solve_thermal = False
 
     def _solve_thermal_on(self):
         for junction in self.flow_junctions.values():
             if isinstance(junction, FlowJunction):
                 junction.solve_energy = True
+                junction.update_energy = False
 
         for branch in self.flow_branches.values():
             branch.solve_thermal = True
@@ -770,18 +755,21 @@ class Network:
 
         self.initialize_network_objects()
 
-        self.solve_flow(thermal=False)
+        #self.solve_flow(thermal=False)
+        #self.solve_thermal()
 
 
-        for name, junction in self.flow_junctions.items():
-            
-            if not isinstance(junction, FlowJunction):
-                continue
-            
-            H_mix = junction.mix_H()
 
-            junction.update_thermo({'H': H_mix,
-                                    'P': junction.node.thermo._P})
+        if False:
+            for name, junction in self.flow_junctions.items():
+                
+                if not isinstance(junction, FlowJunction):
+                    continue
+                
+                H_mix = junction.mix_H()
+
+                junction.update_thermo({'H': H_mix,
+                                        'P': junction.node.thermo._P})
 
 
         #for name, junction in self.flow_junctions.items():
@@ -794,18 +782,12 @@ class Network:
         #    junction.update_thermo({'H': H_mix,
         #                            'P': junction.node.thermo._P})
 
-        self.solve_flow(thermal=False)
+        #self.solve_flow(thermal=False)
 
 
         # Initialize state vector
         #self.initialize_states()
         # If state vector is 0 then return
-
-        
-
-
-        self._solve_thermal_on()
-
 
 
         self.initialize_states()
@@ -814,7 +796,6 @@ class Network:
             return self.x
 
         # Don't Solve for thermal
-
 
         conditioner = Conditioner(self)
 
@@ -827,18 +808,13 @@ class Network:
         # Initialize initial states
         #state0 = self.initialize_initial_states()
         #state0[:] = 0
-        from pdb import set_trace
-        #set_trace()
         #x_scaled = conditioner.scale_x(state0)
         #conditioned(x_scaled)
         #from pdb import set_trace
         #set_trace()
-
-        #x = np.array([ 16835.12445385, -17503.49023621])
-        #self.evaluate(x)
         self.check_penalty()
         sol = fsolve(conditioned, x_scaled, full_output=True)
-        
+        #set_trace()
         # UPDATE THIS SHIT
 
         # MAKE IT SOLVE WITHOUT HEAT FIRST
@@ -851,41 +827,19 @@ class Network:
         # Update Energy
         x = conditioner.unscale_x(sol[0])
         self.evaluate(x)
-        from pdb import set_trace
-        #set_trace()
-        return
 
-        for junction in self.junctions.values():
-            if isinstance(junction, FlowJunction):
-                junction.solve_energy = True
-                print(junction.name)
-
-        for branch in self.flow_branches.values():
-            branch.solve_thermal = True
-
-        from pdb import set_trace
-        set_trace()
-        self.initialize_states(initialize_junctions=False,
-                               initialialize_flow_branches=False)
-
-        from pdb import set_trace
-        set_trace()
-
-
-        conditioner.initialize() 
-        x_scaled = conditioner.scale_x(self.x)
-
-        sol = fsolve(conditioned, x_scaled, full_output=True)
-
-        # Solve with energy enabled
-
-        x = conditioner.unscale_x(sol[0])
-
-        self.evaluate(x)
-
-        from pdb import set_trace
-        set_trace()
-
+        if not self.model.converged:
+            self._solve_thermal_on()
+            self.initialize_states()
+            conditioner.initialize()
+            conditioned = conditioner.conditioner(self.evaluate)
+            x_scaled = conditioner.scale_x(self.x)
+            sol = fsolve(conditioned, x_scaled, full_output=True)
+            x = conditioner.unscale_x(sol[0])
+            self.evaluate(x)
+            if not self.model.converged:
+                from pdb import set_trace
+                set_trace()
 
 
     def update_state(self, x):
@@ -947,14 +901,16 @@ class Network:
         """
         self.update_state(x)
 
+        for _, junction in self.junctions.items():
+            junction.evaluate()
+
         for _, branch in self.flow_branches.items():
             branch.evaluate()
 
         for _, branch in self.thermal_branches.items():
             branch.evaluate()
 
-        for _, junction in self.junctions.items():
-            junction.evaluate()
+
 
         #for _, junction in self.junctions.items():
         #    if isinstance(junction, FlowJunction):

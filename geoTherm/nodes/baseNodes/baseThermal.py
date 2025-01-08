@@ -49,6 +49,20 @@ class baseThermal(Node):
         else:
             return None
 
+    def cool_state(self, hot, Q):
+        """
+        Get the downstream state
+
+        Returns:
+            tuple: Downstream node and its state.
+        """
+
+        cool_state = self.get_cool_state(hot, Q)
+
+        return cool_state
+
+
+
     def get_US_state(self):
         """
         Get the upstream state based on the heat transfer direction.

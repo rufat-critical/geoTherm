@@ -1,5 +1,5 @@
 from .units import inputParser, output_converter
-from .utils import find_bounds
+from .utils import find_bounds, eps
 import numpy as np
 from .thermostate import thermo
 from scipy.optimize import root_scalar
@@ -8,8 +8,14 @@ from .logger import logger
 
 def _hunt_static_PR_M(PR, M, total, static):
     # Objective function to find PR corresponding to specific Mach
-    static._SP = total._S, PR*total._P
-    U = np.sqrt(2 * np.max([0, (total._H - static._H)]))
+    if PR == 1:
+        # Updating static._SP sometimes causes coolprop to go crazy
+        # but U = 0 if PR=1 so avoid having to evaluate thermostates
+        U = 0
+    else:
+        static._SP = total._S, PR*total._P
+        U = np.sqrt(2 * np.max([0, (total._H - static._H)]))
+
     return M - U/static._sound
 
 def _hunt_total_PR_M(PR, M, static, total):
@@ -27,9 +33,9 @@ def critial_static_pressure_isentropic(total, static=None):
 
     if total.phase in ['gas', 'supercritical_gas', 'supercritical']:
         PR_crit = root_scalar(_hunt_static_PR_M,
-                              args=(1, total, static),
-                              bracket=[0.1, 1.0],
-                              method='brentq').root
+                            args=(1, total, static),
+                            bracket=[0.1, 1.0],
+                            method='brentq').root
     else:
         PR_crit = total._Pvap/total._P
 
@@ -519,6 +525,17 @@ def _w_comp(US_thermo, DS_thermo):
         US, DS, flow_sign = DS_thermo, US_thermo, -1
 
     gamma = US.gamma
+
+    if gamma <= 1:
+        gamma = 1 + eps
+        logger.warn("Compressible flow function is not valid for US "
+                    f"thermostate:\nT: {US._T}, P: {US._P}"
+                    f"phase: {US.phase}")
+
+    elif US.phase not in ['gas', 'supercritical_gas', 'supercritical']:
+        logger.warn("Compressible flow function is not valid for US "
+            f"thermostate:\nT: {US._T}, P: {US._P}"
+            f"phase: {US.phase}")
 
     # Calculate critical pressure ratio
     PR_crit = (2. / (gamma + 1.)) ** (gamma / (gamma - 1.))

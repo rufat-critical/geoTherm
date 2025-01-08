@@ -61,7 +61,7 @@ class Pump(Turbo, pumpParameters):
 
     @property
     def _dP(self):
-        US, _, _ = self.thermostates
+        US, _, _ = self.thermostates()
 
         return US._P*(self.PR-1)
 

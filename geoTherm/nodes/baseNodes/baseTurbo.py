@@ -102,7 +102,9 @@ class Turbo(baseFlow):
         return super().initialize(model)
 
     def _update_outlet_thermo(self):
-        outlet = self.get_outlet_state()
+        
+        US, _, _ = self.thermostates()
+        outlet = self.get_outlet_state(US, self._w)
         self._ref_thermo._HP = outlet['H'], outlet['P']
 
     @property

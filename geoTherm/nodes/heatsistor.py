@@ -45,6 +45,58 @@ class Heatsistor(baseThermal):
         return {'T': T_cold + self._Q*self._R,
                 'D': D}
 
+    def get_cool_state(self, hot_thermo, Q):
+
+        return {'T': hot_thermo._T - Q*self._R,
+                'D': hot_thermo._density}
+
+
+
+
+
+
+class ConvectiveResistor(Heatsistor):
+
+    @inputParser
+    def __init__(self, name, flow, boundary, HTC):
+
+        self.name = name
+        self.flow = flow
+        self.boundary = boundary
+
+        self.cool = flow
+        self.hot = boundary
+
+        self._H = 1e10
+
+    def evaluate(self):
+
+        self._Q = (self.hot_node.thermo._T - self.cool_node.thermo._T)*self._H
+        from pdb import set_trace
+        #set_trace()
+
+    def get_cool_state(self, hot_thermo, Q):
+
+        return {'T': hot_thermo._T -Q*self._H,
+                'D': hot_thermo._density}
+
+        from pdb import set_trace
+        set_trace()
+
+
+    @property
+    def Q2(self):
+        from pdb import set_trace
+        set_trace()
+        return 100
+
+
+
+
+
+
+
+
 @addQuantityProperty
 class Qdot(baseThermal):
 
@@ -60,3 +112,5 @@ class Qdot(baseThermal):
         self.cool = cool
 
         self._Q = Q
+
+
