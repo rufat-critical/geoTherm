@@ -82,25 +82,10 @@ class baseBranch:
 
     def reset_flags(self):
         self.fixed_flow = False
-        self._back_flow = True
         
         self.fixed_flow_node = None
         self.stateful = True
         self.initialized = False
-
-
-    @property
-    def back_flow(self):
-        return self._back_flow
-
-    @back_flow.setter
-    def back_flow(self, flag):
-
-        self._back_flow = flag
-
-        if self._back_flow:
-            self._bounds = [-self._bounds[1],
-                            self._bounds[1]]
 
     @property
     def is_linear_independent(self):
@@ -214,9 +199,15 @@ class FlowBranch(baseBranch):
         super().__init__(*args, **kwargs)
 
    
-        self.back_flow = False
+        self.backflow = True
         self.evaluate_me = False
         self.solve_thermal = True
+
+        # Flag to check for pressure gain
+        # If flow is from low pressure to high pressure
+        # Then this would force error except if there are
+        # pressure gain devices in line like a pump
+        self.pressure_gain = False
 
 
     def initialize(self):
@@ -257,8 +248,7 @@ class FlowBranch(baseBranch):
 
 
         if isinstance(self.DS_junction, FlowJunction):
-            if self.DS_junction.solve_energy is False:
-                self.update_downstream_energy = True
+            self.update_downstream_energy = self.DS_junction.update_energy
 
 
         if len(self.nodes) == 1:
@@ -266,7 +256,6 @@ class FlowBranch(baseBranch):
                 self.stateful = False
                 self._w = self.nodes[0]._w
                 return
-
 
         for inode, node in enumerate(self.nodes):
             # Something to add, bounds from each class 
@@ -290,6 +279,11 @@ class FlowBranch(baseBranch):
             else:
                 from pdb import set_trace
                 set_trace()
+
+            if isinstance(node, (Pump, cycleCloser, fixedFlow)):
+                # Check for pressure gain components
+                from pdb import set_trace
+                #set_trace()
 
             print('Check for pressure gain components')
 
@@ -461,9 +455,9 @@ class FlowBranch(baseBranch):
 
         else:
             if self._w >= 0:
-                self.error = (self.DS_target['P']-Pout)/np.sqrt(np.abs(self._w+eps))
+                self.error = (self.DS_target['P']-Pout)/np.abs(self._w+eps)**.25
             else:
-                self.error = -(self.DS_target['P']-Pout)/np.sqrt(np.abs(self._w+eps))
+                self.error = -(self.DS_target['P']-Pout)/np.abs(self._w+eps)**.25
 
         if self.DS_target['P'] < 0:
             if np.sign(self.error) == np.sign(self._w):
@@ -774,8 +768,10 @@ class FlowBranch(baseBranch):
             # Reverse node order
             nodes = nodes[::-1]
             US_junction = self.DS_junction
+            DS_junction = self.US_junction
         else:
             US_junction = self.US_junction
+            DS_junction = self.DS_junction
 
         if self._w == 0:
             self.DS_target = {'P': US_junction.node.thermo._P,
@@ -783,11 +779,25 @@ class FlowBranch(baseBranch):
             return
 
 
+        if US_junction.node.thermo._P < DS_junction.node.thermo._P:
+            # Check only if there are no pressure gain components
+            # and no fixed flow components
+            if not self.pressure_gain and not self.fixed_flow:
+                if self._w < 0:
+                    self.penalty = (-self.state[0] + 10)*1e20
+                else:
+                    self.penalty = (-self.state[0] - 10)*1e20
+                logger.warn(f"Flow Branch {self.name} has flow from low to high "
+                            "pressure")
+                return
+
+
         US_thermo = US_junction.node.thermo
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
             # Evaluate the node
             node.evaluate()
+
             Qin = 0
             if inode == len(nodes) - 1:
                 if not self.stateful:
@@ -797,7 +807,11 @@ class FlowBranch(baseBranch):
                 else:
                     node._set_flow(self._w)
 
-                    self.DS_target = node.get_outlet_state(US_thermo, self._w)
+                   # self.DS_target = node.get_outlet_state(US_thermo, self._w)
+                    DS_target = node.get_outlet_state(US_thermo, self._w)
+                    
+                    self.DS_target = DS_target
+                    
                     return
             else:
                 DS_node = nodes[inode+1]
@@ -826,6 +840,8 @@ class FlowBranch(baseBranch):
 
             if error:
                 self.penalty = error
+                from pdb import set_trace
+                set_trace()
                 return
 
             if isinstance(node, (fixedFlow, fixedFlowTurbo)):
@@ -928,6 +944,16 @@ class FlowBranch(baseBranch):
         self.penalty = False
         self.state0 = np.copy(self.x)
         self.state = x
+
+        if self.backflow is False:
+            if self._w >= 0:
+                if x[0] < 0:
+                    self.penalty = (-x[0] + 10)*1e5
+                    return
+            elif self._w < 0:
+                if x[0] > 0:
+                    self.penalty = (-x[0] - 10)*1e5
+                    return
 
         if self._bounds[0] <= x[0] <= self._bounds[1]:
             if not self.fixed_flow:
@@ -1114,7 +1140,8 @@ class ThermalBranch(baseBranch):
                 else:
                     self.penalty = (-self.state[0] - 10)*1e10
 
-                logger.warn(f"Thermal Branch {self.name} has heat flowing from cold to hot")
+                logger.warn(f"Thermal Branch {self.name} has heat flowing from "
+                            "cold to hot")
                 return
 
         hot_thermo = hot_junction.thermo

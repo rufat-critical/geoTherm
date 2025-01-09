@@ -192,6 +192,7 @@ class FlowJunction(Junction):
         self.update_energy = False
         self.constant_density = False
         self.error = 'relative'
+        self.state = np.array([])
 
     def initialize(self):
         """
@@ -212,12 +213,8 @@ class FlowJunction(Junction):
         #else:
         #    self.solve_energy = True
 
-
-        #self.solve_energy = False
-
-
         self.initialize_state()
-
+        #self.solve_energy = False
 
     def evaluate(self):
 
@@ -226,15 +223,29 @@ class FlowJunction(Junction):
         if self.update_energy:
             self.update_thermo({'H': self.mix_H(),
                                 'P': self.node.thermo._P})
+            
+        
+        
 
 
     def initialize_state(self):
 
+        # Check that update energy is off if solve_energy is on
+        if self.solve_energy and self.update_energy:
+            from pdb import set_trace
+            set_trace()
+
+
+
         if self.solve_energy:
             self.state = np.array([self.node.thermo._P,
                                    self.node.thermo._H])
+            self._state = np.array([self.node.thermo._P,
+                                   self.node.thermo._H])
         else:
-            self.state = np.array([self.node.thermo._P])      
+            self.state = np.array([self.node.thermo._P])
+            self._state = np.array([self.node.thermo._P])
+
 
     @property
     def x(self):
@@ -254,7 +265,7 @@ class FlowJunction(Junction):
             error = np.array([wNet])
 
         if self.error == 'relative':
-            return error/self.state
+            return error/np.abs(self.state)**.75
         else:
             return error
 
@@ -296,55 +307,27 @@ class FlowJunction(Junction):
 
 
         if self.solve_energy is False:
-            state = {'P': x[0], 'H': self.node.thermo._H}
+            if self.constant_density:
+                state = {'P': x[0], 'D': self.node.thermo._density}
+            else:
+                state = {'P': x[0], 'H': self.node.thermo._H}
         else:
             state = {'P': x[0], 'H': x[1]}
 
-        if state['P'] < 0:
-            from pdb import set_trace
-            set_trace()
-
-        error = self.node.update_thermo(state)
-
-
-        if error:
-            from pdb import set_trace
-            set_trace()
-        else:
-            pass
-            #self.state = state
-        
-        return
-
-        #else:
-        #    Hmix = self.mix_H()
-
-        #    state = {'P': x[0], 'H': Hmix}
-
-        from pdb import set_trace
-        #set_trace()
-
-        if state['P'] < 0:
-            from pdb import set_trace
-            set_trace()
-
-        if self.solve_energy is False:
-            from pdb import set_trace
-            set_trace()
-
         error = self.node.update_thermo(state)
 
         if error:
-            from pdb import set_trace
-            set_trace()
+            # Point error towards state that worked
+            sign = np.sign(self._state-x)
+            self.penalty = (self._state-x+10*sign)*1e20
+            #self.update_state(self._state)
         else:
-            self.state = state
+            self._state = x
                 
     def update_thermo(self, state):
 
 
         error = self.node.update_thermo(state)
-
 
         self.initialize_state()
 
@@ -369,5 +352,7 @@ class FlowJunction(Junction):
         else:
             Hmix = H/(win+1e-10)
 
+        from pdb import set_trace
+        #set_trace()
 
         return Hmix

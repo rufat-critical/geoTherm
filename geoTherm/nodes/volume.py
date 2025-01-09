@@ -38,9 +38,11 @@ class Station(baseThermo):
         #self.__x = np.array([self.thermo._H, self.thermo._P])
 
     def update_thermo(self, state):
-        self._update_thermo(state)
+        error = self._update_thermo(state)
 
         self._reinit_state_vars()
+
+        return error
 
     def _reinit_state_vars(self):
         self.state = np.array([self.thermo._P, self.thermo._H])

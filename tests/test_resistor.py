@@ -92,7 +92,7 @@ def series_parallel_network(flow_func):
 
     # Define boundaries
     model += gt.Boundary('Inlet', fluid='water', T=(200, 'degC'), P=(10, 'bar'))
-    model += gt.Station('V1', fluid='water', T=(200, 'degC'), P=(10, 'bar'))
+    model += gt.Station('V1', fluid='water')
     model += gt.Station('V2', fluid='water')
     model += gt.Station('V3', fluid='water')
 
