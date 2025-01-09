@@ -743,7 +743,7 @@ class Network:
 
         if len(self.x) == 0:
             return self.x
-``
+
         conditioner = Conditioner(self)
 
         conditioned = conditioner.conditioner(self.evaluate_flow)
