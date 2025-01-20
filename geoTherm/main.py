@@ -10,7 +10,6 @@ from .utils import eps, parse_component_attribute
 from .utilities.network_graph import make_dot_diagram, make_graphml_diagram
 from .thermostate import thermo
 import pandas as pd
-from solvers.cvode import CVode_solver
 from .nodes.baseNodes.baseThermo import baseThermo
 from .nodes.baseNodes.baseNode import Node
 from .nodes.baseNodes.baseThermal import baseThermal
@@ -77,7 +76,7 @@ class Conditioner:
         elif isinstance(node, gt.PStation):
             return np.array([1e-6])
         elif isinstance(node, gt.Station):
-            return np.array([1/10325, 1e-6])
+            return np.array([1, 1e-6])
         elif isinstance(node, baseThermo):
             #return np.array([1, 1])
             return np.array([1e-2, 1e-6])
@@ -511,6 +510,8 @@ class Model(modelTable):
         # Save current time
         sol.save([t_span[0]])
         if solver == 'CVODE':
+            # Need to move this to solvers folder
+            from solvers.cvode import CVode_solver
             # Get t and x from Cvode
             t, x = CVode_solver(self.evaluate, x0, t_span)
             for i, _ in enumerate(t):
