@@ -122,13 +122,13 @@ class UnitSystem:
 units = UnitSystem()
 
 
-class unitHandler:
+class UnitHandler:
     """Class for handling units using the pint library."""
 
     def __init__(self):
         """Initialize the UnitHandler with a pint UnitRegistry."""
-        ureg = pint.UnitRegistry()
-        self.Q_ = ureg.Quantity
+        self.ureg = pint.UnitRegistry()
+        self.Q_ = self.ureg.Quantity
 
     def convert(self, value, input_unit, output_unit):
         """
@@ -148,43 +148,54 @@ class unitHandler:
         """
         Parse and convert input values to SI units.
 
-        This method checks the input type and converts it to SI units
-        if necessary.
-
         Args:
             input_value: The value to convert.
             quantity: The type of quantity being converted (e.g., 'LENGTH').
 
         Returns:
             float: The value converted to SI units, or the original value
-                   if no conversion is needed.
+                  if no conversion is needed.
+
+        Raises:
+            ValueError: If the input format is invalid.
         """
-        if isinstance(input_value, (float, int, np.integer, np.floating)):
-            # Convert to SI if input is not already in SI
+        # Handle None case
+        if input_value is None:
+            return None
+
+        # Handle numeric types
+        numeric_types = (float, int, np.integer, np.floating)
+        if isinstance(input_value, numeric_types):
             if units.input == 'SI':
                 return input_value
-            else:
-                input_unit = unitSystems[units.input].units[quantity]
-                output_unit = unitSystems['SI'].units[quantity]
-                return self.convert(input_value, input_unit, output_unit)
-        elif input_value is None:
-            from pdb import set_trace
-            set_trace()
-            return None
-        elif isinstance(input_value, (tuple, list, np.ndarray)):
-            if (isinstance(input_value[0], (float, int, np.int64, np.float64))
-                    and isinstance(input_value[1], str)):
-                return self.convert(input_value[0], input_value[1],
-                                    unitSystems['SI'].units[quantity])
-            else:
-                from pdb import set_trace
-                set_trace()
-        else:
-            return input_value
+            input_unit = unitSystems[units.input].units[quantity]
+            output_unit = unitSystems['SI'].units[quantity]
+            return self.convert(input_value, input_unit, output_unit)
+
+        # Handle sequences (tuple, list, ndarray)
+        if isinstance(input_value, (tuple, list, np.ndarray)):
+            if len(input_value) == 1:
+                return self.parse_units(input_value[0], quantity)
+
+            if len(input_value) == 2:
+                value, unit = input_value
+                is_valid = (isinstance(value, numeric_types) and
+                            isinstance(unit, str))
+                if is_valid:
+                    return self.convert(
+                        value, unit, unitSystems['SI'].units[quantity])
+                logger.critical(
+                    "Two-element sequence must be (numeric_value, unit_string)"
+                    )
+
+            logger.critical("Sequence must have either 1 or 2 elements")
+
+        # If none of the above cases match, return as-is
+        return input_value
 
 
 # Create an instance of UnitHandler
-unit_handler = unitHandler()
+unit_handler = UnitHandler()
 unit_converter = unit_handler.convert
 
 
@@ -307,6 +318,12 @@ def inputParser(init):
         return init(self, **inputs)
 
     return wrapper
+
+def parse_state_dict(state_dict):
+    state = {Q: unit_handler.parse_units(v, THERMO_UNITS[Q])
+                for Q, v in state_dict.items()}
+    return state
+
 
 
 def output_converter(quantity):

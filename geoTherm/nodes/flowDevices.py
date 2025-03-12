@@ -87,17 +87,9 @@ class fixedFlow(baseFlow):
     def _set_flow(self, w):
         self._w = w
 
-@addQuantityProperty
-class fixedFlowPressure(baseFlow):
-    # This adds flow and pressure constraint
-    # if dP is too high then it updates upstream pressure
-    # to achieve the desired flow and dP
-    pass
-
-
 
 @addQuantityProperty
-class fixedFlowTurbo(baseTurbo, fixedFlow):
+class fixedFlowTurbo3(baseTurbo, fixedFlow):
     _bounds = [1/100, 100]
 
     _units = baseFlow._units | {

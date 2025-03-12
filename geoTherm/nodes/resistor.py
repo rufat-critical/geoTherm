@@ -1,7 +1,4 @@
 from ..units import inputParser, addQuantityProperty
-from ..flow_funcs import (_w_incomp, _dP_incomp, _w_isen, _dP_isen,
-                          _w_comp, _dP_comp, _w_isen_max)
-from ..flow_funcs import flow_func
 import numpy as np
 from ..logger import logger
 from .baseNodes.baseFlowResistor import baseFlowResistor
@@ -27,17 +24,6 @@ class resistor(baseFlowResistor):
     def initialize(self, model):
         super().initialize(model)
 
-        #if self.flow_func == 'isentropic':
-        #    self._flow_func = _w_isen
-        #    self._dP_func = _dP_isen
-        #elif self.flow_func == 'incomp':
-       #     self._flow_func = _w_incomp
-       #     self._dP_func = _dP_incomp
-       # elif self.flow_func == 'comp':
-       #     self._flow_func = _w_comp
-       #     self._dP_func = _dP_comp
-
-       # self.flow2 = flow_func(self.flow_func)
 
     def evaluate(self):
 
@@ -71,53 +57,3 @@ class resistor(baseFlowResistor):
 
 class orifice(resistor):
     pass
-
-
-
-@addQuantityProperty
-class fixedFlow2(baseFlowResistor):
-    """ Resistor Object where mass flow is fixed """
-
-    _units = {'w': 'MASSFLOW', 'dP': 'PRESSURE'}
-    _displayVars = ['w']
-
-    @inputParser
-    def __init__(self, name, US, DS,
-                 w:'MASSFLOW',      # noqa
-                 dP:'PRESSURE'=0):  # noqa
-        """
-        Initialize the fixedFlow node with given parameters.
-
-        Args:
-            name (str): Name of the node.
-            US (str): Upstream node identifier.
-            DS (str): Downstream node identifier.
-            w (float): Mass flow rate.
-            dP (float, optional): Pressure difference. Defaults to None.
-        """
-
-        super().__init__(name, US, DS)
-
-        self._dP = dP
-        self._w = w
-
-
-    def get_outlet_state(self, US, w):
-        """
-        Calculate the thermodynamic state at the outlet (downstream).
-
-        Returns:
-            dict: A dictionary containing the enthalpy ('H') and pressure ('P')
-                  at the downstream node.
-        """
-
-        # Get US, DS Thermo
-        US = self.model.nodes[self.US].thermo
-
-        return {'H': US._H, 'P': US._P + self._dP}  # Outlet state
-
-    def get_inlet_state(self, DS, w):
-
-        return {'H': DS._H,
-                'P': DS._P - self._dP}
-

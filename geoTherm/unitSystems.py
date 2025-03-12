@@ -19,6 +19,8 @@ class SI:
         'LENGTH': 'm',                     # Meter
         'MASS': 'kg',                      # Kilogram
         'MASSFLOW': 'kg/s',                # Kilogram per second
+        'MASSFLOWDERIV': 'kg/s**2',        # Kilogram per second squared
+        'MOLARMASS': 'kg/kmol',            # Kilogram per kilomole
         'MASSFLUX': 'kg/s/m**2',           # Kilogram per second per square
                                            # meter
         'POWER': 'W',                      # Watt
@@ -38,6 +40,9 @@ class SI:
         'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
         'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
         'ROTATIONSPEED': 'rpm',            # Revolutions per minute
+        'SURFACETENSION': 'N/m',
+        'INERTANCE': 'm**-3',
+        'GASCONSTANT': 'J/kmol/K'
     }
 
 
@@ -56,7 +61,9 @@ class ENGLISH:
         'ENERGY': 'Btu',                   # British thermal unit
         'LENGTH': 'in',                    # Inch
         'MASS': 'lb',                      # Pound
+        'MOLARMASS': 'lb/mol',           # Pound per lbmol
         'MASSFLOW': 'lb/s',                # Pound per second
+        'MASSFLOWDERIV': 'lb/s**2',        # Pound per second squared
         'MASSFLUX': 'lbs/s/in**2',         # Pounds per second per square inch
         'POWER': 'Btu/s',                  # British thermal unit per second
         'PRESSURE': 'psi',                 # Pounds per square inch
@@ -77,6 +84,9 @@ class ENGLISH:
         'SPECIFICSPEED': 'rpm*(ft**3/s)**(0.5)/(ft*lbf/lb)**(3/4)',
         'SPECIFICDIAMETER': 'ft*(ft*lbf/lb)**(1/4)/(ft**3/s)**(0.5)',
         'ROTATIONSPEED': 'rpm',            # Revolutions per minute
+        'SURFACETENSION': 'lbf/in',
+        'INERTANCE': 'in**-3',
+        'GASCONSTANT': 'ft*lbf/lb/degR'
     }
 
 
@@ -95,7 +105,9 @@ class MIXED:
         'ENERGY': 'MJ',                    # Megajoule
         'LENGTH': 'in',                    # Inch
         'MASS': 'lb',                      # Pound
+        'MOLARMASS': 'kg/kmol',
         'MASSFLOW': 'kg/s',                # Kilogram per second
+        'MASSFLOWDERIV': 'kg/s**2',        # Kilogram per second squared
         'MASSFLUX': 'kg/s/m**2',           # Kilogram per second per square
                                            # meter
         'POWER': 'MW',                     # Kilowatt
@@ -115,4 +127,7 @@ class MIXED:
         'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
         'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
         'ROTATIONSPEED': 'rpm',            # Revolutions per minute
+        'SURFACETENSION': 'N/m',
+        'INERTANCE': 'm**-3',
+        'GASCONSTANT': 'J/kmol/K'
     }

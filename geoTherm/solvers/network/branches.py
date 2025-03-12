@@ -5,7 +5,7 @@ from ...nodes.baseNodes.baseThermal import baseThermal
 from ...nodes.baseNodes.baseThermo import baseThermo
 from ...nodes.baseNodes.baseFlow import baseFlow, baseInertantFlow
 from ...nodes.baseNodes.baseTurbo import Turbo
-from ...nodes.flowDevices import fixedFlow, fixedFlowTurbo
+from ...nodes.flowDevices import fixedFlow
 from ...nodes.baseNodes.baseFlowResistor import baseFlowResistor
 from ...nodes.cycleCloser import cycleCloser
 from ...logger import logger
@@ -272,8 +272,6 @@ class FlowBranch(baseBranch):
 
             if isinstance(node, (fixedFlow)):
                 self.node_types.append(fixedFlow)
-            elif isinstance(node, (fixedFlowTurbo)):
-                self.node_types.append(fixedFlowTurbo)
             elif isinstance(node, baseThermo):
                 self.node_types.append(baseThermo)
             elif isinstance(node, baseFlowResistor):
@@ -344,7 +342,7 @@ class FlowBranch(baseBranch):
 
            # print('Check for pressure gain components')
 
-            if isinstance(node, (fixedFlowTurbo, fixedFlow)):
+            if isinstance(node, (fixedFlow)):
                 if self.fixed_flow_flag:
                     from pdb import set_trace
                     set_trace()
