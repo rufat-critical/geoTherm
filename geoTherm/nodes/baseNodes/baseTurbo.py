@@ -1,8 +1,157 @@
 import numpy as np
 from .baseFlow import baseFlow, baseInertantFlow
-from ...units import inputParser
+from ...units import inputParser, addQuantityProperty
 from ...logger import logger
 from ...thermostate import thermo
+from abc import ABC, abstractmethod
+
+@addQuantityProperty
+class baseTurbo(baseFlow, ABC):
+    """Base class for turbomachinery (pumps, turbines, etc.).
+    
+    Handles common turbomachinery behavior including:
+    - Pressure ratio relationships
+    - Efficiency effects
+    - Power calculations
+    """
+
+    _units = baseFlow._units | {
+        'dH_is': 'SPECIFICENERGY',
+        'dH': 'SPECIFICENERGY',
+        'W': 'POWER',
+    }
+
+    _displayVars = ['w', 'eta', 'dH_is', 'dH', 'W', 'PR']
+
+    @property
+    @abstractmethod
+    def _dH_is(self):
+        """Calculate isentropic enthalpy change.
+        Must be implemented by derived classes.
+        """
+        logger.critical("_dH_is must be implemented by derived class")
+
+    @property
+    def _W(self):
+        """Calculate power transfer to/from fluid.
+
+        Negative power indicates energy addition to fluid (e.g., pump)
+        Positive power indicates energy extraction from fluid (e.g., turbine)
+
+        Returns:
+            float: Power [W]
+        """
+        return -self._dH * np.abs(self._w)
+
+    def _set_flow(self, w):
+        """Set the mass flow rate"""
+        self._w = w
+        return False
+
+class fixedFlowTurbo(baseTurbo):
+
+    @inputParser
+    def __init__(self, name,
+                 US,
+                 DS,
+                 w:'MASSFLOW',
+                 D: 'LENGTH' = 1,       # noqa
+                 eta=None,
+                 axial=False):
+        """
+        Initialize the Turbo Node.
+
+        Args:
+            name (str): Name of the turbine.
+            eta (float): Efficiency of the turbine.
+            US (str): Upstream node name.
+            DS (str): Downstream node name.
+            rotor (str): Rotor Object.
+            PR (float): Pressure ratio.
+            D (float, optional): Roter Diameter.
+            eta(float, optional): Efficiency.
+            w (object): Mass flow controller object.
+            Ns (float): Specific Speed
+            ns (float): Dimensionless Specific Speed
+            ds (float): Dimensionless Specific Diameter
+            axial (Boolean): Axial or Radial. Default is False
+        """
+
+        # Component Name
+        self.name = name
+        # Component Efficiency
+        self.eta = eta
+        # Upstream Station
+        self.US = US
+        # Downstream Station
+        self.DS = DS
+        # Rotor Diameter
+        self._D = D
+        # Mass Flow
+        self.axial = axial
+        self._w_setpoint = w
+        self.penalty = False
+
+        if self.eta is None:
+            logger.info(f"eta for {self.name} will be calculated using "
+                        "Claudio's Curves")
+            self.update_eta = True
+            # Set to an initial value
+            self.eta = 1
+        else:
+            self.update_eta = False
+
+
+    def _set_flow(self, w):
+        self._w_setpoint = w
+
+    @property
+    def _w(self):
+        return self._w_setpoint
+
+    @_w.setter
+    def _w(self, w):
+        self._w_setpoint = w
+
+
+class fixedPressureRatioTurbo(baseInertantFlow, baseTurbo):
+    """Base class for turbomachinery (pumps/compressors) with a fixed pressure ratio.
+
+    Args:
+        name (str): Component identifier
+        US: Upstream node reference
+        DS: Downstream node reference
+        PR (float): Fixed pressure ratio (outlet/inlet pressure)
+        w (float): Mass flow rate [kg/s]
+        eta (float): Isentropic efficiency
+        Z (tuple): Tuple of (value, units) for compressibility factor, defaults to (1, 'm**-3')
+
+    Attributes:
+        _bounds (list): Flow rate bounds [min, max] in kg/s, set to [-1e5, 1e5]
+        _units (dict): Units inherited from baseTurbo class
+    """
+
+    _bounds = [-1e5, 1e5]
+    _units = baseTurbo._units | baseInertantFlow._units
+
+    _displayVars = ['w', 'PR_setpoint', 'PR', 'eta', 'W', 'Z']
+
+    @inputParser
+    def __init__(self, name, US, DS, PR, w:'MASSFLOW', eta, Z=(1, 'm**-3')):
+
+        super().__init__(name=name, US=US, DS=DS, w=w, Z=Z)
+        self.eta = eta
+        self.PR_setpoint = PR
+
+    def evaluate(self):
+        """ Adjust flow to achieve desired pressure ratio"""
+
+        US, DS = self.US_node.thermo, self.DS_node.thermo
+        DS_target = self.get_outlet_state(US, self._w)
+
+        pressure_error = DS_target['P'] - DS._P
+
+        self._wdot = pressure_error
 
 class Turbo(baseFlow):
     """Base Turbo Class for turbines and pumps."""
@@ -507,77 +656,3 @@ class TurboSizer(Turbo):
 
         self.evaluate()
 
-class fixedFlowTurbo(Turbo):
-
-    @inputParser
-    def __init__(self, name,
-                 US,
-                 DS,
-                 rotor,
-                 w:'MASSFLOW',
-                 PR=2,
-                 D: 'LENGTH' = 1,       # noqa
-                 eta=None,
-                 axial=False):
-        """
-        Initialize the Turbo Node.
-
-        Args:
-            name (str): Name of the turbine.
-            eta (float): Efficiency of the turbine.
-            US (str): Upstream node name.
-            DS (str): Downstream node name.
-            rotor (str): Rotor Object.
-            PR (float): Pressure ratio.
-            D (float, optional): Roter Diameter.
-            eta(float, optional): Efficiency.
-            w (object): Mass flow controller object.
-            Ns (float): Specific Speed
-            ns (float): Dimensionless Specific Speed
-            ds (float): Dimensionless Specific Diameter
-            axial (Boolean): Axial or Radial. Default is False
-        """
-
-        # Component Name
-        self.name = name
-        # Component Efficiency
-        self.eta = eta
-        # Upstream Station
-        self.US = US
-        # Downstream Station
-        self.DS = DS
-        # Rotor Object
-        self.rotor = rotor
-        # Pressure Ratio
-        self.PR = PR
-        # Rotor Diameter
-        self._D = D
-        # Mass Flow
-        self.axial = axial
-        self._w_setpoint = w
-        self.penalty = False
-
-        if self.eta is None:
-            logger.info(f"eta for {self.name} will be calculated using "
-                        "Claudio's Curves")
-            self.update_eta = True
-            # Set to an initial value
-            self.eta = 1
-        else:
-            self.update_eta = False
-
-        if self.PR is None:
-            msg = f'No PR input specified for {self.name}, setting it to 2'
-            logger.warn(msg)
-            self.PR = 1.5
-
-    def _set_flow(self, w):
-        self._w_setpoint = w
-
-    @property
-    def _w(self):
-        return self._w_setpoint
-
-    @_w.setter
-    def _w(self, w):
-        self._w_setpoint = w

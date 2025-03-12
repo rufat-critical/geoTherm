@@ -6,6 +6,10 @@ import geoTherm as gt
 
 # Get Machine precision
 eps = np.finfo(float).eps
+# G constant (m/s^2)
+g = 9.80665
+# Gas Constant (J/kmol/K)
+R_ideal = 8314.46261815324
 
 
 def dP_pipe(thermo, Dh, L, w, roughness=2.5e-6):
@@ -44,7 +48,7 @@ def pipe_K(thermo, L, Dh, w, roughness=2.5e-6):
     return f * L / Dh
 
 
-def Re_(thermo, Dh, w):
+def Re_(thermo, D_h, w):
     """ Calculate Reynolds number based on mass flow.
 
     Args:
@@ -55,7 +59,33 @@ def Re_(thermo, Dh, w):
     Returns:
         float: Reynolds Number
     """
-    return 4 * np.abs(w) / (np.pi * Dh * thermo._viscosity)
+    return 4 * np.abs(w) / (np.pi * D_h * thermo._viscosity)
+
+def Re_square(thermo, D_h, w_flux):
+
+    return w_flux*D_h/thermo._viscosity
+
+def Boiling_(G, q, dH_vap):
+    """ Calculate boiling number"""
+    # q: heat flux
+    # G: mass flux
+    # Hvap: Heat Of vaporization J/kg
+
+    return q/(G*dH_vap)
+
+def Bond_(thermo, D_h):
+
+    # Create temnporary themro object
+    temp_thermo = thermo.from_state(thermo.state)
+
+    temp_thermo._PQ = thermo._P, 0
+    rho_l = temp_thermo._density
+    temp_thermo._PQ = thermo._P, 1
+    rho_g = temp_thermo._density
+
+    return (rho_l - rho_g)*g*D_h**2/temp_thermo._surface_tension
+
+
 
 
 def friction_factor(Re, rel_roughness):

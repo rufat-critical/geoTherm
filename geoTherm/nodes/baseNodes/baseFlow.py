@@ -3,62 +3,89 @@ from .baseNode import Node
 from ...logger import logger
 from ...units import addQuantityProperty, inputParser
 import numpy as np
+from abc import ABC, abstractmethod
+from ...nodes.heatsistor import Qdot
+
 
 @addQuantityProperty
-class baseFlow(Node):
+class baseFlow(Node, ABC):
+    """Base class for all flow components.
 
+    Defines the basic interface and properties that all flow components must
+    implement. Flow components must handle mass flow rates and pressure
+    differences.
+
+    Attributes:
+        _displayVars (list): Variables to display in output
+        _units (dict): Unit definitions for quantities
+        _bounds (list): Valid range for mass flow rate [min, max]
+        _unidirectional (bool): If True, only allows forward flow
+    """
     _displayVars = ['w', 'dP']
-    _units = {'w': 'MASSFLOW', 'dP': 'PRESSURE'}    
+    _units = {'w': 'MASSFLOW', 'dP': 'PRESSURE', 'dH': 'SPECIFICENERGY'}
     _bounds = [1e-5, 1e5]
 
-    def __init__(self, name, US, DS):
+    def __init__(self, name, US, DS, unidirectional=False):
+        """Initialize flow component.
 
+        Args:
+            name (str): Component identifier
+            US (str): Upstream node name
+            DS (str): Downstream node name
+            unidirectional (bool): If True, only allows forward flow
+        """
         self.name = name
         self.US = US
         self.DS = DS
-
-        # Initialize flow variable
         self._w = 0
+        self.penalty = False
+        self._unidirectional = unidirectional
 
     def initialize(self, model):
-        """
-        Initialize the node with the model, setting up connections to upstream
-        and downstream nodes.
+        """Initialize node with model and set up node connections.
+
+        Validates node connections and sets up references to upstream and 
+        downstream nodes. Ensures flow nodes have correct connectivity.
 
         Args:
-            model: The model containing the node map and other nodes.
+            model: Model containing node map and other nodes.
+
+        Raises:
+            CriticalError: If node connections are invalid.
         """
-        
         super().initialize(model)
-        
         node_map = self.model.node_map[self.name]
 
-        # Validate node connections
+        # Validate upstream and downstream connections
         if len(node_map['US']) != 1 or len(node_map['DS']) != 1:
             logger.critical(
-                f"Flow Node {self.name} must have exactly one "
-                f"upstream and one downstream node. Current connections: "
+                f"Flow Node {self.name} must have exactly one upstream and "
+                f"one downstream node. Current connections: "
                 f"US: {node_map['US']}, DS: {node_map['DS']}"
             )
 
-        # Validate the node map strings are generated correctly
+        # Validate node map strings match initialization values
         if node_map['US'][0] != self.US or node_map['DS'][0] != self.DS:
             logger.critical(
-                f"Node mapping mismatch for '{self.name}': Expected "
-                f"US: {self.US}, DS: {self.DS}, but got "
-                f"US: {node_map['US'][0]}, DS: {node_map['DS'][0]}"
+                f"Node mapping mismatch for '{self.name}': "
+                f"Expected US: {self.US}, DS: {self.DS}, "
+                f"got US: {node_map['US'][0]}, DS: {node_map['DS'][0]}"
             )
 
+        # Validate heat transfer connections
         if node_map['hot'] or node_map['cool']:
-            logger.critical(
-                f"Flow Node {self.name} cannot have any hot or cool "
-                "nodes attached to.\nCurrent connections:\n"
-                f"\bhot: {node_map['hot']}\ncool: {node_map['cool']}"
-            )
+            for node in node_map['hot'] + node_map['cool']:
+                if not isinstance(model.nodes[node], Qdot):
+                    logger.critical(
+                        f"Flow Node {self.name} can only have Qdot elements "
+                        f"as heat connections. Invalid connections:\n"
+                        f"hot: {node_map['hot']}\ncool: {node_map['cool']}"
+                    )
 
-        # Attach references to upstream and downstream nodes
+        # Set node references
         self.US_node = model.nodes[node_map['US'][0]]
-        self.DS_node = model.nodes[node_map['DS'][0]]    
+        self.DS_node = model.nodes[node_map['DS'][0]]
+        self._fixed_flow = False
 
     def thermostates(self):
         """
@@ -67,16 +94,28 @@ class baseFlow(Node):
 
         # Handle Backflow
         if self.US_node.thermo._P >= self.DS_node.thermo._P:
-            US = self.US_node.thermo
-            DS = self.DS_node.thermo
+            US, DS = self.US_node.thermo, self.DS_node.thermo
             flow_sign = 1
         else:
-            US = self.DS_node.thermo
-            DS = self.US_node.thermo
+            US, DS = self.DS_node.thermo, self.US_node.thermo
             flow_sign = -1
 
-
         return US, DS, flow_sign
+
+    @abstractmethod
+    def get_outlet_state(self, US, w):
+        """Calculate outlet state given inlet conditions and flow rate.
+
+        Must be implemented by derived classes.
+
+        Args:
+            US: Upstream thermodynamic state
+            w (float): Mass flow rate [kg/s]
+
+        Returns:
+            dict: Outlet state with pressure and enthalpy
+        """
+        logger.critical(f"get_outlet_state not implemented in {self.name}")
 
     def get_DS_state(self, US, w):
 
@@ -97,27 +136,58 @@ class baseFlow(Node):
         US_state = self.get_inlet_state(DS, w)
 
         return US_state
-    
+
+    @property
+    def _dP(self):
+        """Calculate pressure difference across component.
+
+        Returns:
+            float: Pressure difference [Pa]
+        """
+        US, DS, _ = self.thermostates()
+        return DS._P - US._P
+
+    @property
+    def PR(self):
+        US, DS, _ = self.thermostates()
+        return US._P / DS._P
+
     @property
     def _dH(self):
+        """Calculate enthalpy change across component.
+        Must be implemented by derived classes if non-zero.
+
+        Returns:
+            float: Specific enthalpy change [J/kg]
+        """
         return 0
 
 
 @addQuantityProperty
 class baseInertantFlow(baseFlow):
-    """Base class for a flow node that calculates flow in between stations."""
+    """Base class for flow components with inertial effects.
 
-    _displayVars = ['w', 'dP']
-    _units = {'w': 'MASSFLOW', 'dP': 'PRESSURE'}    
-    _bounds = [1e-5, 1e5]
+    Handles dynamic flow behavior with inertance.
+    """
+    _units = {**baseFlow._units,
+              'wdot': 'MASSFLOWDERIV',
+              'Z': 'INERTANCE'}
 
-    def __init__(self, name, US, DS, w:'MASSFLOW'=0):
+    @inputParser
+    def __init__(self, name, US, DS, w:'MASSFLOW'=0,
+                 Z:'INERTANCE'=(1e-5, 'm**-3')):
+        """Initialize inertant flow component.
 
-        self.name = name
-        self.US = US
-        self.DS = DS
+        Args:
+            name (str): Component identifier
+            US: Upstream node reference
+            DS: Downstream node reference
+            w (float): Initial mass flow rate [kg/s]
+            Z (float): Flow inertance [m**-3]
+        """
+        super().__init__(name=name, US=US, DS=DS)
         self._w = w
-        self.penalty = False
+        self._Z = Z
 
     def update_state(self, x):
         """
@@ -126,7 +196,6 @@ class baseInertantFlow(baseFlow):
         Args:
             x (float): New state value to set.
         """
-
         if self._bounds[0] < x[0] < self._bounds[1]:
             self._w = x[0]
             self.penalty = False
@@ -140,35 +209,38 @@ class baseInertantFlow(baseFlow):
                 self.penalty = (x - self._bounds[1] - 10)*1e8
                 self._w = self._bounds[1]           
 
-    @property
-    def x(self):
-        """
-        Mass flow rate state.
+    def evaluate(self):
+        """Calculate flow acceleration based on pressure imbalance.
 
-        Returns:
-            np.array: Mass flow rate (kg/s).
-        """
+        The flow rate should:
+        - Decrease (negative wdot) when downstream pressure is too high
+        - Increase (positive wdot) when downstream pressure is too low
 
-        return np.array([self._w])
+        For example:
+        - If DS._P = 110 bar and DS_target['P'] = 100 bar:
+          Flow sees too much back pressure, so wdot < 0 to reduce flow
+        - If DS._P = 90 bar and DS_target['P'] = 100 bar:
+          Flow sees less resistance, so wdot > 0 to increase flow
+        """
+        US, DS, _ = self.thermostates()
+        DS_target = self.get_outlet_state(US, self._w)
+
+        # Pressure difference driving the flow acceleration
+        # Positive when target pressure > actual pressure (flow increases)
+        # Negative when target pressure < actual pressure (flow decreases)
+        self._wdot = (DS_target['P'] - DS._P) / self._Z
 
     @property
     def xdot(self):
+        """Calculate state derivative."""
         if self.penalty is not False:
             return np.array([self.penalty])
-
-        #if self._w >= 0:
-        #    US, DS = self.US_node.thermo, self.DS_node.thermo
-        #else:
-        #    US, DS = self.DS_node.thermo, self.US_node.thermo
-        US, DS = self.thermostates()
-
-        DS_target = self.get_outlet_state(US, self._w)
-
-        return np.array([DS._P-DS_target['P']])*np.sign(self._w)
+        return np.array([self._wdot])
 
     @property
-    def _W(self):
-        return 0
+    def x(self):
+        """Current state (mass flow rate)."""
+        return np.array([self._w])
 
     def thermostates(self):
         """
@@ -195,21 +267,6 @@ class baseInertantFlow(baseFlow):
         self._w = w
 
         return False
-        # Get Downstream Node
-        #if self._w >= 0:
-        #    dsNode = self.model.node_map[self.name]['DS'][0]
-        #else:
-        #    dsNode = self.model.node_map[self.name]['US'][0]
-
-        # Get the Outlet State
-        #dsState = self.get_outlet_state()
-
-        #if dsState:
-            # Return the downstream node and downstream state
-        #    return dsNode, dsState
-        #else:
-        #    return dsNode, None
-
 
     def get_DS_state(self, US, w):
 
@@ -222,5 +279,6 @@ class baseInertantFlow(baseFlow):
 
         # Get the Inlet State
         US_state = self.get_inlet_state(DS, w)
+
 
         return US_state

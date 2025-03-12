@@ -9,7 +9,7 @@ from ...nodes.heatsistor import Qdot
 from ...logger import logger
 from ...utils import has_cycle
 import geoTherm as gt
-from scipy.optimize import fsolve
+from scipy.optimize import fsolve, root
 
 
 class Conditioner:
@@ -62,7 +62,7 @@ class Conditioner:
             branch = self.model.network.flow_branches[name]
 
             x_scale = np.array([1e-1])
-            xdot_scale = np.array([1e2])
+            xdot_scale = np.array([1])
 
             return x_scale, xdot_scale
         elif name in self.model.network.thermal_branches:
@@ -87,12 +87,16 @@ class Conditioner:
                 return 1e-4
             elif isinstance(junction, FlowJunction):
                 if junction.solve_energy:
-                    x_scale = np.array([1e-6, 1e-6])
-                    xdot_scale = np.array([1, 1/1e-6])
+                    #x_scale = np.array([1e-6, 1e-6])
+                    #xdot_scale = np.array([1, 1/1e-6])
+                    x_scale = np.array([1e-5, 1e-5])
+                    xdot_scale = np.array([1e-5, 1e-5])
                     return x_scale, xdot_scale
                 else:
-                    x_scale = np.array([1e-5])
-                    xdot_scale = np.array([1e-2])
+                    #x_scale = np.array([1e-5])
+                    #xdot_scale = np.array([1e-2])
+                    x_scale = np.array([1e-6])
+                    xdot_scale = np.array([1])                   
                     return x_scale, xdot_scale
 
         return 1, 1
@@ -128,7 +132,7 @@ class Conditioner:
         """Wrap a function with scaling and unscaling logic."""
         def wrapper(x):
             x_unscaled = self.unscale_x(x)
-            xdot_unscaled = func(x_unscaled)#/abs(x_unscaled)**.25
+            xdot_unscaled = func(x_unscaled)
 
             return self.scale_xdot(xdot_unscaled)
         return wrapper
@@ -220,11 +224,17 @@ class Network:
                     node=node,
                     network=self)
             elif US or DS:
-                # Create a FlowJunction if there are any flow branches
-                self.junctions[junction_id] = FlowJunction(
-                    name=junction_id,
-                    node=node,
-                    network=self)
+                if isinstance(node, gt.PBoundary):
+                    self.junctions[junction_id] = Junction(
+                        name=junction_id,
+                        node=node,
+                        network=self)
+                else:
+                    # Create a FlowJunction if there are any flow branches
+                    self.junctions[junction_id] = FlowJunction(
+                        name=junction_id,
+                        node=node,
+                        network=self)
 
                 self.junctions[junction_id].constant_density = \
                     self.constant_density
@@ -644,11 +654,6 @@ class Network:
         self.initialize_states()#flow=False, thermal=False)
 
 
-        from pdb import set_trace
-        set_trace()
-
-
-
         if len(self.x) == 0:
             return
 
@@ -732,12 +737,13 @@ class Network:
                     set_trace()
 
 
-    def solve_directed(self):
+    def solve_directed(self, constant_density=True, backflow=True):
 
         # Solve like this
         self.solve_energy = False
-        self.constant_density = False
-        self.update_energy = False
+        self.constant_density = constant_density
+        self.update_energy = True
+        self.backflow = backflow
 
         self.initialize_states()
 
@@ -749,8 +755,13 @@ class Network:
         conditioned = conditioner.conditioner(self.evaluate_flow)
 
         x_scaled = conditioner.scale_x(self.x)
+        #self.flow_branches[1].solve_steady()
 
         sol = fsolve(conditioned, x_scaled, full_output=True)
+        #set_trace()
+        x = conditioner.unscale_x(sol[0])
+        self.evaluate_flow(x)
+
 
         for junction in self.flow_junctions.values():
 
@@ -761,18 +772,6 @@ class Network:
                          'H': Hmix}
 
                 junction.update_thermo(state)
-
-        #self.solve_energy = False
-        self.constant_density = False
-        self.update_energy = False
-        # Turn off backflow once w sign has been established
-        self.backflow = False
-        self.initialize_states()
-
-        sol = fsolve(conditioned, sol[0], full_output=True)
-
-        x = conditioner.unscale_x(sol[0])
-        self.evaluate_flow(x)
 
 
     def solve_coupled(self):
@@ -785,29 +784,47 @@ class Network:
 
         if len(self.x) == 0:
             return self.x
-        
+
         conditioner = Conditioner(self)
 
         conditioned = conditioner.conditioner(self.evaluate)
 
         x_scaled = conditioner.scale_x(self.x)
 
-        sol = fsolve(conditioned, x_scaled, full_output=True)      
+        # solve with root (hybr, lm)
+        sol = root(conditioned, x_scaled, method='lm')
 
-        x = conditioner.unscale_x(sol[0])
+        x = conditioner.unscale_x(sol.x)
+        # solve with fsolve
+        #sol = fsolve(conditioned, x_scaled, full_output=True)      
+        #x = conditioner.unscale_x(sol[0])
         self.evaluate(x)
 
 
-    def solve(self):
 
-        if not self.has_cycle and not self.thermal_branches:
-            # Solve the model as a directed system
-            self.solve_directed()
-        else:
-            self.solve_coupled()
+    def solve(self):
+        
+
+        if False:
+            if not self.has_cycle and not self.thermal_branches:
+                # Solve the model as a directed system
+                self.solve_directed()
+                #from pdb import set_trace
+                #set_trace()
+                #self.solve_directed(constant_density=False,
+                #                    backflow=False)
+                #from pdb import set_trace
+                #set_trace()
+            else:
+                self.solve_coupled()
+
+
+        self.solve_coupled()
 
         if not self.model.converged:
             self.solve_coupled()
+
+
 
 
     def update_state(self, x):
@@ -878,6 +895,10 @@ class Network:
         for _, branch in self.thermal_branches.items():
             branch.evaluate()
 
+        # Evaluate the junctions again after branches have been updated
+        for _, junction in self.junctions.items():
+            junction.evaluate()
+
         return self.xdot
 
     @property
@@ -902,7 +923,7 @@ class Network:
                 set_trace()
 
         if len(xdot) > 0:
-            return np.concatenate(xdot)*1e5
+            return np.concatenate(xdot)
         else:
             return xdot
 

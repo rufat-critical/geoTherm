@@ -1,10 +1,11 @@
 import numpy as np
 import CoolProp as cp
-from .units import inputParser, addQuantityProperty, fromSI, toSI, units
+from .units import inputParser, addQuantityProperty, fromSI, toSI, units, parse_state_dict
 from rich.console import Console
 from rich.table import Table
 from .logger import logger
 import re
+from .utils import R_ideal
 
 
 # Utility functions for thermostate
@@ -89,13 +90,13 @@ def parseComposition(composition):
         # Make Dictionary containing composition
         composition = {species[0]: float(species[1])
                        for species in comp}
-        
+
     elif isinstance(composition, (np.ndarray, list)):
         # If composition is specified as array of values then loop thru species
         # and generate composition
         composition = {name: composition[i] for i, name
                         in enumerate(self.species_names)}
-    
+
     elif isinstance(composition, dict):
         # If input is a dictionary then we guchi
         pass
@@ -114,28 +115,66 @@ class IncompressibleState:
     pass
 
 
+coolprop_property_names = {
+            'T': 'T',
+            'P': 'p',
+            'H': 'hmass',
+            'S': 'smass',
+            'U': 'umass',
+            'cp': 'cpmass',
+            'cv': 'cvmass',
+            'D': 'rhomass',
+            'density': 'rhomass',
+            'viscosity': 'viscosity',
+            'X': 'get_mole_fractions',
+            'sound': 'speed_sound',
+            'Q': 'Q',
+            'conductivity': 'conductivity',
+            "P_crit": "p_critical",
+            "T_crit": "T_critical",
+            "surface_tension": "surface_tension"
+        }
+
+
+coolprop_phase_index = {
+    cp.iphase_liquid: 'liquid',
+    cp.iphase_supercritical: 'supercritical',
+    cp.iphase_supercritical_gas: 'supercritical_gas',
+    cp.iphase_supercritical_liquid: 'supercritical_liquid',
+    cp.iphase_critical_point: 'critical',
+    cp.iphase_gas: 'gas',
+    cp.iphase_twophase: 'two-phase',
+    cp.iphase_unknown: 'unknown'
+}
+
+
 
 class coolprop_wrapper:
     """ Wrapper for CoolProp, makes it easy to interface with thermo state """
 
-    def __init__(self, cDict=None, state=None, stateVars=None, cType='Y'):
+    def __init__(self, cDict=None, state=None, stateVars=None, cType='Y', model='coolprop',
+                 EoS='HEOS'):
         """
         Initialize coolprop object.
-        
+
         Args:
             cDict (dict): Fluid composition dictionary.
             state (dict): Dictionary containing thermodynamic state variables.
             stateVars (str): State variables to use for initialization.
             cType (str): Composition type specified as mass or mole fraction ('X', 'Y').
         """
-        
+
         self.cDict = cDict
+
+        # The Equation of State
+        self.EoS = EoS
 
         # Update composition based on input or use default
         if cDict is not None:
             self.updateComposition(cDict, cType=cType)
         else:
-            self.updateComposition({'H2O': 1}, cType='Y')
+            # Default State
+            self.updateComposition({'Water': 1}, cType='Y')
 
         # Update state based on input or use default 
         if state is not None:
@@ -143,28 +182,23 @@ class coolprop_wrapper:
         else:
             self.update_state(state={'T': 300, 'P': 101325}, stateVars='TP')
 
-        # Generate dictionary with phase index
-        self.phaseIndx = {
-            cp.iphase_liquid: 'liquid',
-            cp.iphase_supercritical: 'supercritical',
-            cp.iphase_supercritical_gas: 'supercritical_gas',
-            cp.iphase_supercritical_liquid: 'supercritical_liquid',
-            cp.iphase_critical_point: 'critical',
-            cp.iphase_gas: 'gas',
-            cp.iphase_twophase: 'two-phase',
-            cp.iphase_unknown: 'unknown'
-        }
-
     def updateComposition(self, cDict, cType):
         """
         Update the composition of the CoolProp object.
-        
+
         Args:
             cDict (dict): Fluid composition dictionary.
             cType (str): Composition type specified as mass or mole fraction ('X', 'Y').
         """
-        # Update CoolProp object using Helmholtz Equation of State
-        self.cpObj = cp.AbstractState("HEOS", '&'.join(cDict.keys()))
+        # Update CoolProp object using EoS
+        self.cpObj = cp.AbstractState(self.EoS, '&'.join(cDict.keys()))
+
+        #    self.cpObj = cp.AbstractState("HEOS", '&'.join(cDict.keys()))
+        #elif self.model == 'refprop':
+        #    self.cpObj = cp.AbstractState("REFPROP", '&'.join(cDict.keys()))
+        #else:
+        #    from pdb import set_trace
+        #    set_trace()
 
         # Set the mass or mole fractions via list comprehension
         if cType == 'Y':
@@ -222,28 +256,30 @@ class coolprop_wrapper:
         Returns:
             float: Property value.
         """
-        if property == 'Pvap':
+        #if property == 'Pvap':
             # Get the vapor pressure by setting Q to 0
-            vapor = cp.AbstractState("HEOS", self.cpObj.name())
-            vapor.update(cp.QT_INPUTS, 0.0, self.cpObj.T())
-            return float(vapor.p())
-        elif property == 'Tvap':
+        #    vapor = cp.AbstractState("HEOS", self.cpObj.name())
+        #    vapor.update(cp.QT_INPUTS, 0.0, self.cpObj.T())
+        #    return float(vapor.p())
+        if property == 'Tvap':
             vapor = cp.AbstractState("HEOS", self.cpObj.name())
             vapor.update(cp.PQ_INPUTS, self.cpObj.p(), 0)
             return float(vapor.T())
-        elif property == 'phase':
-            return self.phaseIndx[self.cpObj.phase()]
+        #elif property == 'phase':
+        #    return self.phaseIndx[self.cpObj.phase()]
 
-        if property == 'viscosity':
-            if self.cpObj.fluid_names() == ['Acetone']:
+        #if property == 'viscosity' and self.model=='coolprop':
+        #    if self.cpObj.fluid_names() == ['Acetone']:
                 # Coolprop doesn't have an Acetone Viscosity model so using the
                 # model from: 
                 # http://ddbonline.ddbst.de/VogelCalculation/VogelCalculationCGI.exe?component=Acetone
-                A = -3.37955
-                B = 553.403
-                C = -46.9657
-                return np.exp(A+B/(C+self.cpObj.T()))*1e-3
-
+         #       A = -3.37955
+         #       B = 553.403
+         #       C = -46.9657
+         #       return np.exp(A+B/(C+self.cpObj.T()))*1e-3
+        if property == 'molecular_weight':
+            # Convert from kg/mol to kg/kmol
+            return self.cpObj.molar_mass()*1e3
         if property == 'sound':
             # Determine if the fluid is in the two-phase region
             Q = self.cpObj.Q()
@@ -262,43 +298,64 @@ class coolprop_wrapper:
                 # Perform linear interpolation based on the quality Q
                 return a_1 * Q + a_0 * (1 - Q)
 
+        if property == 'viscosity':
+            return self.viscosity
+
+
         # CoolProp name
-        coolprop_name = self.pDict(property)
+        if property in coolprop_property_names:
+            coolprop_property = coolprop_property_names[property]
+            return getattr(self.cpObj, coolprop_property)()
+        else:
+            return getattr(self, property)
 
-        # Return the CoolProp property value
-        return getattr(self.cpObj, coolprop_name)()
 
+    @property
+    def Pvap(self):
 
-    def pDict(self, property):
-        """
-        Return the CoolProp name of a specific property.
+        if self.EoS in ['HEOS', 'REFPROP']:
+            # Return vapor pressure if Helmholtz or Refprop EoS
+            vapor = cp.AbstractState(self.EoS, self.cpObj.name())
+            vapor.update(cp.QT_INPUTS, 0.0, self.cpObj.T())
+            return float(vapor.p())
+        else:
+            logger.info(f'Pvap is not defined for EoS: {self.EoS}')
+            return 0
 
-        Args:
-            property (str): Property name.
+    @property
+    def phase(self):
+        if self.EoS == 'INCOMP':
+            return "INCOMPRESSIBLE"
+        else:
+            return coolprop_phase_index[self.cpObj.phase()]
 
-        Returns:
-            str: CoolProp property name.
-        """
-        prop_dict = {
-            'T': 'T',
-            'P': 'p',
-            'H': 'hmass',
-            'S': 'smass',
-            'U': 'umass',
-            'cp': 'cpmass',
-            'cv': 'cvmass',
-            'D': 'rhomass',
-            'density': 'rhomass',
-            'viscosity': 'viscosity',
-            'Y': 'get_mass_fractions',
-            'X': 'get_mole_fractions',
-            'species_names': 'fluid_names',
-            'sound': 'speed_sound',
-            'Q': 'Q',
-            'conductivity': 'conductivity'
-        }
+    @property
+    def viscosity(self):
+        # Viscosity Calc if using coolprop for acetone
+        if self.EoS == 'HEOS' and self.cpObj.fluid_names() == ['Acetone']:
+            # Coolprop doesn't have an Acetone Viscosity model so using the
+            # model from: 
+            # http://ddbonline.ddbst.de/VogelCalculation/VogelCalculationCGI.exe?component=Acetone
+            A = -3.37955
+            B = 553.403
+            C = -46.9657
+            return np.exp(A+B/(C+self.cpObj.T()))*1e-3
+        else:
+            return getattr(self.cpObj, 'viscosity')()
 
-        return prop_dict[property]  
+    @property
+    def species_names(self):
+        if self.EoS == 'INCOMP':
+            return np.array([f'{self.cpObj.name()}'])
+        else:
+            return self.cpObj.fluid_names()
+
+    @property
+    def Y(self):
+        if self.EoS == 'INCOMP':
+            return np.array([1])
+        else:
+            return self.cpObj.get_mass_fractions()
 
 
 def addThermoAttributes(cls):
@@ -402,10 +459,11 @@ def addThermoSetters(setterList):
 # class
 thermoGetters = ['_T', '_P', 'Q', '_H', '_S', '_U', '_cp', '_cv', '_density',
                  '_viscosity', 'species_names', 'phase', '_sound', '_Pvap',
-                 '_Tvap', '_conductivity', '_D']
+                 '_Tvap', '_conductivity', '_D', '_T_crit', '_P_crit',
+                 '_molecular_weight', '_surface_tension']
 
 thermoSetters = ['TP', 'TS', 'HP', 'SP', 'DU', 'PU', 'DP', 'HS',
-                 'DH', 'HQ', 'TQ', 'PQ', 'TD','TPY', 'X', 'Y']
+                 'DH', 'HQ', 'TQ', 'PQ', 'TD', 'TPY', 'HPY', 'X', 'Y']
 
 
 @addThermoGetters(thermoGetters)
@@ -421,7 +479,9 @@ class thermo:
                  'species_names', 'TP', '_TP', 'TD', '_TD', 'TQ', '_TQ',
                  'TH', '_TH', 'TS', '_TS', 'HP', '_HP', 'HS', '_HS',
                  'DU', '_DU', 'TPY', '_TPY', 'model', 'sound', '_sound',
-                 '_Pvap', '_Tvap', '_conductivity', 'HQ', '_HQ']
+                 '_Pvap', '_Tvap', '_conductivity', 'HQ', '_HQ', '_P_crit',
+                 'P_crit', '_T_crit', 'T_crit', 'molecular_weight',
+                 '_molecular_weight', '_surface_tension', 'HPY', '_HPY']
 
     _units = {'T': 'TEMPERATURE',               # Temperature
               'P': 'PRESSURE',                  # Pressure
@@ -435,11 +495,14 @@ class thermo:
               'conductivity': 'CONDUCTIVITY',   # Conductivity
               'sound': 'VELOCITY',              # Velocity
               'Pvap': 'PRESSURE',               # Vapor Pressure
-              'Tvap': 'TEMPERATURE'}            # Vapor Temperature
+              'Tvap': 'TEMPERATURE',            # Vapor Temperature
+              'P_crit': 'PRESSURE',             # Critical Pressure
+              'T_crit': 'TEMPERATURE',          # Critical Temperature
+              'molecular_weight': 'MOLARMASS',
+              'surface_tension': 'SURFACETENSION',
+              'gas_constant': 'GASCONSTANT'}
 
-
-    @inputParser
-    def __init__(self, fluid='H2O', state=None, model='coolprop'):
+    def __init__(self, fluid=None, state=None, model='coolprop', **kwargs):
         """
         Initialize the thermo object.
         
@@ -453,17 +516,19 @@ class thermo:
 
         # Parse fluid composition
         cDict = parseComposition(fluid)
-        # Check if state is specified, if not then use default state
-        if state is None:
-            state = {'T': 300, 'P': 101325}
-            stateVars = 'TP'
-        else:
+
+        if state is not None:  
+            # Convert units
+            state = parse_state_dict(state)
             # Parse the state and composition
             stateVars = parseState(state)
-
+        else:
+            stateVars = None
 
         if self.model == 'coolprop':
-            self.pObj = coolprop_wrapper(cDict=cDict, state=state, stateVars=stateVars)
+            self.pObj = coolprop_wrapper(cDict=cDict, state=state,
+                                         stateVars=stateVars,
+                                         model=model, **kwargs)
         else:
             logger.critical(f'Invalid thermo model used in input: {model}'
                             "The Valid Models are: 'coolprop'")
@@ -537,6 +602,8 @@ class thermo:
         if property == 'prandtl':
             return self.prandtl
 
+
+
         return self.pObj.get_property(property)     
 
 
@@ -585,12 +652,22 @@ class thermo:
         Returns:
             dict: Dictionary containing the thermodynamic state.
         """
-        return {
+
+        if self.model == 'coolprop':
+            return {
+                'fluid': self.Ydict,
+                'state': {'D': (self._D, 'kg/m^3'),
+                        'P': (self._P, 'Pa')},
+                'EoS': self.pObj.EoS,
+                'model': self.model
+            }
+        else:
+            return {
             'fluid': self.Ydict,
-            'state': {'H': (self._H, 'J/kg'),
-                      'P': (self._P, 'Pa')},
+            'state': {'D': (self._D, 'kg/m^3'),
+                    'P': (self._P, 'Pa')},
             'model': self.model
-        }
+            }          
 
     @staticmethod
     def from_state(state):
@@ -623,6 +700,7 @@ class thermo:
                       units.output_units['TEMPERATURE'])
         table.add_row('PRESSURE', f'{self.P:0.5g}',
                       units.output_units['PRESSURE'])
+        
         if (self.phase == 'supercritical_gas'
                 or self.phase =='supercritical_liquid'):
             table.add_row('VAPOR P', 'supercritical')
@@ -638,6 +716,7 @@ class thermo:
                       units.output_units['VISCOSITY'])        
         table.add_row('Fluid', str(self.Ydict), '')
         table.add_row('PHASE', self.phase, '')
+
 
         # Capture the table output using the rich console
         console = Console()
@@ -667,6 +746,10 @@ class thermo:
     @property 
     def gamma(self):
         return self._cp/self._cv
+
+    @property
+    def _gas_constant(self):
+        return R_ideal/self._molecular_weight
 
     @property
     def prandtl(self):

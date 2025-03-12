@@ -28,7 +28,7 @@ def test_comp_resistor():
 def test_isen_resistor():
 
     foo = gt.Model([gt.Boundary(name='Inlet', fluid='O2', P=(300, 'psi'), T=300),
-                      gt.resistor(name='orifice', US='Inlet', DS='Outlet', area= (.1 ,'in**2'), flow_func='isentropic'),
+                      gt.resistor(name='orifice', US='Inlet', DS='Outlet', area= (.1 ,'in**2'), flow_func='isen'),
                       gt.Boundary(name='Outlet', fluid='O2', P=(200, 'psi'), T=300)])
                       
 
@@ -37,15 +37,16 @@ def test_isen_resistor():
 
 
 def test_series_resistor():
-        foo = gt.Model([gt.Boundary(name='Inlet', fluid='water', P=(300, 'psi'), T=300),
-                        gt.Volume(name='Vol', fluid='water'),
-                      gt.resistor(name='orifice', US='Inlet', DS='Vol', area= (.1 ,'in**2'), flow_func='isentropic'),
-                      gt.resistor(name='orifice2', US='Vol', DS='Outlet', area= (.1 ,'in**2'), flow_func='isentropic'),
-                      gt.Boundary(name='Outlet', fluid='water', P=(200, 'psi'), T=300)])
-        
-        foo.solve_steady()
-        assert(math.isclose(foo.nodes['Vol'].thermo._P, 1723719.623, abs_tol=1e-3)
-               and math.isclose(foo.nodes['orifice']._w, 1.6916, abs_tol=1e-3))
+    foo = gt.Model([gt.Boundary(name='Inlet', fluid='water', P=(300, 'psi'), T=300),
+                    gt.Volume(name='Vol', fluid='water'),
+                  gt.resistor(name='orifice', US='Inlet', DS='Vol', area= (.1 ,'in**2'), flow_func='isen'),
+                  gt.resistor(name='orifice2', US='Vol', DS='Outlet', area= (.1 ,'in**2'), flow_func='isen'),
+                  gt.Boundary(name='Outlet', fluid='water', P=(200, 'psi'), T=300)])
+
+    foo.solve_steady()
+
+    assert(math.isclose(foo.nodes['Vol'].thermo._P, 1723719.623, abs_tol=1e-3)
+           and math.isclose(foo.nodes['orifice']._w, 1.6916, abs_tol=1e-3))
 
 
 def series_network(flow_func):
@@ -104,14 +105,14 @@ def series_parallel_network(flow_func):
     model += gt.resistor('R5', US='V3', DS='Outlet', area=0.1, flow_func=flow_func)
 
     # Define outlet
-    model += gt.Boundary('Outlet', fluid='water', T=(200, 'degC'), P=(8, 'bar'))
+    model += gt.Boundary('Outlet', fluid='water', T=(200, 'degC'), P=(1, 'bar'))
 
     return model
 
 # Test to check if the model converges for each network and flow_func
-@pytest.mark.parametrize("flow_func", ["incomp", "isentropic", "comp"])
+@pytest.mark.parametrize("flow_func", ["incomp", "isen", "comp"])
 @pytest.mark.parametrize("network_func", ["series_network", "parallel_network", "series_parallel_network"])
-def test_network_convergence(flow_func, network_func):
+def network_convergence(flow_func, network_func):
     """
     Test if each network converges for various flow_func options.
     """

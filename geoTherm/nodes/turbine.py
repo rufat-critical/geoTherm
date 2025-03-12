@@ -1,10 +1,378 @@
 import numpy as np
 #from .baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters
-from .baseNodes.baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters
-from ..units import addQuantityProperty
-from ..utils import turb_axial_eta, turb_radial_eta
+from .baseNodes.baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters, baseTurbo
+from ..units import addQuantityProperty, inputParser
+from ..utils import turb_axial_eta, turb_radial_eta, eps
 from ..flow_funcs import _dH_isentropic
 from scipy.optimize import fsolve
+from .baseNodes.baseFlow import baseInertantFlow
+from ..flow_funcs import FlowModel
+from scipy.optimize import root_scalar
+
+@addQuantityProperty
+class baseTurbine(baseTurbo):
+    """Base turbine class implementing isentropic expansion calculations.
+
+    Extends baseTurbo with specific turbine functionality for:
+    - Isentropic enthalpy change calculation
+    - Outlet state determination
+    """
+
+    @property
+    def _dH_is(self):
+        """Calculate isentropic enthalpy change across turbine.
+
+        Returns:
+            float: Isentropic specific enthalpy change [J/kg]
+        """
+        US, DS, _ = self.thermostates()
+        return _dH_isentropic(US, DS._P)
+
+    @property
+    def _dH(self):
+        return self._dH_is*self.eta
+
+    @property
+    def PR(self):
+        """Calculate actual pressure ratio across turbine.
+
+        Pressure ratio is defined as upstream pressure divided by downstream
+        pressure.
+        For turbines, PR > 1 indicates normal operation (expansion),
+        while PR < 1 indicates reverse flow.
+
+        Returns:
+            float: Pressure ratio (P_upstream / P_downstream)
+        """
+        US, DS, _ = self.thermostates()
+        return US._P/DS._P
+
+@addQuantityProperty
+class chokedTurbine(baseTurbo):
+
+    def __init__(self, name, US, DS, cdA, total_eta_map, rotor, Ae, flow_func='isentropic'):
+
+        super().__init__(name=name, US=US, DS=DS)
+
+        self._cdA = cdA
+        self._Ae = Ae
+        self.total_eta_map = total_eta_map
+        self.flow = FlowModel(flow_func, self._cdA)
+        self.rotor = rotor
+
+    def initialize(self, model):
+        #self.rotor.initialize()
+        super().initialize(model)
+
+        # Attach the rotor node
+        self.rotor_node = self.model.nodes[self.rotor]
+        # Create thermo for total node
+        self.total = self.US_node.thermo.from_state(self.US_node.thermo.state)
+        # Create thermo for outlet static state
+        self.static = self.US_node.thermo.from_state(self.US_node.thermo.state)
+
+    @property
+    def _dH(self):
+        return self._dH_is*self.eta
+    
+
+    def evaluate(self):
+
+        US, DS, flow_sign = self.thermostates()
+        
+        # Calculate mass flow rate using flow model
+        self._w = self.flow._w(US, DS)*flow_sign
+
+
+        Pt_guess = DS._P
+
+        def find_Pt(Pt):
+            # Assuming US static state is total
+            dH_is_tot = self.flow._dH(US, Pt)
+
+            # Get total efficiency
+            self.eta_total = self.total_eta_map.get_efficiency(self.rotor_node.N, US._P/Pt)
+
+            if np.isnan(self.eta_total):
+                self.eta_total = 0
+
+            dH_tot = dH_is_tot*self.eta_total
+            Hout_tot = US._H + dH_tot
+
+            self.total._HP = Hout_tot, Pt
+
+            self.static._SP = self.total._S, DS._P
+
+
+            Hs = Hout_tot - .5*(self._w/self.static._density/self._Ae)**2
+
+            # Check if static state is converged
+            return Hs - self.static._H
+
+        try:
+            root = root_scalar(find_Pt, bracket=[DS._P, DS._P*2.2], method='brentq')
+        except:
+            from pdb import set_trace
+            set_trace()
+
+        # Update total state
+        find_Pt(root.root)
+        # Update static eta
+        self.eta = (US._H - self.static._H)/(-self.flow._dH(US, DS._P))
+
+    @property
+    def _dH_is(self):
+
+        US, DS, _ = self.thermostates()
+        return self.flow._dH(US, DS._P)
+
+
+    def get_outlet_state(self, US, w):
+        dP, error = self.flow._dP(US, w)
+        if error is not None:
+            from pdb import set_trace
+            set_trace()
+
+        DS_P = US._P + dP
+        def find_Pt(Pt, DS_P):
+            # Assuming US static state is total
+            dH_is_tot = self.flow._dH(US, Pt)
+
+            # Get total efficiency
+            eta_total = self.total_eta_map.get_efficiency(self.rotor_node.N, US._P/Pt)
+
+            if np.isnan(eta_total):
+                eta_total = 0
+
+            dH_tot = dH_is_tot*eta_total
+            Hout_tot = US._H + dH_tot
+
+            self.total._HP = Hout_tot, Pt
+
+            self.static._SP = self.total._S, DS_P
+
+
+            Hs = Hout_tot - .5*(self._w/self.static._density/self._Ae)**2
+
+            # Check if static state is converged
+            return Hs - self.static._H
+
+        try:
+            root = root_scalar(find_Pt, args=(DS_P,), bracket=[DS_P, DS_P*1.2], method='brentq')
+        except:
+            from pdb import set_trace
+            set_trace()
+
+
+        # Update total state
+        find_Pt(root.root, DS_P)
+
+        return {'P': US._P + dP, 'H': self.static._H}
+
+    def _get_outlet_state_PR(self, US, PR):
+        # Get outlet state from PR
+        # Used in network solver for when flow gets choked
+
+        # Set Static State
+        #self.static._HP = US._H, US._P*PR
+
+        DS = US.from_state(US.state)
+        DS._HP = US._H, US._P*PR
+        # Calculate mass flow
+        w = self.flow._w(US, DS)#self.static)
+
+        # Get outlet state wi
+        #outlet = self.get_outlet_state(US, w)
+
+        def find_Pt(Pt, DS_P):
+            # Assuming US static state is total
+            dH_is_tot = self.flow._dH(US, Pt)
+
+            # Get total efficiency
+            eta_total = self.total_eta_map.get_efficiency(self.rotor_node.N, US._P/Pt)
+
+            if np.isnan(eta_total):
+                eta_total = 0
+
+            dH_tot = dH_is_tot*eta_total
+            Hout_tot = US._H + dH_tot
+
+            self.total._HP = Hout_tot, Pt
+
+            self.static._SP = self.total._S, DS_P
+
+
+            Hs = Hout_tot - .5*(self._w/self.static._density/self._Ae)**2
+
+            # Check if static state is converged
+            return Hs - self.static._H
+
+        try:
+            root = root_scalar(find_Pt, args=(DS._P,), bracket=[DS._P, DS._P*1.4], method='brentq')
+        except:
+            from pdb import set_trace
+            set_trace()
+
+        # Update total state
+        find_Pt(root.root, DS._P)
+
+        return {'P': US._P*PR, 'H': self.static._H}
+
+
+class fixedFlowTurbine(fixedFlowTurbo, baseTurbine):
+    """
+    Turbine class where mass flow is fixed to initialization value.
+    """
+
+    # State Bounds, defining them here for now
+    # In the future can make a control class to check/update bounds
+    _bounds = [1, 100]
+
+    def get_outlet_state(self, US, PR):
+
+        dH = _dH_isentropic(US, US._P*self.PR)*self.eta
+
+        return {'H': US._H + dH, 'P': US._P*PR}
+
+
+class fixedPRTurbine(baseInertantFlow, baseTurbine):
+
+    _bounds = [0, 1e5]
+
+    _units = baseInertantFlow._units | baseTurbine._units
+
+    _displayVars = ['w', 'PR', 'dP', 'dH', 'W']
+
+    def __init__(self, name, US, DS, PR,
+                 w,
+                 eta=1.0, Z=(1, 'm**-3')):
+        """Initialize pressure ratio controlled turbomachine.
+
+        Args:
+            name: Component identifier
+            US: Upstream node reference
+            DS: Downstream node reference
+            PR: Pressure ratio to maintain (P_out/P_in)
+            w: Initial mass flow rate
+            PR_bounds: Pressure ratio bounds
+            eta: Isentropic efficiency
+            Z: Flow inertance
+        """
+        super().__init__(name=name, US=US, DS=DS, w=w, Z=Z)
+        self.PR_setpoint = PR
+        self.eta = eta
+
+    def get_outlet_state(self, US, w):
+        """Calculate outlet state based on pressure ratio."""
+        dH_is = _dH_isentropic(US, US._P / self.PR_setpoint)
+
+        # Determine work based on compression/expansion
+        if self.PR_setpoint == 1:
+            dH = 0
+        else:
+            dH = dH_is * self.eta
+
+        return {
+            'P': US._P / self.PR_setpoint,
+            'H': US._H + dH
+        }
+
+    def evaluate(self):
+        """Adjust flow to achieve target pressure ratio."""
+        US, DS = self.US_node.thermo, self.DS_node.thermo
+        DS_target = self.get_outlet_state(US, self._w)
+
+        # Flow acceleration based on pressure error
+        pressure_error = DS_target['P'] - DS._P
+
+        self._wdot = pressure_error / self._Z
+
+    @property
+    def _dH_is(self):
+        """Calculate isentropic enthalpy change."""
+        US, DS = self.US_node.thermo, self.DS_node.thermo
+        return _dH_isentropic(US, DS._P)
+
+
+@addQuantityProperty
+class simpleTurbine(baseTurbine):
+    """Simple turbine model with power-law flow-pressure characteristic.
+
+    Implements a turbine model where mass flow varies with pressure ratio
+    according to: w = w_nominal * ((PR - 1)/(PR_nominal - 1))^k
+
+    where:
+    - w is mass flow rate
+    - PR is pressure ratio (P_in/P_out)
+    - k is the flow coefficient (default 0.1)
+    """
+    _displayVars = ['w', 'dH', 'dP', 'W', 'PR_nominal', 'w_nominal', 'eta']
+    _units = baseTurbine._units | {
+        'W': 'POWER',
+        'dH': 'SPECIFICENERGY',
+        'dH_is': 'SPECIFICENERGY',
+        'w_nominal': 'MASSFLOW'
+    }  
+
+    @inputParser
+    def __init__(self, name, US, DS, PR_nominal, w_nominal: 'MASSFLOW', eta, k=0.1): 
+        """Initialize simple turbine model.
+
+        Args:
+            name (str): Component identifier
+            US: Upstream node reference
+            DS: Downstream node reference
+            PR_nominal (float): Design point pressure ratio
+            w_nominal (float): Design point mass flow rate
+            eta (float): Isentropic efficiency
+            k (float, optional): Flow coefficient. Defaults to 0.1
+        """
+        super().__init__(name, US, DS)
+        self._w_nominal = w_nominal
+        self.PR_nominal = PR_nominal  # Target pressure ratio
+        self.eta = eta  # Isentropic efficiency
+        self._k = k  # Flow coefficient
+
+    def evaluate(self):
+        """Update turbine state based on pressure ratio.
+
+        Calculates mass flow rate based on current pressure ratio using
+        the power-law relationship.
+        """
+        US, DS, flow_sign = self.thermostates()
+        PR = np.max([1, US._P/DS._P])
+
+        # Calculate mass flow using power-law relationship
+        self._w = (self._w_nominal *
+                   ((PR - 1)/(self.PR_nominal - 1))**self._k *
+                   flow_sign)
+
+    def get_outlet_state(self, US, w):
+        """Calculate turbine outlet thermodynamic state for given mass flow.
+
+        Uses inverse of the power-law relationship to determine pressure ratio
+        from mass flow rate, then calculates outlet state.
+
+        Args:
+            US: Upstream thermodynamic state
+            w (float): Mass flow rate [kg/s]
+
+        Returns:
+            dict: Outlet state with pressure and enthalpy
+        """
+        # Calculate pressure ratio from mass flow using inverse relationship
+        # w/w_nominal = ((PR - 1)/(PR_nominal - 1))^k
+        # PR = ((w/w_nominal)^(1/k) * (PR_nominal - 1)) + 1
+        flow_ratio = abs(w/self._w_nominal)
+        PR = (flow_ratio**(1/self._k) * (self.PR_nominal - 1)) + 1
+
+        # Calculate Isentropic dH
+        dH_is = _dH_isentropic(US, US._P/PR)
+
+        return {
+            'P': US._P/PR,  # P_out = P_in/PR
+            'H': US._H + dH_is* self.eta
+        }
 
 
 @addQuantityProperty
@@ -119,20 +487,3 @@ class Turbine_sizer(Turbine, TurboSizer):
             set_trace()
 
 
-class fixedFlowTurbine(fixedFlowTurbo, Turbine):
-    """
-    Turbine class where mass flow is fixed to initialization value.
-    """
-
-    # State Bounds, defining them here for now
-    # In the future can make a control class to check/update bounds
-    _bounds = [1, 100]
-
-    def get_outlet_state(self, US, PR):
-        
-        dH = _dH_isentropic(US, US._P*self.PR)*self.eta
-
-        return {'H': US._H + dH, 'P': US._P*PR}
-
-    def evaluate(self):
-       self.PR = self.US_node.thermo._P/self.DS_node.thermo._P

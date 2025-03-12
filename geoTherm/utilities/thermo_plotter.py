@@ -250,7 +250,7 @@ class thermoPlotter:
         # Generate line to sweep
         x_sweep = np.linspace(_x0, _x1, n_points)
         # Interpolate process variable p(x_sweep)
-        p_sweep = (_p1 - _p0) / (_x1 - _x0) * (x_sweep - _x0) + _p0
+        p_sweep = (_p1 - _p0) / (_x1 - _x0+1e-10) * (x_sweep - _x0) + _p0
         # Initialize Array to store values
         x_vals = np.full_like(x_sweep, np.nan)
         y_vals = np.full_like(x_sweep, np.nan)

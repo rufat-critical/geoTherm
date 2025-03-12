@@ -1,9 +1,9 @@
-from .baseNodes.baseThermal import baseThermal
+from .baseNodes.baseThermal import baseThermal, baseHeatsistor
 from ..units import inputParser, addQuantityProperty
 
 
 @addQuantityProperty
-class Heatsistor(baseThermal):
+class Heatsistor(baseHeatsistor):
 
     _displayVars = ['Q', 'R', 'hot', 'cool']
     _units = {'Q': 'POWER', 'R': 'THERMALRESISTANCE'}
@@ -52,9 +52,6 @@ class Heatsistor(baseThermal):
 
 
 
-
-
-
 class ConvectiveResistor(Heatsistor):
 
     @inputParser
@@ -89,11 +86,6 @@ class ConvectiveResistor(Heatsistor):
         from pdb import set_trace
         set_trace()
         return 100
-
-
-
-
-
 
 
 

@@ -288,8 +288,8 @@ def _dH_isentropic(inlet_thermo, Pout):
             state={'S': inlet_thermo._S, 'P': Pout},
             model=inlet_thermo.model
         )
-    except Exception:
-        logger.info("Couldn't calculate Isentropic dH")
+    except Exception as e:
+        logger.info(f"Couldn't calculate Isentropic dH: {e}")
         # Check state and try isentropic or incompressible form
         if inlet_thermo.phase == 'liquid':
             logger.info("Falling back on incompressible assumption")
@@ -1006,3 +1006,711 @@ class OneDflow:
 
         from pdb import set_trace
         set_trace()
+
+
+def cdA(total_state, w, flow_func):
+
+    if flow_func == 'isentropic':
+        return _cdA_isen(total_state, w)
+    elif flow_func == 'incomp':
+        return _cdA_incomp(total_state, w)
+    else:
+        from pdb import set_trace
+        set_trace()
+
+
+def _cdA_isen(total_state, w):
+    return 1
+
+def _cdA_incomp(total_state, w):
+    return 1
+
+def _cdA_comp(total_state, static_state, w):
+    """Calculate discharge coefficient * area for compressible flow.
+
+    Args:
+        total_state: Upstream total (stagnation) state
+        static_state: Downstream static state
+        w: Mass flow rate [kg/s]
+
+    Returns:
+        float: Discharge coefficient * area [m²]
+    """
+    # Get fluid properties
+    R = total_state.gas_constant
+    gamma = total_state.gamma
+    P_t = total_state._P
+    T_t = total_state._T
+    P_s = static_state._P
+
+    # Calculate pressure ratio and critical pressure ratio
+    PR = P_s/P_t
+    PR_crit = (2/(gamma + 1))**(gamma/(gamma-1))
+
+    if PR > PR_crit:
+        # Subsonic flow
+        G = P_t * np.sqrt(
+            (2*gamma/(R*T_t*(gamma-1))) * 
+            (PR**(2/gamma) - PR**((gamma+1)/gamma))
+        )
+    else:
+        # Flow is choked
+        G = P_t * np.sqrt(
+            gamma/(R*T_t) * 
+            (2/(gamma+1))**((gamma+1)/(gamma-1))
+        )
+
+    # Calculate required cdA
+    cdA = w/G
+
+    return cdA
+
+
+class baseFlow:
+    """Base class for all flow types with unit conversion decorators."""
+
+    @classmethod
+    @output_converter('AREA')
+    @inputParser
+    def cdA(cls, total_state, static_state, w: 'MASSFLOW') -> 'AREA':
+        """Calculate discharge coefficient * area with unit conversion."""
+        return cls._cdA(total_state, static_state, w)
+
+    @classmethod
+    def _cdA(cls, total_state, static_state, w):
+        """Raw discharge coefficient * area in m²."""
+        mass_flux = cls._w_flux(total_state, static_state)
+        return w/mass_flux
+
+    @classmethod
+    @output_converter('MASSFLUX')
+    @inputParser
+    def w_flux(cls, total_state, static_state) -> 'MASSFLUX':
+        """Calculate mass flux with unit conversion."""
+        return cls._w_flux(total_state, static_state)
+
+    @classmethod
+    @output_converter('SPECIFICENERGY')
+    @inputParser
+    def dH(cls, total, Pout):
+        """Calculate enthalpy change with unit conversion."""
+        return cls._dH(total, Pout)
+
+
+class IncompressibleFlow(baseFlow):
+
+    @classmethod
+    def _w_flux(cls, total, static):
+        """
+        Calculate incompressible orifice flow rate in SI units.
+
+        Args:
+            US_thermo (thermo): Upstream thermodynamic state.
+            DS_thermo (thermo): Downstream thermodynamic state.
+
+        Returns:
+            float: Mass Flux (kg/m^2/s).
+        """
+        # Determine the direction of flow based on the pressure difference
+        if total._P > static._P:
+            US, DS, flow_sign = total, static, 1
+        else:
+            US, DS, flow_sign = static, total, -1
+
+        # Calculate the pressure drop (dP) across the orifice
+        Pvc = DS._P  # Vena Contracta Pressure
+        dP = US._P - Pvc
+
+        # Orifice flow equation: w/cdA = sqrt(2 * rho * dP)
+        return flow_sign * np.sqrt(2 * US._density * dP)
+
+    @classmethod
+    def _dH(cls, total, Pout):
+        """
+        Calculate isentropic enthalpy change assuming incompressible flow
+        in SI Units.
+
+        Args:
+            total (thermo): Total thermodynamic state.
+            Pout (float): Outlet pressure (in Pa).
+
+        Returns:
+            float: Enthalpy change for incompressible flow (in J).
+        """
+        # dH_inc = dP/rho
+        return (Pout - total._P) / total._density
+
+    @classmethod
+    def _dP(cls, total, w_flux, static=None):
+        """Calculate pressure drop for incompressible flow.
+
+        Args:
+            total (thermo): Total state
+            w_flux (float): Mass flux [kg/s/m²]
+            static (thermo, optional): Static state
+
+        Returns:
+            float: Pressure drop [Pa]
+        """
+        return -w_flux**2/(2*total._density), None
+
+
+class PerfectGasFlow(baseFlow):
+
+    @staticmethod
+    def critical_PR(gamma):
+        """Get critical pressure ratio."""
+        return (2/(gamma + 1))**(gamma/(gamma-1))
+
+    @classmethod
+    def is_choked(cls, total_state, PR):
+        """Check if flow is choked."""
+        return PR <= cls.critical_PR(total_state.gamma)
+
+    @classmethod
+    def _w_flux(cls, US_thermo, DS_thermo):
+        """
+        Calculate compressible orifice flow rate using isentropic approximation
+        in SI units.
+
+        Args:
+            US_thermo (thermo): Upstream thermodynamic state.
+            DS_thermo (thermo): Downstream thermodynamic state.
+
+        Returns:
+            w_flux (float): Mass flux (kg/s/m^2).
+
+        Derivation:
+        Starting with the mass flow rate equation:
+            mdot = rho * U * A
+
+        For compressible, isentropic flow:
+            U^2 = 2 * (h0 - h)  (from energy conservation)
+        And using the definition of enthalpy:
+            h = cp * T
+        For isentropic flow of an ideal gas, the relationship between temperature
+        and pressure can be derived from:
+            T2 / T1 = (P2 / P1)^((gamma - 1) / gamma)
+
+        Substituting into the equation for U^2 and using the definition of speed
+        of sound, a, the critical pressure ratio (PR_crit) is defined as:
+            PR_crit = (2 / (gamma + 1))^(gamma / (gamma - 1))
+
+        The mass flow rate then becomes:
+            mdot = cdA * sqrt(2 * gamma / (gamma - 1) * rho * P1 *
+                (PR^(2 / gamma) - PR^((gamma + 1) / gamma)))
+
+        Where PR is the pressure ratio across the orifice (Pthroat / P1).
+        """
+        # Determine direction of flow based on pressure difference
+        if US_thermo._P >= DS_thermo._P:
+            US, DS, flow_sign = US_thermo, DS_thermo, 1
+        else:
+            US, DS, flow_sign = DS_thermo, US_thermo, -1
+
+        gamma = US.gamma
+
+        if gamma <= 1:
+            gamma = 1 + eps
+            logger.warn("Compressible flow function is not valid for US "
+                        f"thermostate:\nT: {US._T}, P: {US._P}"
+                        f"phase: {US.phase}")
+
+        elif US.phase not in ['gas', 'supercritical_gas', 'supercritical']:
+            logger.warn("Compressible flow function is not valid for US "
+                f"thermostate:\nT: {US._T}, P: {US._P}"
+                f"phase: {US.phase}")
+
+        # Calculate critical pressure ratio
+        PR_crit = cls.critical_PR(gamma)
+        PR = max(DS._P / US._P, PR_crit)
+
+        # Compressible orifice flow equation:
+        return flow_sign * np.sqrt(
+            2 * gamma / (gamma - 1) * US._density * US._P *
+            (PR ** (2. / gamma) - PR ** ((gamma + 1.) / gamma))
+        )
+
+    @classmethod
+    def _dH(cls, total_state, Pout):
+        """Calculate enthalpy change for compressible flow.
+
+        Args:
+            total_state: Upstream total (stagnation) state
+            Pout: Outlet pressure [Pa]
+        """
+
+        gamma = total_state.gamma  # Specific heat ratio
+        P0 = total_state._P  # Inlet pressure
+
+        # Isentropic enthalpy change for perfect gas
+        return -total_state._H * (1 - (Pout / P0) ** ((gamma - 1) / gamma))
+
+    @classmethod
+    def _dP(cls, total, w_flux, static=None):
+        """Calculate pressure drop for compressible flow.
+
+        Args:
+            total (thermo): Total state
+            w_flux (float): Mass flux [kg/s/m²]
+
+        Returns:
+            float: Pressure drop [Pa]
+        """
+
+        M = cls.Mach_from_total_w(total, w_flux)
+
+        if M is None:
+            error = {'w_flux_max': cls._w_flux_max(total)}
+            return None, error
+
+        return total._P*(cls.P_ratio(M, total.gamma) - 1), None
+
+    @classmethod
+    def _w_flux_max(cls, total):
+        """Calculate maximum mass flux for compressible flow.
+
+        Args:
+            total (thermo): Total state
+
+        Returns:
+            float: Maximum mass flux [kg/s/m²]
+        """ 
+
+        # Get Static Density
+        D = cls.D_ratio(1, total.gamma)*total._density
+        # Get Sound Ratio
+        a = cls.sound_ratio(1, total.gamma)*total._sound
+
+        return D*a
+
+    @classmethod
+    def P_ratio(cls, M, gamma):
+        return (1 + (gamma - 1) / 2 * M ** 2) ** (-gamma / (gamma - 1))
+
+    @classmethod
+    def D_ratio(cls, M, gamma):
+        return (1 + (gamma - 1) / 2 * M ** 2) ** (-1 / (gamma - 1))
+
+    @classmethod
+    def sound_ratio(cls, M, gamma):
+        return 1/np.sqrt(1 + (gamma - 1) / 2 * M ** 2)
+
+    @classmethod
+    def Mach_from_total_w(cls, total, w_flux, supersonic=False):
+
+        def hunt_Mach(M):
+            gamma = total.gamma
+            rho_s = total._density*cls.D_ratio(M, gamma)
+            a_t = np.sqrt(gamma*total._P/total._density)
+            a_s = cls.sound_ratio(M, gamma)*a_t
+
+            return w_flux - rho_s*M*a_s
+
+        if supersonic:
+            M_bounds = [1, 30]
+        else:
+            M_bounds = [0, 1]
+
+        if np.sign(hunt_Mach(M_bounds[0])) == np.sign(hunt_Mach(M_bounds[1])):
+            # If no solution is found because mass flux is too high
+            # then _total_to_static will output None, return None   
+            return None
+
+        M = root_scalar(hunt_Mach, method='brentq',
+                        bracket=M_bounds).root
+
+        return M
+
+class IsentropicFlow(baseFlow):
+    """Class for isentropic compressible flow calculations."""
+
+
+    @classmethod
+    def critical_PR_from_total(cls, total, static=None):
+        """Calculate critical pressure ratio from total conditions.
+        
+        Args:
+            total (thermo): Total (stagnation) state
+            static (thermo, optional): Static state for calculations
+            
+        Returns:
+            float: Critical pressure ratio
+        """
+        if static is None:
+            static = thermo.from_state(total.state)
+
+        if total.phase in ['gas', 'supercritical_gas', 'supercritical']:
+            # Find PR where Mach number = 1
+            PR_crit = root_scalar(
+                cls.__hunt_static_PR_M,
+                args=(1, total, static),
+                bracket=[0.1, 1.0],
+                method='brentq'
+            ).root
+        else:
+            logger.warn("Critical pressure ratio is not valid for US "
+                        f"thermostate:\nT: {total._T}, P: {total._P}"
+                        f"phase: {total.phase}, using vapor pressure ratio")
+            # For non-gas phases, use vapor pressure ratio
+            PR_crit = total._Pvap/total._P
+
+        return PR_crit
+
+    @classmethod
+    def critical_PR_from_static(cls, static, total=None):
+        """Calculate critical pressure ratio from static conditions.
+
+        Args:
+            static (thermo): Static state
+            total (thermo, optional): Total state for calculations
+
+        Returns:
+            float: Critical pressure ratio
+        """
+        if total is None:
+            total = thermo.from_state(static.state)
+
+        if static.phase in ['gas', 'supercritical_gas']:
+            PR_crit = root_scalar(_hunt_total_PR_M,
+                                args=(1, total, static),
+                                bracket=[0.1, 1.0],
+                                method='brentq').root
+        else:
+            logger.warn("Critical pressure ratio is not valid for US "
+                        f"thermostate:\nT: {static._T}, P: {static._P}"
+                        f"phase: {static.phase}, using vapor pressure ratio")
+            PR_crit = static._Pvap/static._P
+
+        return PR_crit
+
+    @classmethod
+    def sonic_isentropic_state(cls, total, static=None):
+        """Calculate sonic isentropic state.
+
+        Args:
+            total (thermo): Total state
+            static (thermo, optional): Static state for calculations    
+
+        Returns:
+            thermo: Sonic isentropic state
+        """
+        if static is None:
+            static = thermo.from_state(total.state)
+
+        PR_crit = cls.critical_PR_from_total(total, static)
+
+        static._SP = total._S, total._P * PR_crit
+
+        return static
+
+    @classmethod
+    def _w_flux(cls, total, static):
+        """Calculate isentropic mass flux between two states.
+        
+        Args:
+            total (thermo): Total (stagnation) state
+            static (thermo): Static state
+            
+        Returns:
+            float: Mass flux [kg/s/m²]
+        """
+        # Determine flow direction
+        if total._P >= static._P:
+            upstream, downstream, flow_sign = total, static, 1
+        else:
+            upstream, downstream, flow_sign = static, total, -1
+
+        # Calculate isentropic outlet state
+        outlet = thermo.from_state(upstream.state)
+        outlet._SP = upstream._S, downstream._P
+
+        # Calculate velocity from enthalpy change
+        dH = upstream._H - outlet._H
+        velocity = np.sqrt(2 * np.max([dH, 0]))
+
+        # Check for sonic conditions
+        if velocity > (outlet.sound * 1.001):
+            return cls._w_flux_max(upstream, outlet) * flow_sign
+
+        return outlet._density * velocity * flow_sign
+
+    @classmethod
+    def _w_flux_max(cls, total, static=None):
+        """Calculate maximum (choked) mass flux.
+        
+        Args:
+            total (thermo): Total state
+            static (thermo, optional): Static state for calculations
+            
+        Returns:
+            float: Maximum mass flux [kg/s/m²]
+        """
+        if static is None:
+            static = thermo.from_state(total.state)
+
+        # Get critical conditions
+        PR_crit = cls.critical_PR_from_total(total, static)
+        static._SP = total._S, total._P * PR_crit
+
+        # For gases, use sonic flow equation
+        if static.phase in ['gas', 'supercritical_gas']:
+            return static._sound * static._density
+
+        # For other phases, calculate using isentropic relations
+        return cls._w_flux(total, static)
+
+    @classmethod
+    def _total_to_static(cls, total, w_flux, supersonic=False, static=None):
+        """Convert total state to static state for given mass flux.
+
+        Args:
+            total (thermo): Total state
+            w_flux (float): Mass flux [kg/s/m²]
+            supersonic (bool): If True, find supersonic solution
+            static (thermo, optional): Static state for calculations
+
+        Returns:
+            thermo: Calculated static state, or None if no solution
+        """
+        if static is None:
+            static = thermo.from_state(total.state)
+
+        if w_flux == 0:
+            return static
+
+        # Get critical pressure ratio
+        PR_crit = cls.critical_PR_from_total(total, static)
+
+        # Set pressure ratio bounds based on flow regime
+        P_bounds = [1e-2, PR_crit] if supersonic else [PR_crit, 1]
+
+        try:
+            # Find pressure ratio that gives target mass flux
+            PR = root_scalar(
+                lambda PR: cls.__hunt_PR(PR, total, static, w_flux),
+                method='brentq',
+                bracket=P_bounds
+            ).root
+
+            static._SP = total._S, PR * total._P
+
+            return static, None
+
+        except:
+            logger.warn(
+                "No static state solution found:\n"
+                f"  Mass flux: {w_flux:.2f} kg/s/m²\n"
+                f"  Total P: {total._P/1e5:.2f} bar\n"
+                f"  Total T: {total._T:.2f} K"
+            )
+
+            # Return with error
+            error = {'w_flux_max': cls._w_flux_max(total, static)}
+
+            return None, error
+
+    @classmethod
+    def _dP(cls, total, w_flux, static=None):
+        """Calculate isentropic pressure drop for given mass flux.
+
+        Args:
+            total (thermo): Total state
+            w_flux (float): Mass flux [kg/s/m²]
+            static (thermo, optional): Static state for calculations
+
+        Returns:
+            float: Pressure drop [Pa], or None if no solution
+        """
+        static, error = cls._total_to_static(total, w_flux, static=static)
+
+        if error is None:
+            return static._P - total._P, error
+        else:
+            return None, error
+
+    @classmethod
+    def _dH(cls, inlet_thermo, Pout):
+        """
+        Calculate isentropic enthalpy change for a pressure change in SI units.
+
+        Args:
+            inlet_thermo (thermo): Inlet thermodynamic state.
+            Pout (float): Outlet pressure (Pa).
+
+        Returns:
+            float: Isentropic enthalpy change (in J).
+        """
+        try:
+            # Calculate the isentropic outlet state at the given outlet
+            # pressure
+            isentropic_outlet = thermo(
+                fluid=inlet_thermo.Ydict,
+                state={'S': inlet_thermo._S, 'P': Pout},
+                model=inlet_thermo.model
+            )
+        except Exception as e:
+            logger.warn(f"Error calculating isentropic outlet state: {e}")
+            if inlet_thermo.phase == 'liquid':
+                logger.info("Falling back on incompressible assumption")
+                return IncompressibleFlow._dH(inlet_thermo, Pout)
+            else:
+                logger.info("Falling back on compressible assumption")
+                return PerfectGasFlow._dH(inlet_thermo, Pout)
+
+        return isentropic_outlet._H - inlet_thermo._H
+
+    @classmethod
+    def __hunt_PR(cls, PR, total, static, w_flux):
+        """Find pressure ratio for target mass flux.
+
+        Args:
+            PR (float): Trial pressure ratio
+            total (thermo): Total state
+            static (thermo): Static state to update
+            w_flux (float): Target mass flux [kg/s/m²]
+
+        Returns:
+            float: Mass flux error
+        """
+        if PR < 0:
+            return (-PR + 10) * 1e5
+        elif PR > 1:
+            return (1 - PR - 10) * 1e5
+
+        static._SP = total._S, PR * total._P
+        return (w_flux - cls._w_flux(total, static)) - 1e-8
+
+    @classmethod
+    def __hunt_static_PR_M(cls, PR, M, total, static):
+        """Find pressure ratio for target Mach number.
+
+        Args:
+            PR (float): Trial pressure ratio
+            M (float): Target Mach number
+            total (thermo): Total state
+            static (thermo): Static state to update
+
+        Returns:
+            float: Mach number error
+        """
+        if PR == 1:
+            # Special case: PR=1 means zero velocity
+            return M - 0
+
+        static._SP = total._S, PR * total._P
+        dH = total._H - static._H
+        velocity = np.sqrt(2 * np.max([0, dH]))
+
+        return M - velocity/static.sound
+
+
+class FlowModel:
+    """Model for calculating flow properties using different flow functions.
+
+    This class provides a high-level interface for flow calculations by
+    combining flow functions (isentropic, incompressible, compressible) with
+    a discharge coefficient * area (cdA) value. It handles mass flow and
+    pressure drop calculations for a specific flow geometry.
+
+    Attributes:
+        flow_func: Flow calculation class (IsentropicFlow, IncompressibleFlow,
+                  or PerfectGasFlow)
+        _cdA (float): Discharge coefficient * area [m²]
+
+    Args:
+        flow_func (str): Type of flow calculation ('isen',
+                        'incomp', or 'comp')
+        cdA (float): Discharge coefficient * area [m²]
+
+    Example:
+        >>> flow = FlowModel('isentropic', cdA=1e-4)
+        >>> mass_flow = flow._w(total_state, static_state)
+        >>> pressure_drop = flow._dP(total_state, mass_flow)
+    """
+
+    def __init__(self, flow_func: str, cdA: float):
+        """Initialize flow model with specified flow function and cdA.
+
+        Args:
+            flow_func (str): Type of flow calculation ('isen',
+                           'incomp', or 'comp')
+            cdA (float): Discharge coefficient * area [m²]
+
+        Raises:
+            ValueError: If flow_func is not one of the supported types
+        """
+        self._cdA = cdA
+
+        # Map string to flow function class
+        flow_map = {
+            'isen': IsentropicFlow,
+            'incomp': IncompressibleFlow,
+            'comp': PerfectGasFlow
+        }
+
+        if flow_func not in flow_map:
+            raise ValueError(
+                f"Invalid flow_func: {flow_func}. "
+                f"Must be one of: {list(flow_map.keys())}"
+            )
+
+        self.flow_func = flow_map[flow_func]
+
+    def PR_crit(self, total, static=None):
+        return self.flow_func.critical_PR_from_total(total, static)
+
+    def _w(self, total, static):
+        """Calculate mass flow rate.
+
+        Args:
+            total (thermo): Total (stagnation) state
+            static (thermo): Static state
+
+        Returns:
+            float: Mass flow rate [kg/s]
+
+        Note:
+            Mass flow = mass_flux * cdA
+        """
+        return self.flow_func._w_flux(total, static) * self._cdA
+
+    def _w_max(self, total, static=None):
+
+        return self.flow_func._w_flux_max(total, static) * self._cdA
+
+    def _dP(self, total, w, static=None):
+        """Calculate pressure drop for given mass flow.
+
+        Args:
+            total (thermo): Total (stagnation) state
+            w (float): Mass flow rate [kg/s]
+            static (thermo, optional): Static state for calculations
+
+        Returns:
+            float: Pressure drop [Pa]
+
+        Note:
+            Converts mass flow to mass flux using cdA before calculation
+        """
+
+        dP, error = self.flow_func._dP(total, w/self._cdA, static=static)
+
+        if error is None:
+            return dP, error
+        else:
+            error = {'w_max': error['w_flux_max']*self._cdA}
+            return None, error
+
+    def _dH(self, inlet_thermo, Pout):
+        """
+        Calculate isentropic enthalpy change for a pressure change in SI units.
+
+        Args:
+            inlet_thermo (thermo): Inlet thermodynamic state.
+            Pout (float): Outlet pressure (Pa).
+
+        Returns:
+            float: Isentropic enthalpy change (in J).
+        """
+        return self.flow_func._dH(inlet_thermo, Pout)

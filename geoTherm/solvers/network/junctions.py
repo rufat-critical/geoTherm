@@ -59,9 +59,9 @@ class Junction:
             self.penalty = False
         else:
             if x < self._bounds[0]:
-                self.penalty = (self._bounds[0] -x[0] + 10)*1e5
+                self.penalty = (self._bounds[0] - x[0] + 10)*1e5
             else:
-                self.penalty = (self._bounds[1] -x[0] - 10)*1e5
+                self.penalty = (self._bounds[1] - x[0] - 10)*1e5
 
     def error_check(self):
         pass
@@ -158,7 +158,8 @@ class OutletJunction(BoundaryJunction):
         elif len(self.US_branches) != 1:
             logger.critical(f"The Outlet Boundary Condition '{self.name}' "
                             "can only have 1 downstream connection")
-        elif not self.US_branches[0].fixed_flow:
+        elif not (self.US_branches[0].fixed_flow
+                  or self.US_branches[0].fixed_flow_flag):
             logger.critical(f"The Outlet Boundary Condition '{self.name}' "
                             "requires a fixedFlow object to be defined "
                             "upstream")
@@ -171,8 +172,11 @@ class FlowJunction(Junction):
     Junctions are points where multiple branches meet, allowing the solver
     to handle mass and energy conservation across these points.
     """
-    _bounds = [[1, 1e9], [-np.inf, np.inf]]
+
+    # These are the bounds on Pressure and Enthalpy
+    _bounds = [[1, 1e8], [-np.inf, np.inf]]
     #_bounds = [[-np.inf, np.inf], [-np.inf, np.inf]]
+    #_bounds = [[1e-5]]
     def __init__(self, name, node, network):
         """
         Initialize a Junction instance.
@@ -191,7 +195,7 @@ class FlowJunction(Junction):
         self.solve_energy = True
         self.update_energy = False
         self.constant_density = False
-        self.error = 'relative'
+        self.error = 'abs'
         self.state = np.array([])
 
     def initialize(self):
@@ -212,6 +216,7 @@ class FlowJunction(Junction):
         #    self.solve_energy = False
         #else:
         #    self.solve_energy = True
+
 
         self.initialize_state()
         #self.solve_energy = False
@@ -247,6 +252,7 @@ class FlowJunction(Junction):
             self._state = np.array([self.node.thermo._P])
 
 
+
     @property
     def x(self):
         return self.state
@@ -265,12 +271,11 @@ class FlowJunction(Junction):
             error = np.array([wNet])
 
         if self.error == 'relative':
-            return error/np.abs(self.state)**.75
+            return error/np.abs(self.state)
         else:
             return error
 
     def update_state(self, x):
-
 
         self.penalty = False
         penalty0 = False
@@ -320,10 +325,10 @@ class FlowJunction(Junction):
             # Point error towards state that worked
             sign = np.sign(self._state-x)
             self.penalty = (self._state-x+10*sign)*1e20
-            #self.update_state(self._state)
+            self.update_state(self._state)
         else:
             self._state = x
-                
+
     def update_thermo(self, state):
 
 

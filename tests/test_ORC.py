@@ -13,21 +13,20 @@ def test_simple_ORC():
 
             
     ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(3.8, 'bar'), T=319.8),
-                    gt.Rotor('ORC_Rotor', N =40000),
-                    gt.Rotor('Pump_Rotor', N =14009.97841),
-                    gt.fixedFlowPump(name='Pump', rotor= 'Pump_Rotor', eta=0.7, PR=5, w=w, US='PumpIn', DS='PumpOut'),
+                    gt.fixedFlowPump(name='Pump', eta=0.7, w=w, US='PumpIn', DS='PumpOut'),
                     gt.Station(name='PumpOut', fluid=fluid),
                     gt.Pipe(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, dP=(-1,'bar'), D=(2, 'in'), L=3),
                     gt.Qdot(name='Heat', cool='TurbIn', Q=(3.2e6, 'BTU/hr')),
                     gt.Station(name='TurbIn', fluid=fluid),#, T=Thot-5, P =101325),
-                    gt.Turbine(name='Turb', rotor='ORC_Rotor',US='TurbIn', DS='TurbOut', D= .057225646*2, eta=0.8, PR=5),
+                    gt.fixedPRTurbine(name='Turb', US='TurbIn', DS='TurbOut', eta=0.8, PR=5, w=w),
                     gt.Station(name='TurbOut', fluid=fluid),
-                    gt.Pipe(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(-1,'bar'), dH=None)])
+                    gt.Pipe(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(-1,'bar'))])
 
     ORC.solve_steady()
-    
+
     assert(math.isclose(ORC.performance[0], 81670.364, abs_tol=1e-3) 
            and math.isclose(ORC.performance[2], 8.708, abs_tol=1e-3))
+
 
 def test_stechmann():
     # Comparing with Stechmann's Spreadsheets
@@ -55,26 +54,24 @@ def test_stechmann():
     mdot_H2O = (45, 'kg/s')
 
     ORC = gt.Model([gt.Boundary(name='LowT', fluid=ORC_fluid, P=ORC_Pin, T=ORC_Tin),
-                    gt.Rotor('ORC_Rotor', N =12007.76906),
-                    gt.fixedFlowPump(name='Pump', rotor= 'ORC_Rotor', eta=0.7, PR=20/1.4, w=mdot_ORC, US='LowT', DS='PumpOut', D=.1),
+                    gt.fixedFlowPump(name='Pump', eta=0.7, w=mdot_ORC, US='LowT', DS='PumpOut'),
                     gt.Station(name='PumpOut', fluid=ORC_fluid),
                     gt.Pipe(name='ORC_HEX', US='PumpOut', DS='TurbIn', dP =(0, 'bar'),w=50.232),#, Q=(20, 'MW')),
                     #gt.Qdot(name='ORC_Heat', cool='ORC_HEX', Q=(20 , 'MW')),
                     gt.Qdot('ORC_Heat', hot='WaterHEXOut', cool='TurbIn', Q=(31374557.96)),
                     gt.Station(name='TurbIn', fluid=ORC_fluid),
-                    gt.Turbine(name='Turb', rotor = 'ORC_Rotor', eta=.9, PR=ORC_Turb_PR, w=mdot_ORC, US='TurbIn', DS='TurbOut',
-                               D=(0.510569758, 'm')),
+                    gt.fixedPRTurbine(name='Turb', eta=.9, PR=ORC_Turb_PR, w=mdot_ORC, US='TurbIn', DS='TurbOut'),
                     gt.Station(name='TurbOut', fluid=ORC_fluid),
-                    gt.Pipe(name='CoolHex', US = 'TurbOut', DS = 'LowT', w=mdot_ORC, dP=(0,'bar'), dH=None)])
+                    gt.Pipe(name='CoolHex', US = 'TurbOut', DS = 'LowT', w=mdot_ORC, dP=(0,'bar'))])
 
 
     HOT = gt.Model([gt.Boundary(name='Well', fluid=HOT_fluid, P=HOT_P, T=HOT_T),
                     gt.Pipe(name='WaterHEX', US='Well', DS='WaterHEXOut', dP=(-38, 'bar'), w=mdot_H2O),
                     gt.Volume(name='WaterHEXOut', fluid=HOT_fluid),
-                    gt.fixedFlowPump(name='WaterPump', rotor='DummyRotor', eta=.7, PR=2, w=mdot_H2O, US='WaterHEXOut',DS='Outlet'),     
+                    gt.fixedFlowPump(name='WaterPump', eta=.7, w=mdot_H2O, US='WaterHEXOut',DS='Outlet'),     
                     gt.Rotor('DummyRotor', N =15000),
                     #gt.Qdot('ORC_Heat', hot='WaterHEXOut', Q=(31374557.96)),
-                    gt.PressureBoundary(name='Outlet', fluid=HOT_fluid, P=(140, 'bar'), T=HOT_T)])
+                    gt.POutlet(name='Outlet', fluid=HOT_fluid, P=(140, 'bar'), T=HOT_T)])
                 
 
     combined = gt.Model()

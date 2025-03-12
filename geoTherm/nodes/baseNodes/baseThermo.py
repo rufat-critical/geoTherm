@@ -122,4 +122,19 @@ class baseThermo(Node):
                             " a geoTherm model before flux can be calculated")
 
         return self.model.get_flux(self)
-    
+
+    @property
+    def influx(self):
+        if self.model is None:
+            logger.critical(f"thermoNode '{self.name} must be asssociated with"
+                            " a geoTherm model before flux can be calculated")
+
+        return self.model.get_in_flux(self)
+
+    @property
+    def outflux(self):
+        if self.model is None:
+            logger.critical(f"thermoNode '{self.name} must be asssociated with"
+                            " a geoTherm model before flux can be calculated")
+
+        return self.model.get_out_flux(self)

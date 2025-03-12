@@ -1,74 +1,66 @@
 from .node import Node
+from .geometry import Cylinder, GeometryProperties
 from .baseNodes.baseFlow import baseInertantFlow
 from ..units import inputParser, addQuantityProperty
 from ..utils import dP_pipe
 from ..logger import logger
 import numpy as np
+from ..resistance_models.flow import PipeLoss
 
 
 @addQuantityProperty
-class Pipe(baseInertantFlow):
-    _displayVars = ['w', 'dP', 'dH']
-    _units = {'D': 'LENGTH', 'L': 'LENGTH', 'w': 'MASSFLOW',
-              'roughness': 'LENGTH', 'dP': 'PRESSURE',
-              'Q': 'POWER', 'dH': 'SPECIFICENERGY',
-              'U': 'VELOCITY'}
+class Pipe(baseInertantFlow, GeometryProperties):
+    _displayVars = ['w', 'dP', 'geometry']
+    _units = {**GeometryProperties._units, **{
+        'w': 'MASSFLOW', 'U': 'VELOCITY'
+    }
+    }
+    #_units = {'D': 'LENGTH', 'L': 'LENGTH', 'w': 'MASSFLOW',
+    #          'roughness': 'LENGTH', 'dP': 'PRESSURE',
+    #          'Q': 'POWER', 'dH': 'SPECIFICENERGY',
+    #          'U': 'VELOCITY'}
 
     _bounds = [-1e5, 1e5]
 
     @inputParser
     def __init__(self, name, US, DS,
+                 L=None,
+                 D=None,
+                 roughness=1e-4,
+                 t=0,
                  w:'MASSFLOW'=0,
-                 L:'LENGTH'=None,
-                 D:'LENGTH'=1,
-                 roughness:'LENGTH'=1e-5,
-                 dP:'PRESSURE'=None,
-                 dH:'ENERGY'=0):
+                 dP:'PRESSURE'=None):
 
+
+        #super().__init__(name, US, DS)
         self.name = name
         self.US = US
         self.DS = DS
-        self._D = D
-        self._L = L
         self._w = w
-        self._roughness = roughness
         self.penalty = False
-        self.fixed_dP = dP
-        self.fixed_dH = dH
 
-        if self.fixed_dP is None:
-            if (L is None) or (D is None):
-                logger.critical(f"Pipe {self.name} needs to have D and L "
-                                "specified if dP is not specified!")
+        # Initialize Geometry
+        if L is not None and D is not None:
+            self.geometry = Cylinder(D, L, t, roughness)
+            self._Z = self.geometry._L/self.geometry._area**2
+        else:
+            self.geometry = None
+            self._Z = 1
+        # Initialize Loss Model
+        self.loss = PipeLoss(self, self.geometry, dP=dP)
 
-    @property
-    def _area(self):
-        return np.pi*self._D**2/4
 
     @property
     def _dP(self):
         US, _, _ = self.thermostates()
-
-        if self.fixed_dP is None:
-            return dP_pipe(US,
-                           self._D,
-                           self._L,
-                           np.abs(self._w),
-                           self._roughness)*self.sign(self._w)
-        else:
-            return self.fixed_dP
-
-    @_dP.setter
-    def _dP(self, dP):
-        self.fixed_dP = dP
+        return self.loss.evaluate(self._w, US)
 
 
     @property
     def _U(self):
         # Incompressible velocity
         US, _, _ = self.thermostates()
-
-        return self._w/(US._density*self._area)
+        return self._w/(US._density*self.geometry._area)
 
     @property
     def _cdA(self):
@@ -79,20 +71,14 @@ class Pipe(baseInertantFlow):
 
     def get_outlet_state(self, US, w):
 
-        if self.fixed_dP is not None:
-            dP = self.fixed_dP
-        else:
-            dP = dP_pipe(US,
-                         self._D,
-                         self._L,
-                         np.abs(w),
-                         self._roughness)
+        # Evaluate loss
+        dP = self.loss.evaluate(np.abs(w), US)
 
         return {'H': US._H,
                 'P': US._P + dP}
 
     @property
-    def xdot(self):
+    def xdot2(self):
         if self.penalty is not False:
             return np.array([self.penalty])
 
@@ -106,19 +92,6 @@ class Pipe(baseInertantFlow):
 
         return np.array([DS_target['P'] - DS._P])*np.sign(self._w)        
 
-    @property
-    def _dH(self):
-
-        if self.fixed_dH is not None:
-            return self.fixed_dH
-        else:
-            US, DS, _ = self.thermostates()
-
-            return DS._H - US._H
-
-    @_dH.setter
-    def _dH(self, dH):
-        self.fixed_dH = dH
 
 class LumpedPipe(Node):
 
@@ -136,3 +109,7 @@ class discretePipe(Node):
     # sqrt(gam*R*T)
 
 # ESTIMATE Q LOSS FOR PIPE SECTION
+
+
+#class PipeBend(Node):
+

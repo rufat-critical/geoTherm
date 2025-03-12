@@ -14,8 +14,10 @@ from rich.table import Table
 from ..thermostate import thermo
 from ..utils import eps
 from ..logger import logger
-from units import addQuantityProperty, inputParser
+from geoTherm.units import addQuantityProperty, inputParser
 import numpy as np
+from ..flow_funcs import IncompressibleFlow, PerfectGasFlow, IsentropicFlow
+
 
 
 
@@ -273,7 +275,7 @@ class flowCalc:
                 dP = -self._total._P*(1-PR)
 
             self._static._DP = self._total._D, self._total._P + dP
-            w_flux = _w_incomp(self._total, self._static, 1)
+            w_flux = _w_incomp(self._total, self._static)
             dP = dP_incomp(self._total, w_flux)
             PR = self._static._P/self._total._P
             dH = _dH_incompressible(self._total, self._static._P)
@@ -295,7 +297,7 @@ class flowCalc:
 
             self._total._DP = self._static._D, self._static._P + dP            
 
-        w_flux = _w_incomp(self._total,self._static, 1)
+        w_flux = _w_incomp(self._total,self._static)
         dP = dP_incomp(self._total, w_flux)
         PR = self._static._P/self._total._P
         U = w_flux/(self._static.density)
@@ -364,7 +366,7 @@ class flowCalc:
                           self.static.density/DR)
 
 
-        w_flux = _w_comp(self._total, self._static, 1)
+        w_flux = _w_comp(self._total, self._static)
         aR = perfect_ratio_from_Mach(M, gamma, 'soundR')
 
         a = aR*np.sqrt(gamma*self._total._P/self._total._density)

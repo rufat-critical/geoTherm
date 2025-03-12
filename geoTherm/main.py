@@ -7,7 +7,7 @@ from .nodes.node import modelTable
 from .utilities.thermo_plotter import thermoPlotter
 from .logger import logger
 from .utils import eps, parse_component_attribute
-from .utilities.network_graph import make_dot_diagram, make_graphml_diagram
+from .utilities.network_graph import make_dot_diagram, make_graphml_diagram, generate_dot_code
 from .thermostate import thermo
 import pandas as pd
 from .nodes.baseNodes.baseThermo import baseThermo
@@ -472,7 +472,7 @@ class Model(modelTable):
 
         plot_flag = True
         for name, node in self.nodes.items():
-            if isinstance(node, (gt.ThermoNode, gt.Station)):
+            if isinstance(node, (gt.Boundary, gt.Station)):
                 if plot_flag:
                     plot = thermoPlotter(node.thermo)
                     plot_flag = False
@@ -530,7 +530,7 @@ class Model(modelTable):
 
         return sol
 
-    def solve_steady(self, netSolver=True):
+    def solve_steady(self, netSolver=True, try_steady=False):
 
         # Branch Nodes
         # Set mass flow
@@ -577,29 +577,48 @@ class Model(modelTable):
         x = conditioner.unscale_x(sol[0])
         self.steady_evaluate(x)
 
+        from pdb import set_trace
+        #set_trace()
+
         if not self.converged:
-            logger.warn("Failed to converge with Nodal Solver, "
-                        "will try Transient Solver Next!")
+            if try_steady:
+                logger.warn("Failed to converge with Nodal Solver, "
+                            "will try Transient Solver Next!")
+                # Try to use sim to solve model
+                sol = self.sim([0, 1e3])
+
+            if not self.converged:
+                logger.warn("Could not converge")
+                return self.x
+
+
         else:
+            logger.info('CONVERGED!')
             return self.x
 
-        # USE SIM TO TRY AND SOVLE MODEL
 
-    def draw(self, file_path='geoTherm_model_diagram.svg', auto_open=True):
+    def draw(self, file_path='geoTherm_model_diagram.svg', auto_open=True,
+             display_in_notebook=False):
         """
-        Generates a DOT plot for the model's node network and saves it as an
-        SVG file. Optionally, the plot can be opened automatically in a web
-        browser.
-
+        Generates a DOT plot for the model's node network.
+        
         Args:
-            model (Model): The geoTherm model containing nodes and their
-                        connections.
             file_path (str): The path to save the generated SVG file.
-                            Defaults to 'plot.svg'.
-            auto_open (bool): Whether to automatically open the SVG file after
-                            creation. Defaults to True.
+            auto_open (bool): Whether to automatically open the SVG file.
+            display_in_notebook (bool): Whether to display in Jupyter notebook.
+        
+        Returns:
+            IPython.display.SVG if display_in_notebook=True, None otherwise.
         """
-        make_dot_diagram(self, file_path='plot.svg', auto_open=auto_open)
+        if display_in_notebook:
+            from IPython.display import SVG, display
+            dot_code = generate_dot_code(self)
+            from plantuml import PlantUML
+            plantuml = PlantUML(url='http://www.plantuml.com/plantuml/svg/')
+            svg_content = plantuml.processes(dot_code)
+            return display(SVG(svg_content))
+        else:
+            make_dot_diagram(self, file_path=file_path, auto_open=auto_open)
 
     def make_graphml_diagram(self, file_path='geoTherm_model_diagram.graphml'):
         """
@@ -614,38 +633,97 @@ class Model(modelTable):
         """
         make_graphml_diagram(self, file_path)
 
-    def inlet_flux(self, node):
-        from pdb import set_trace
-        set_trace()
-
-        # Get node_map for this node
-        node_map = self.node_map[node.name]        
-
-        wNet = 0
-        Hnet = 0
-        Wnet = 0
-        Qnet = 0
-
-        for name in node_map['US']:
-
-            # Get the Flow Node
-            flow_node = self.nodes[name]
-
-            if flow_node._w > 0:
-                wNet += 0
-                # Get Upstream Thermo Node
-                thermo_node = (
-                    self.nodes[self.node_map[name]['US'][0]].thermo
-                )
-                # Inflow Energy
-                Hnet += flow_node._w*thermo_node._H
-                # Work from flow Node
-                Wnet += flow_node._w*flow_node._dH
-
+    def get_in_flux(self, node):
+        """Calculate incoming mass and energy fluxes to a control volume.
+        
+        Args:
+            node: Node object representing the control volume
             
-        from pdb import set_trace
-        set_trace()
+        Returns:
+            tuple: (w_in, H_in, W_in, Q_in)
+                w_in: Net incoming mass flow [kg/s]
+                H_in: Net incoming enthalpy flux [W]
+                W_in: Net incoming work [W]
+                Q_in: Net incoming heat [W]
+        """
+        # Get node connections
+        node_map = self.node_map[node.name]
+        
+        w_in = 0.0
+        H_in = 0.0
+        W_in = 0.0
+        Q_in = 0.0
+        
+        # Check upstream branches for inflow
+        for name in node_map['US']:
+            flow_node = self.nodes[name]
+            if flow_node._w > 0:  # Positive flow is inflow
+                w_in += flow_node._w
+                us_thermo = self.nodes[self.node_map[name]['US'][0]].thermo
+                H_in += flow_node._w * us_thermo._H
+                W_in += flow_node._w * flow_node._dH
+                
+        # Check downstream branches for backflow
+        for name in node_map['DS']:
+            flow_node = self.nodes[name]
+            if flow_node._w < 0:  # Negative flow is backflow (inflow)
+                w_in += -flow_node._w  # Convert to positive inflow
+                ds_thermo = self.nodes[self.node_map[name]['DS'][0]].thermo
+                H_in += -flow_node._w * ds_thermo._H
+                W_in += -flow_node._w * flow_node._dH
+        
+        # Add heat input
+        for name in node_map['hot']:
+            Q_node = self.nodes[name]
+            if Q_node._Q > 0:  # Positive Q is heat input
+                Q_in += Q_node._Q
+                
+        return np.array([w_in, H_in, W_in, Q_in])
 
+    def get_out_flux(self, node):
+        """Calculate outgoing mass and energy fluxes from a control volume.
+        
+        Args:
+            node: Node object representing the control volume
+            
+        Returns:
+            tuple: (w_out, H_out, W_out, Q_out)
+                w_out: Net outgoing mass flow [kg/s]
+                H_out: Net outgoing enthalpy flux [W]
+                W_out: Net outgoing work [W]
+                Q_out: Net outgoing heat [W]
+        """
+        # Get node connections
+        node_map = self.node_map[node.name]
+        
+        w_out = 0.0
+        H_out = 0.0
+        W_out = 0.0
+        Q_out = 0.0
+        
+        # Check downstream branches for outflow
+        for name in node_map['DS']:
+            flow_node = self.nodes[name]
+            if flow_node._w > 0:  # Positive flow is outflow
+                w_out += flow_node._w
+                H_out += flow_node._w * node.thermo._H
+                W_out += flow_node._w * flow_node._dH
+                
+        # Check upstream branches for backflow
+        for name in node_map['US']:
+            flow_node = self.nodes[name]
+            if flow_node._w < 0:  # Negative flow is backflow (outflow)
+                w_out += -flow_node._w  # Convert to positive outflow
+                H_out += -flow_node._w * node.thermo._H
+                W_out += -flow_node._w * flow_node._dH
+        
+        # Add heat output
+        for name in node_map['cool']:
+            Q_node = self.nodes[name]
+            if Q_node._Q > 0:  # Positive Q on cool side is heat output
+                Q_out += Q_node._Q
+                
+        return np.array([w_out, H_out, W_out, Q_out])
 
     def outlet_flux(self, node):
         from pdb import set_trace
@@ -713,7 +791,7 @@ class Model(modelTable):
         for name in node_map['cool']:
             Qnet -= self.nodes[name]._Q
 
-        return wNet, Hnet, Wnet, Qnet
+        return np.array([wNet, Hnet, Wnet, Qnet])
 
     @property
     def converged(self):

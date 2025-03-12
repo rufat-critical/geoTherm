@@ -5,7 +5,7 @@ from ..flow_funcs import flow_func
 import numpy as np
 from ..logger import logger
 from .baseNodes.baseFlowResistor import baseFlowResistor
-
+from ..flow_funcs import FlowModel
 
 @addQuantityProperty
 class resistor(baseFlowResistor):
@@ -22,45 +22,51 @@ class resistor(baseFlowResistor):
 
         self.flow_func = flow_func
         self._area = area
+        self.flow = FlowModel(flow_func, self._area)
 
     def initialize(self, model):
         super().initialize(model)
 
-        if self.flow_func == 'isentropic':
-            self._flow_func = _w_isen
-            self._dP_func = _dP_isen
-        elif self.flow_func == 'incomp':
-            self._flow_func = _w_incomp
-            self._dP_func = _dP_incomp
-        elif self.flow_func == 'comp':
-            self._flow_func = _w_comp
-            self._dP_func = _dP_comp
+        #if self.flow_func == 'isentropic':
+        #    self._flow_func = _w_isen
+        #    self._dP_func = _dP_isen
+        #elif self.flow_func == 'incomp':
+       #     self._flow_func = _w_incomp
+       #     self._dP_func = _dP_incomp
+       # elif self.flow_func == 'comp':
+       #     self._flow_func = _w_comp
+       #     self._dP_func = _dP_comp
 
-        self.flow = flow_func(self.flow_func)
+       # self.flow2 = flow_func(self.flow_func)
 
     def evaluate(self):
 
         # Get US, DS Thermo
         US, DS, flow_sign = self.thermostates()
-        self._w = self.flow._w_flux(US, DS)*self._area*flow_sign
-        self._dP = DS._P - US._P
+        self._w = self.flow._w(US, DS)*flow_sign
 
     def get_outlet_state(self, US, w):
 
-        dP = self._dP_func(US, np.abs(w)/self._area)
+        dP, error = self.flow._dP(US, np.abs(w))
+
 
         if dP is None:
             dP = -1e9
+
 
         return {'H': US._H, 'P': US._P + dP}
 
 
     def get_inlet_state(self, DS, w):
 
-        dP = self.flow._dP_reverse(DS, w/self._area, US_thermo=None)
+        dP = self.flow2._dP_reverse(DS, w/self._area, US_thermo=None)
 
         return {'H': DS._H, 'P': DS._P + dP}
 
+    def _get_outlet_state_PR(self, US, PR):
+
+
+        return {'P': US._P*PR, 'H': US._H}
 
 
 class orifice(resistor):

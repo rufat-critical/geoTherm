@@ -5,28 +5,14 @@ from ...logger import logger
 class baseFlowResistor(baseFlow):
     """Base class for a flow node that calculates flow in between stations."""
 
-
     @property
     def _dH(self):
+        """Flow resistors are isenthalpic by default.
+
+        Returns:
+            float: Always 0 for basic flow resistors
+        """
         return 0
-
-    def initialize(self, model):
-        """
-        Initialize the node with the model, setting up connections to upstream
-        and downstream nodes.
-
-        Args:
-            model: The model containing the node map and other nodes.
-        """
-
-        super().initialize(model)
-
-        # Initialize attributes if not already defined and no property
-        # is defined
-        if not hasattr(self, '_w'):
-            self._w = 0
-        if not hasattr(self, '_dP'):
-            self._dP = 0
 
     def _set_flow(self, w):
         """
