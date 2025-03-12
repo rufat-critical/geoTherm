@@ -1,22 +1,26 @@
 # __init__.py
 
-from .main import Model, Solution
-from .units import units, unit_converter
-from .utilities.thermo_plotter import thermoPlotter
-from .utilities.flowcalc import flowCalc
-from .nodes.volume import *
-from .nodes.boundary import *
-from .nodes.rotor import *
-from .nodes.cycleCloser import *
-from .nodes.flowDevices import *
+from geoTherm.main import Model, Solution
+from geoTherm.units import units, unit_converter
+from geoTherm.utilities.thermo_plotter import thermoPlotter
+from geoTherm.utilities.flowcalc import flowCalc
+from geoTherm.utilities.display import print_model_tables
+from geoTherm.nodes.volume import *
+from geoTherm.nodes.boundary import *
+from geoTherm.nodes.rotor import *
+from geoTherm.nodes.cycleCloser import *
+from geoTherm.nodes.flowDevices import *
 
-from .nodes.heatsistor import *
-from .nodes.turbine import *
-from .nodes.pump import *
-from .nodes.pipe import *
-from .nodes.resistor import *
+from geoTherm.maps.turbine.turbine_maps import Claudio_Turbine
+
+
+from geoTherm.nodes.heatsistor import *
+from geoTherm.nodes.turbine import *
+from geoTherm.nodes.pump import *
+from geoTherm.nodes.pipe import *
+from geoTherm.nodes.resistor import *
 #from .nodes.surfaces import *
-from .nodes.controller import *
-from .nodes.schedule import *
-from .thermostate import thermo
+from geoTherm.nodes.controller import *
+from geoTherm.nodes.schedule import *
+from geoTherm.thermostate import thermo
 from . import flow_funcs
