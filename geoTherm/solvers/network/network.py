@@ -90,7 +90,7 @@ class Conditioner:
                     #x_scale = np.array([1e-6, 1e-6])
                     #xdot_scale = np.array([1, 1/1e-6])
                     x_scale = np.array([1e-5, 1e-5])
-                    xdot_scale = np.array([1e-5, 1e-5])
+                    xdot_scale = np.array([1e-5, 1])
                     return x_scale, xdot_scale
                 else:
                     #x_scale = np.array([1e-5])
@@ -793,7 +793,6 @@ class Network:
 
         # solve with root (hybr, lm)
         sol = root(conditioned, x_scaled, method='lm')
-
         x = conditioner.unscale_x(sol.x)
         # solve with fsolve
         #sol = fsolve(conditioned, x_scaled, full_output=True)      
@@ -818,13 +817,14 @@ class Network:
             else:
                 self.solve_coupled()
 
-
         self.solve_coupled()
 
         if not self.model.converged:
+            logger.warn("Could not converge with network solver, "
+                        "attempting with directed solver")
+            self.solve_directed()
+
             self.solve_coupled()
-
-
 
 
     def update_state(self, x):
@@ -899,6 +899,8 @@ class Network:
         for _, junction in self.junctions.items():
             junction.evaluate()
 
+        print('x:', self.x)
+        print('xdot:', self.xdot)
         return self.xdot
 
     @property

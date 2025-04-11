@@ -2,6 +2,7 @@ from assimulo.problem import Explicit_Problem
 from assimulo.solvers import CVode
 import numpy as np
 
+
 def CVode_solver(f, y0, t_points):
     """
     Integrate a user-specified function using the Assimulo package

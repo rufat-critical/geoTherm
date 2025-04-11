@@ -1504,11 +1504,29 @@ class IsentropicFlow(baseFlow):
                 f"  Total P: {total._P/1e5:.2f} bar\n"
                 f"  Total T: {total._T:.2f} K"
             )
-
             # Return with error
             error = {'w_flux_max': cls._w_flux_max(total, static)}
 
             return None, error
+
+
+    @classmethod
+    def _cdA(cls, total, static, w):
+        """Calculate discharge coefficient * area.
+        
+        Args:
+            total (thermo): Total state
+            static (thermo): Static state
+            w_flux (float): Mass flux [kg/s/m²]
+
+        Returns:
+            float: Discharge coefficient * area [m²]
+        """
+        
+        return w/cls._w_flux(total, static)
+    
+
+
 
     @classmethod
     def _dP(cls, total, w_flux, static=None):

@@ -317,6 +317,52 @@ class Heatsistor(baseThermal):
                 'D': D}
 
 
+class ConvectiveHeatsistor(baseThermal):
+    
+
+    def __init__(self, name, cool, hot, k_wall, h_hot=None, h_cold=None, A_cold=None, A_hot=None, layers=None):
+
+        self.name = name
+        self.cool = cool
+        self.hot = hot
+        
+        self.h_hot = h_hot
+        self.h_cold = h_cold
+        self.k_wall = k_wall
+        self.A_cold = A_cold
+        self.A_hot = A_hot
+        self.layers = layers
+
+    def initialize(self, model):
+
+        super().initialize(model)
+
+        if self.layers is None:
+            from pdb import set_trace
+            set_trace()
+
+
+        from pdb import set_trace
+        set_trace()
+
+
+# init
+# Specify layers
+# layers using Cylinder/Rectangular/... (maybe combine with geometry)
+# h_hot = None
+# h_cold = None
+# if connected to fluid resistor use geometry info
+# Otherwise specify A
+# if connected to boundary, specify area
+
+
+
+# HTC library to calculate DB, ...
+
+from pdb import set_trace
+set_trace()
+
+
 class discretizedHeat:
 
 
@@ -1563,3 +1609,4 @@ class HEXQ(HEX):
         self.hexCalcs['tube']['P'] = np.array(self.hexCalcs['tube']['P'])
 
         return error
+    

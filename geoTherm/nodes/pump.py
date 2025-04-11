@@ -6,6 +6,7 @@ from ..utils import pump_eta
 from ..flow_funcs import _dH_isentropic
 from ..logger import logger
 import numpy as np
+from ..maps.pump.D35e import PumpMap
 
 
 @addQuantityProperty
@@ -44,6 +45,49 @@ class basePump(baseTurbo):
         return DS._P / US._P
 
 @addQuantityProperty
+class baseInertantPump(basePump, baseInertantFlow):
+    pass
+
+@addQuantityProperty
+class Pump(baseInertantPump):
+
+    def __init__(self, name, US, DS, rotor, w, eta, PumpMap,
+                 Z:'INERTANCE'=(1, 'm**-3')):   # noqa
+        super().__init__(name, US, DS, w, Z)
+        self.rotor = rotor
+        self.eta = eta
+        self.PumpMap = PumpMap
+
+    def evaluate(self):
+
+        US, DS, _ = self.thermostates()
+        N = self.rotor_node.N
+        self._Q = self._w/US._density
+        self.P_target, error = self.PumpMap.get_pressure(N, self._Q)
+
+        self._wdot = (self.P_target - US._P)/self._Z
+
+
+    def initialize(self, model):
+        super().initialize(model)
+
+        self.rotor_node = self.model.nodes[self.rotor]
+
+
+    def get_outlet_state(self, US, w):
+
+        Q = w/US._density
+        N = self.rotor_node.N
+        P_target, error = self.PumpMap.get_pressure(N, Q)
+
+        if error:
+            return {'P': 1e9, 'H': US._H}
+        else:
+            return {'P': US._P + P_target, 'H': US._H + self._dH_is/self.eta}
+
+
+
+@addQuantityProperty
 class fixedFlowPump(basePump, fixedFlow):
     """Pump with a fixed mass flow rate.
 
@@ -58,7 +102,7 @@ class fixedFlowPump(basePump, fixedFlow):
         eta (float): Isentropic efficiency
         """
     _displayVars = ['w', 'eta', 'dH', 'W', 'PR']
-    _bounds = [1, 100]
+    _bounds = [0, 100]
 
     def __init__(self, name, US, DS, w, eta):
         super().__init__(name, US, DS, w)
@@ -112,6 +156,10 @@ class fixedPressureRatioPump(basePump, fixedPressureRatioTurbo):
             'P': US._P*self.PR_setpoint,
             'H': US._H + dH
         }
+    
+    def _get_dP(self, US, w):
+        from pdb import set_trace
+        set_trace()
 
 
 
@@ -159,7 +207,7 @@ class simplePump(basePump, baseInertantFlow):
 
 
 @addQuantityProperty
-class Pump(Turbo, pumpParameters):
+class Pump2(Turbo, pumpParameters):
     """Pump class inheriting from Turbo."""
 
     _displayVars = ['w', 'dP:\u0394P', 'dH:\u0394H', 'W', 'PR', 'Q_in',

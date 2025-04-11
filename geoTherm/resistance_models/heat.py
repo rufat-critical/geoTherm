@@ -28,6 +28,8 @@ def Nu_Dittus_Boelter(Re, Pr, heating=True):
 
     return 0.023*Re**(0.8)*Pr**n
 
+
+
 def Nu_Khan_Khan(Re, Pr, beta):
     # For plate HEX
     return (0.0161*beta/90+0.1298)*Re**(0.198*beta/90+0.6398)*Pr**(0.35)
@@ -226,3 +228,68 @@ def gungor_chen_evaporation(G, D, P, x, fluid='Water'):
     K_ev = E * K_bo + S * K_bo
 
     return K_ev
+
+
+class HTC:
+    def __init__(self, HTC, flow_node, h=0):
+        """Initialize Heat Transfer Coefficient calculator
+        
+        Args:
+            HTC (str): Type of HTC correlation ('Dittus-Boelter' or 'constant')
+            geometry: Geometry object containing flow parameters
+            h (float): Initial/constant heat transfer coefficient value
+        """
+        self.HTC = HTC
+        self.flow_node = flow_node
+
+    def evaluate(self, thermo): #, w, thermo):
+        """Calculate heat transfer coefficient
+        
+        Args:
+            w: Mass flow rate
+            thermo: Thermodynamic properties object
+        
+        Returns:
+            float: Heat transfer coefficient value
+        """
+        if self.HTC == 'Dittus-Boelter':
+            from pdb import set_trace
+            #set_trace()
+            Re = self.Re(thermo)
+            Pr = thermo.prandtl
+            self._Nu = Nu_Dittus_Boelter(Re, Pr)
+            return self._Nu
+        elif self.HTC == 'constant':
+            return self._h
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    def Re(self, thermo):
+        return Re_(thermo, self.flow_node.geometry._Di, self.flow_node._w)
+
+
+class Convection:
+
+    def __init__(self, htc_model):
+
+        if htc_model == 'Dittus-Boelter':
+            self.htc_model = Nu_Dittus_Boelter
+        elif htc_model == 'Gungor-Chen':
+            self.htc_model = gungor_chen_evaporation
+
+    def evaluate(self, w, thermo):
+        pass
+
+
+
+class Conduction:
+
+    def __init__(self, geometry, material):
+        self.geometry = geometry
+        self.material = material
+
+    @property
+    def _R(self):
+        from pdb import set_trace
+        set_trace()

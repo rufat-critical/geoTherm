@@ -3,6 +3,7 @@ import re
 from scipy.optimize import root_scalar
 from .logger import logger
 import geoTherm as gt
+import yaml
 
 # Get Machine precision
 eps = np.finfo(float).eps
@@ -366,3 +367,64 @@ def has_cycle(node_map, node_list):
                 else:
                     return True
     return False
+
+
+def process_config_dimensions(config):
+    """
+    Recursively process configuration dictionary to convert dimensional values to tuples.
+    
+    Args:
+        config (dict): Configuration dictionary
+    Returns:
+        dict: Processed configuration with dimensional values converted to tuples
+    """
+    if isinstance(config, dict):
+        return {key: process_config_dimensions(value) for key, value in config.items()}
+    elif isinstance(config, list):
+        return [process_config_dimensions(item) for item in list(config)]
+    else:
+        return parse_dimension(config)
+
+def yaml_loader(yaml_path):
+    """
+    Load and parse the YAML model configuration file.
+    
+    Args:
+        yaml_path (str): Path to the YAML configuration file
+    
+    Returns:
+        dict: Parsed YAML configuration with processed dimensions
+    """
+    try:
+        with open(yaml_path, 'r') as file:
+            config = yaml.safe_load(file)
+            # Process the dimensions in the config
+            processed_config = process_config_dimensions(config)
+            return processed_config
+
+    except yaml.YAMLError as e:
+        logger.critical(f"Error parsing YAML file: {e}")
+    except FileNotFoundError:
+        logger.critical(f"Could not find file: {yaml_path}")
+
+def parse_dimension(value):
+    """
+    Parse a dimensional value into a (number, unit) tuple.
+
+    Args:
+        value: String like "2 in" or number
+    Returns:
+        tuple: (float, str) or float if no unit
+    """
+    if isinstance(value, (int, float)):
+        return value
+
+    try:
+        # Split the string into number and unit
+        parts = str(value).strip().split()
+        if len(parts) == 2:
+            return (float(parts[0]), parts[1])
+        else:
+            return float(value)
+    except (ValueError, TypeError):
+        return value

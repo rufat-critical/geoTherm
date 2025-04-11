@@ -3,7 +3,7 @@ import math
 
 
 def test_flow():
-
+    gt.DEFAULTS.EoS = 'HEOS'
     foo = gt.Model([gt.Boundary('Inlet', fluid='Water', T=300, P=101325*2),
                       gt.Boundary('Outlet', fluid='Water', T=300, P=101325*1.9),
                       gt.Pipe('flow',w=10,US='Inlet', DS='Outlet', L=1, D=.2, roughness=.5)])
@@ -13,7 +13,7 @@ def test_flow():
     
 
 def test_flow2():
-
+    gt.DEFAULTS.EoS = 'HEOS'
     foo = gt.Model([gt.Boundary('Inlet', fluid='Water', T=300, P=101325*2),
                       gt.Boundary('Outlet', fluid='Water', T=300, P=101325*1.9),
                       gt.Station('1',fluid='Water'),
@@ -25,7 +25,7 @@ def test_flow2():
            and math.isclose(foo.nodes['F1']._w, 15.2026, abs_tol=1e-3))
 
 def test_flow_heat():
-
+    gt.DEFAULTS.EoS = 'HEOS'
     foo = gt.Model([gt.Boundary('Inlet', fluid='Water', T=300, P=101325*2),
                       gt.Boundary('Outlet', fluid='Water', T=300, P=101325*1.9),
                       gt.Station('1',fluid='Water'),

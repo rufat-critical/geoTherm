@@ -15,10 +15,11 @@ from .nodes.baseNodes.baseNode import Node
 from .nodes.baseNodes.baseThermal import baseThermal
 from .solvers.network.network import Network
 from .solvers.network.junctions import FlowJunction
-
+from .utils import yaml_loader, parse_dimension
 
 class GlobalLimits:
     P = [1, 1e8]
+
 
 
 class Conditioner:
@@ -129,7 +130,7 @@ class Model(modelTable):
         dup = unique[count > 1]
         # Output error if duplicates are present
         if len(dup) != 0:
-            logger.critical("Multiple nodes specified with the same name:\n"
+            logger.critical("Multiple nodes specified with the same name: "
                             ",".join(dup))
 
         # Create dictionary of nodes
@@ -550,7 +551,7 @@ class Model(modelTable):
             # We don't need to solve anything
             # Just evaluate nodes
             self.evaluate_nodes()
-            return self.x
+            return self.x, True
 
         if netSolver:
             # Initialize the network solver
@@ -564,7 +565,7 @@ class Model(modelTable):
                 logger.warn("Failed to converge with Network Solver, "
                             "will try Nodal Solver Next!")
             else:
-                return self.x
+                return self.x, True
 
         self.initialize()
         conditioner = Conditioner(self)
@@ -577,9 +578,6 @@ class Model(modelTable):
         x = conditioner.unscale_x(sol[0])
         self.steady_evaluate(x)
 
-        from pdb import set_trace
-        #set_trace()
-
         if not self.converged:
             if try_steady:
                 logger.warn("Failed to converge with Nodal Solver, "
@@ -589,12 +587,12 @@ class Model(modelTable):
 
             if not self.converged:
                 logger.warn("Could not converge")
-                return self.x
+                return self.x, False
 
 
         else:
             logger.info('CONVERGED!')
-            return self.x
+            return self.x, True
 
 
     def draw(self, file_path='geoTherm_model_diagram.svg', auto_open=True,
@@ -662,7 +660,7 @@ class Model(modelTable):
                 us_thermo = self.nodes[self.node_map[name]['US'][0]].thermo
                 H_in += flow_node._w * us_thermo._H
                 W_in += flow_node._w * flow_node._dH
-                
+
         # Check downstream branches for backflow
         for name in node_map['DS']:
             flow_node = self.nodes[name]
@@ -843,6 +841,28 @@ class Model(modelTable):
     def Carnot_eta(self):
         # Calculate Carnot Efficiency
         pass
+
+def load(yaml_path):
+    config = yaml_loader(yaml_path)
+    geometry = initialize_geometry_groups(config['GeometryGroups'])
+
+    from pdb import set_trace
+    set_trace()
+
+
+def initialize_geometry_groups(geometry_groups):
+    """
+    Initialize the geometry groups from the model configuration.
+    """
+    geoGroups = {}
+
+    for name, geometry_group in geometry_groups.items():
+        try:
+            geoGroups[name] = gt.GeometryGroup.from_dict(geometry_group)
+        except Exception as e:
+            logger.critical(f"Error initializing geometry group {name}: {e}")
+
+    return geoGroups
 
 
 class Solution:

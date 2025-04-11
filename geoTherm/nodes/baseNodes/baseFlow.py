@@ -4,7 +4,7 @@ from ...logger import logger
 from ...units import addQuantityProperty, inputParser
 import numpy as np
 from abc import ABC, abstractmethod
-from ...nodes.heatsistor import Qdot
+#from ...nodes.heatsistor import Qdot
 
 
 @addQuantityProperty
@@ -21,7 +21,7 @@ class baseFlow(Node, ABC):
         _bounds (list): Valid range for mass flow rate [min, max]
         _unidirectional (bool): If True, only allows forward flow
     """
-    _displayVars = ['w', 'dP']
+    _displayVars = ['w', 'dP', 'dH']
     _units = {'w': 'MASSFLOW', 'dP': 'PRESSURE', 'dH': 'SPECIFICENERGY'}
     _bounds = [1e-5, 1e5]
 
@@ -75,16 +75,19 @@ class baseFlow(Node, ABC):
         # Validate heat transfer connections
         if node_map['hot'] or node_map['cool']:
             for node in node_map['hot'] + node_map['cool']:
-                if not isinstance(model.nodes[node], Qdot):
-                    logger.critical(
-                        f"Flow Node {self.name} can only have Qdot elements "
-                        f"as heat connections. Invalid connections:\n"
-                        f"hot: {node_map['hot']}\ncool: {node_map['cool']}"
-                    )
+                pass
+                #if not isinstance(model.nodes[node], Qdot):
+                #    logger.critical(
+                #        f"Flow Node {self.name} can only have Qdot elements "
+                #        f"as heat connections. Invalid connections:\n"
+                #        f"hot: {node_map['hot']}\ncool: {node_map['cool']}"
+               #     )
 
         # Set node references
         self.US_node = model.nodes[node_map['US'][0]]
         self.DS_node = model.nodes[node_map['DS'][0]]
+        self.hot_node = model.nodes[node_map['hot'][0]] if node_map['hot'] else None
+        self.cool_node = model.nodes[node_map['cool'][0]] if node_map['cool'] else None
         self._fixed_flow = False
 
     def thermostates(self):
@@ -102,7 +105,6 @@ class baseFlow(Node, ABC):
 
         return US, DS, flow_sign
 
-    @abstractmethod
     def get_outlet_state(self, US, w):
         """Calculate outlet state given inlet conditions and flow rate.
 
@@ -115,7 +117,55 @@ class baseFlow(Node, ABC):
         Returns:
             dict: Outlet state with pressure and enthalpy
         """
-        logger.critical(f"get_outlet_state not implemented in {self.name}")
+
+        dP = self._get_dP(US, w)
+        dH = self._get_dH(US, w)
+
+        return {'H': US._H + dH,
+                'P': US._P + dP}
+
+
+    @abstractmethod
+    def _get_dP(self, US, w):
+        """Calculate outlet state given inlet conditions and flow rate.
+
+        Must be implemented by derived classes.
+
+        Args:
+            US: Upstream thermodynamic state
+            w (float): Mass flow rate [kg/s]
+
+        Returns:
+            float: Pressure difference [Pa]
+        """ 
+        logger.critical(f"get_dP not implemented in {self.name}")
+
+
+    def _get_dH(self, US, w):
+        """Calculate outlet state given inlet conditions and flow rate.
+
+        Must be implemented by derived classes.
+
+        Args:
+            US: Upstream thermodynamic state
+            w (float): Mass flow rate [kg/s]
+
+        Returns:
+            float: Specific enthalpy change [J/kg]
+        """
+
+        if w == 0:
+            return 0
+        
+        dH = 0   
+        if self.hot_node is not None:
+            dH += self.hot_node._Q/w
+        if self.cool_node is not None:
+            dH -= self.cool_node._Q/w
+        
+        return dH
+
+
 
     def get_DS_state(self, US, w):
 
@@ -160,7 +210,13 @@ class baseFlow(Node, ABC):
         Returns:
             float: Specific enthalpy change [J/kg]
         """
-        return 0
+
+        if self.hot_node:
+            return self.hot_node._Q/self._w
+        elif self.cool_node:
+            return -self.cool_node._Q/self._w
+        else:
+            return 0
 
 
 @addQuantityProperty

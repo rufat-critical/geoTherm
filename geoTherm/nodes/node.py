@@ -156,19 +156,32 @@ class Node:
 
         # Initialize a list to hold the formatted variables
         Vars = []
-
         # Iterate over each display variable in the node
         for dVar in self._displayVars:
             # Get the value of the display variable
+
+
+
+            if ';' in dVar:
+                var, fmt = dVar.split(';')
+            else:
+                fmt = None
+
             if ':' in dVar:
                 var, dVar = dVar.split(':')
             else:
                 var = dVar
 
+
+
             try:
                 val = getattr(self, var)
             except:
                 val = 'error'
+
+            if fmt is not None:
+                from pdb import set_trace
+                set_trace()
 
             # Format the variable depending on its type
             if isinstance(val, (int, float)):

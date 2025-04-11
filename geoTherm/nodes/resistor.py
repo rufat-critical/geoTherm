@@ -54,6 +54,9 @@ class resistor(baseFlowResistor):
 
         return {'P': US._P*PR, 'H': US._H}
 
+    def _get_dP(self, US, w):
+        from pdb import set_trace
+        set_trace()
 
 class orifice(resistor):
     pass

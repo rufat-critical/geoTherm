@@ -4,6 +4,7 @@ import math
 
 def test_simple_ORC():
     fluid = 'acetone'
+    gt.DEFAULTS.EoS = 'HEOS'
 
     acetone = gt.thermo()
     acetone.TPY = 303, 101325, fluid
@@ -30,7 +31,7 @@ def test_simple_ORC():
 
 def test_stechmann():
     # Comparing with Stechmann's Spreadsheets
-    
+    gt.DEFAULTS.EoS = 'HEOS'
     ## Water Circuit
     HOT_fluid = 'H2O'
     ## ORC Circuit

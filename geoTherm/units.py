@@ -9,6 +9,7 @@ import sys
 import numpy as np
 from rich.console import Console
 from rich.table import Table
+from .unitSystems import _DISPLAY_FORMAT
 
 
 def get_classes_from_module(module_name):
@@ -81,6 +82,19 @@ class UnitSystem:
     def output_units(self):
         """Get the units for the current output unit system."""
         return unitSystems[self._output].units
+
+    @property
+    def _output_units_for_display(self):
+        """Get the units for the current display unit system."""
+
+        # Get the units for the current output unit system
+        UNITS = self.output_units
+        # Create a dictionary of units with display units
+        for key, value in UNITS.items():
+            if value in _DISPLAY_FORMAT:
+                UNITS[key] = _DISPLAY_FORMAT[value]
+
+        return UNITS
 
     @property
     def SI_units(self):

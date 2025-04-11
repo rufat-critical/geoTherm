@@ -98,16 +98,16 @@ class baseHeatsistor(baseThermal):
 
         node_map = self.model.node_map[self.name]
 
-        if self.cool is not None:
-            if not isinstance(self.model.nodes[self.cool],
-                              baseThermo):
-                logger.critical(f"Thermal Component {self.name} can only "
-                                "be attached to a thermo node")
-        if self.hot is not None:
-            if not isinstance(self.model.nodes[self.hot],
-                              baseThermo):
-                logger.critical(f"Thermal Component {self.name} can only "
-                                "be attached to a thermo node")         
+        #if self.cool is not None:
+        #    if not isinstance(self.model.nodes[self.cool],
+        #                      baseThermo):
+        #        logger.critical(f"Thermal Component {self.name} can only "
+        #                        "be attached to a thermo node")
+        #if self.hot is not None:
+        #    if not isinstance(self.model.nodes[self.hot],
+        #                      baseThermo):
+        #        logger.critical(f"Thermal Component {self.name} can only "
+        #                        "be attached to a thermo node")         
 
         if node_map['hot']:
             self.hot_node = model.nodes[node_map['hot'][0]]

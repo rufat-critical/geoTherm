@@ -40,7 +40,8 @@ class Station(baseThermo):
     def update_thermo(self, state):
         error = self._update_thermo(state)
 
-        self._reinit_state_vars()
+        if not error:
+            self._reinit_state_vars()
 
         return error
 
@@ -95,6 +96,83 @@ class Station(baseThermo):
             self.thermo._DH = self._state
             # Point penalty in direction of working state
             self.penalty = (self._state - x) * 1e5
+
+
+class TStation(Station):
+
+    def initialize(self, model):
+        super().initialize(model)
+
+        self.state = np.array([self.thermo._P])
+        self._state = np.array([self.thermo._T, self.thermo._P])
+
+    @property
+    def xdot(self):
+
+        wNet, _, _, _ = self.flux
+
+        return np.array([wNet])
+
+    def update_state(self, x):
+
+        self.state = x
+        try:
+            self.thermo._TP = self.thermo._T, x[0]
+            self.penalty = False
+            self._state = np.array([self.thermo._T, x[0]])
+        except:
+            logger.warn(f'Failed to update thermo state for {self.name} to:'
+                        f'T, P: {x}, resetting to T0, P0: {self._state}. ')
+            self.thermo._TP = self._state
+            self.penalty = (self._state - x)*1e5        
+
+    def update_thermo(self, state):
+
+        state = {'T': self.thermo._T, 'P': state['P']}
+        error = self._update_thermo(state)
+
+
+        return error
+
+class fixedStation(Station):
+
+    @inputParser
+    def __init__(self, name, fluid,
+                 P: 'PRESSURE' = None,          # noqa
+                 T: 'TEMPERATURE' = None,       # noqa
+                 H: 'SPECIFICENTHALPY' = None,  # noqa
+                 S: 'SPECIFICENTROPY' = None,   # noqa
+                 Q=None,
+                 state=None,
+                 fixed_state='T'):               # noqa
+        """
+        Initialize a volume node with a given fluid and state.
+
+        Args:
+            name (str): Node Name.
+            fluid (str or Thermo): Fluid name or a Thermo object.
+            P (float, optional): Pressure.
+            T (float, optional): Temperature.
+            H (float, optional): Enthalpy.
+            S (float, optional): Entropy.
+            Q (float, optional): Fluid Quality.
+            state (dict, optional): Dictionary with a predefined
+                                    thermodynamic state.
+            V (float, optional): Volume (default is 1m^3).
+        """
+
+        super().__init__(name, fluid, P, T, H, S, Q, state)
+        self.fixed_state = fixed_state
+
+        from pdb import set_trace
+        set_trace()
+
+        self._mass = self.thermo._density*self._volume
+        self._U = self.thermo._U*self._mass
+
+        #self._x = np.array([self._mass, self._U])   
+        
+
 
 
 class PStation(Station):

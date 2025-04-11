@@ -8,6 +8,8 @@ from scipy.optimize import fsolve
 from .baseNodes.baseFlow import baseInertantFlow
 from ..flow_funcs import FlowModel
 from scipy.optimize import root_scalar
+from ..logger import logger
+from .flowDevices import fixedFlow
 
 @addQuantityProperty
 class baseTurbine(baseTurbo):
@@ -50,7 +52,9 @@ class baseTurbine(baseTurbo):
 @addQuantityProperty
 class chokedTurbine(baseTurbo):
 
-    def __init__(self, name, US, DS, cdA, total_eta_map, rotor, Ae, flow_func='isentropic'):
+    _displayVars = ['w', 'eta_ts', 'dH_is', 'dH', 'W', 'PR']
+
+    def __init__(self, name, US, DS, cdA, total_eta_map, rotor, Ae, flow_func='isen'):
 
         super().__init__(name=name, US=US, DS=DS)
 
@@ -83,9 +87,6 @@ class chokedTurbine(baseTurbo):
         # Calculate mass flow rate using flow model
         self._w = self.flow._w(US, DS)*flow_sign
 
-
-        Pt_guess = DS._P
-
         def find_Pt(Pt):
             # Assuming US static state is total
             dH_is_tot = self.flow._dH(US, Pt)
@@ -110,28 +111,41 @@ class chokedTurbine(baseTurbo):
             return Hs - self.static._H
 
         try:
-            root = root_scalar(find_Pt, bracket=[DS._P, DS._P*2.2], method='brentq')
+            root = root_scalar(find_Pt, bracket=[DS._P, DS._P*10], method='brentq')
         except:
-            from pdb import set_trace
-            set_trace()
+            logger.warn(f'{self.name} choked turbine failed to converge')
+            return
 
         # Update total state
         find_Pt(root.root)
         # Update static eta
         self.eta = (US._H - self.static._H)/(-self.flow._dH(US, DS._P))
+        self.eta_ts = (US._H - self.total._H)/(-self.flow._dH(US, DS._P))
 
     @property
     def _dH_is(self):
 
         US, DS, _ = self.thermostates()
         return self.flow._dH(US, DS._P)
+    
+    @property
+    def _dH_is_tot(self):
+        US, DS, _ = self.thermostates()
 
+        self.evaluate
+
+        return self.flow._dH(US, self.total._P)
+
+    def _get_dP(self):
+        from pdb import set_trace
+        set_trace()
 
     def get_outlet_state(self, US, w):
         dP, error = self.flow._dP(US, w)
         if error is not None:
-            from pdb import set_trace
-            set_trace()
+            # Too much mass flow, output negative pressure
+            # so solver raises pressure
+            return {'P': -1e9, 'H': US._H}
 
         DS_P = US._P + dP
         def find_Pt(Pt, DS_P):
@@ -158,7 +172,7 @@ class chokedTurbine(baseTurbo):
             return Hs - self.static._H
 
         try:
-            root = root_scalar(find_Pt, args=(DS_P,), bracket=[DS_P, DS_P*1.2], method='brentq')
+            root = root_scalar(find_Pt, args=(DS_P,), bracket=[DS_P, DS_P*2], method='brentq')
         except:
             from pdb import set_trace
             set_trace()
@@ -208,7 +222,7 @@ class chokedTurbine(baseTurbo):
             return Hs - self.static._H
 
         try:
-            root = root_scalar(find_Pt, args=(DS._P,), bracket=[DS._P, DS._P*1.4], method='brentq')
+            root = root_scalar(find_Pt, args=(DS._P,), bracket=[DS._P, DS._P*2], method='brentq')
         except:
             from pdb import set_trace
             set_trace()
@@ -219,18 +233,24 @@ class chokedTurbine(baseTurbo):
         return {'P': US._P*PR, 'H': self.static._H}
 
 
-class fixedFlowTurbine(fixedFlowTurbo, baseTurbine):
+class fixedFlowTurbine(baseTurbine, fixedFlow):
     """
     Turbine class where mass flow is fixed to initialization value.
     """
 
     # State Bounds, defining them here for now
     # In the future can make a control class to check/update bounds
-    _bounds = [1, 100]
+    _displayVars = ['w', 'eta', 'dH', 'W', 'PR']
+    _bounds = [0, 1]
+
+    def __init__(self, name, US, DS, w, eta):
+        super().__init__(name, US, DS, w)
+        self.eta = eta
 
     def get_outlet_state(self, US, PR):
 
-        dH = _dH_isentropic(US, US._P*self.PR)*self.eta
+        dH_is = _dH_isentropic(US, US._P*PR)
+        dH = dH_is*self.eta
 
         return {'H': US._H + dH, 'P': US._P*PR}
 
@@ -276,6 +296,9 @@ class fixedPRTurbine(baseInertantFlow, baseTurbine):
             'P': US._P / self.PR_setpoint,
             'H': US._H + dH
         }
+
+    def _get_dP(self):
+        return self.US_node.thermo._P/self.PR_setpoint - self.US_node.thermo._P
 
     def evaluate(self):
         """Adjust flow to achieve target pressure ratio."""

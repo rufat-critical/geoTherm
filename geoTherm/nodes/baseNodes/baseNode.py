@@ -1,5 +1,6 @@
 from rich.console import Console
 from rich.table import Table
+import re
 
 
 class Node:
@@ -72,7 +73,6 @@ class Node:
 
         # Return the captured table output as a string
         return capture.get()
-
     def _generateParamStr(self):
         """
         Create a formatted string of display variables for the Node object.
@@ -86,24 +86,42 @@ class Node:
 
         # Iterate over each display variable in the node
         for dVar in self._displayVars:
-            # Get the value of the display variable
-            if ':' in dVar:
-                var, dVar = dVar.split(':')
+            # Parse the display variable format using regex
+            pattern = r'^(?:([^:]+):)?([^;]+)(?:;(.+))?$'
+            match = re.match(pattern, dVar)
+            
+            if match:
+                var, display_name, fmt = match.groups()
+                # If var is None, use display_name as the variable name
+                var = var if var is not None else display_name
             else:
-                var = dVar
+                # Fallback for invalid format
+                var = display_name = dVar
+                fmt = None
 
             try:
                 val = getattr(self, var)
             except AttributeError:
                 val = 'error'
 
-            # Format the variable depending on its type
+            # Format the variable depending on its type and format specification
             if isinstance(val, (int, float)):
-                # Format numeric variables with 5 significant digits
-                vars_str.append(f"{dVar}:{val:0.5g}")
+                if fmt:
+                    # Use custom format if provided
+                    vars_str.append(f"{display_name}:{val:{fmt}}")
+                else:
+                    # Default to 5 significant digits
+                    vars_str.append(f"{display_name}:{val:0.5g}")
+            elif isinstance(val, dict):
+                if fmt:
+                    # Apply format to dictionary values if format is specified
+                    val = ' '.join([f"{k}:{v:{fmt}}" for k, v in val.items()])
+                else:
+                    # No formatting if fmt is not specified
+                    val = ' '.join([f"{k}:{v}" for k, v in val.items()])
+                vars_str.append(f"{display_name}: {val}")
             else:
-                # Format non-numeric variables as is
-                vars_str.append(f"{dVar}: {val}")
+                vars_str.append(f"{display_name}: {val}")
 
         # Join the formatted variables into a single string
         return ' |'.join(vars_str)

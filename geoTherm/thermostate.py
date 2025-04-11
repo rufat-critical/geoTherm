@@ -6,6 +6,7 @@ from rich.table import Table
 from .logger import logger
 import re
 from .utils import R_ideal
+from .DEFAULTS import DEFAULTS
 
 
 # Utility functions for thermostate
@@ -152,8 +153,8 @@ coolprop_phase_index = {
 class coolprop_wrapper:
     """ Wrapper for CoolProp, makes it easy to interface with thermo state """
 
-    def __init__(self, cDict=None, state=None, stateVars=None, cType='Y', model='coolprop',
-                 EoS='HEOS'):
+    def __init__(self, cDict=None, state=None, stateVars=None, cType='Y',
+                 EoS='REFPROP'):#'HEOS'):
         """
         Initialize coolprop object.
 
@@ -502,7 +503,7 @@ class thermo:
               'surface_tension': 'SURFACETENSION',
               'gas_constant': 'GASCONSTANT'}
 
-    def __init__(self, fluid=None, state=None, model='coolprop', **kwargs):
+    def __init__(self, fluid=None, state=None, model='coolprop', EoS=None, **kwargs):
         """
         Initialize the thermo object.
         
@@ -513,6 +514,9 @@ class thermo:
         """
 
         self.model = model
+
+        if EoS is None:
+            EoS = DEFAULTS.EoS
 
         # Parse fluid composition
         cDict = parseComposition(fluid)
@@ -528,7 +532,7 @@ class thermo:
         if self.model == 'coolprop':
             self.pObj = coolprop_wrapper(cDict=cDict, state=state,
                                          stateVars=stateVars,
-                                         model=model, **kwargs)
+                                         EoS=EoS, **kwargs)
         else:
             logger.critical(f'Invalid thermo model used in input: {model}'
                             "The Valid Models are: 'coolprop'")

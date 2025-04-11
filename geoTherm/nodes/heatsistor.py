@@ -1,6 +1,10 @@
 from .baseNodes.baseThermal import baseThermal, baseHeatsistor
+from .baseNodes.baseThermo import baseThermo
+from .baseNodes.baseFlow import baseFlow
 from ..units import inputParser, addQuantityProperty
-
+from ..logger import logger
+import numpy as np
+from ..resistance_models.heat import HTC
 
 @addQuantityProperty
 class Heatsistor(baseHeatsistor):
@@ -52,7 +56,7 @@ class Heatsistor(baseHeatsistor):
 
 
 
-class ConvectiveResistor(Heatsistor):
+class ConvectiveResistor2(Heatsistor):
 
     @inputParser
     def __init__(self, name, flow, boundary, HTC):
@@ -86,6 +90,125 @@ class ConvectiveResistor(Heatsistor):
         from pdb import set_trace
         set_trace()
         return 100
+
+
+
+class ConvectiveResistor(Heatsistor):
+
+    def __init__(self, name, cool, hot, h_hot=None, h_cool=None, A_cool=None, k_wall=15, A_hot=None, layers=None):
+
+        self.name = name
+        self.cool = cool
+        self.hot = hot
+
+        self.h_hot = h_hot
+        self.h_cool = h_cool
+        self.A_cool = A_cool
+        self.A_hot = A_hot
+        self.k_wall = k_wall
+        self.layers = layers
+        self._Q = 0
+
+
+    def initialize(self, model):
+        super().initialize(model)
+
+        if isinstance(self.hot_node, baseThermo):
+            if self.h_hot is None:
+                logger.critical(f"Convective Resistor is connected to a thermo node {self.name} "
+                                f"but no h_hot is provided")
+            else:
+                # Check if h_hot is a correlation name or constant value
+                if isinstance(self.h_hot, str):
+                    self.htc_hot = HTC(self.h_hot, self.hot_node)
+                else:
+                    self.htc_hot = HTC('constant', None, h=self.h_hot)
+
+        if isinstance(self.cool_node, baseThermo):
+            if self.h_cool is None:
+                logger.critical(f"Convective Resistor is connected to a thermo node {self.name} "
+                                f"but no h_cool is provided")
+            else:
+                # Check if h_cool is a correlation name or constant value
+                if isinstance(self.h_cool, str):
+                    self.htc_cool = HTC(self.h_cool, self.cool_node)
+                else:
+                    self.htc_cool = HTC('constant', None, h=self.h_cool)
+
+        if self.h_hot is None or self.h_cool is None:
+            from pdb import set_trace
+            set_trace()
+
+
+        if isinstance(self.cool_node, baseFlow):
+            self.geometry = self.cool_node.geometry
+            self._Acool = self.geometry._Ain
+            self._Ahot = self.geometry._Aout
+
+        if isinstance(self.hot_node, baseFlow):
+            self.geometry = self.hot_node.geometry
+            self._Ahot = self.geometry._Ain
+            self._Acool = self.geometry._Aout
+
+        
+
+    #def _R(self):
+
+        #R_hot = 1/(self.h_hot*self._Ahot)
+        #R_cool = 1/(self.h_cool*self._Acool)
+
+      #  R_wall = np.log(self.geometry._Do/self.geometry._Di)/(2*np.pi*self.geometry._L*self.k_wall)
+
+     #   return R_hot + R_cool + R_wall
+
+
+    def evaluate(self): #, w, US):
+        
+       # #if self.htc_cool
+        #self.h_hot = self.htc_hot.evaluate(self.hot_node._w, self.hot_node.thermo)
+        #self.h_cool = self.htc_cool.evaluate(self.cool_node._w, self.cool_node.thermo)
+
+        if isinstance(self.h_hot, (float, int)):
+            R_hot = 1/(self.h_hot*self._Ahot)
+        else:
+            from pdb import set_trace
+            set_trace()
+
+        if isinstance(self.h_cool, (float, int)):
+            R_cool = 1/(self.h_cool*self._Acool)
+        else:
+            if self.h_cool == 'DB':
+                self.htc_cool = HTC('Dittus-Boelter', self.cool_node)
+                US, _, _ = self.cool_node.thermostates()
+                Nu_cool = self.htc_cool.evaluate(US)
+                h_cool = Nu_cool*US._conductivity/self.geometry._Di
+                R_cool = 1/(h_cool*self._Acool)
+                from pdb import set_trace
+                #set_trace()
+            else:
+                from pdb import set_trace
+                set_trace()
+
+        R_wall = np.log(self.geometry._Do/self.geometry._Di)/(2*np.pi*self.geometry._L*self.k_wall)
+
+        self._R = R_hot + R_cool + R_wall
+
+
+
+        if isinstance(self.hot_node, baseThermo):
+            T_hot = self.hot_node.thermo._T
+        else:
+            from pdb import set_trace
+            set_trace()
+
+        if isinstance(self.cool_node, baseThermo):
+            T_cool = self.cool_node.thermo._T
+        else:
+            US, _, _ = self.cool_node.thermostates()
+            T_cool = US._T
+
+        self._Q = (T_hot - T_cool)/self._R
+
 
 
 

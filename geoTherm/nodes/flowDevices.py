@@ -45,13 +45,25 @@ class PressureController(baseInertantFlow):
 @addQuantityProperty
 class fixedFlow(baseFlow):
 
+    _units = baseFlow._units | {
+        'area': 'AREA'
+    }
+
     @inputParser
     def __init__(self, name, US, DS,
-                 w:"MASSFLOW"):
+                 w:"MASSFLOW",
+                 flow_func='isentropic'):
 
         super().__init__(name, US, DS)
 
         self._w = w
+
+        if flow_func == 'isentropic':
+            from geoTherm.flow_funcs import IsentropicFlow
+            self.flow_func = IsentropicFlow
+        else:
+            from pdb import set_trace
+            set_trace()
 
     def thermostates(self):
         if self._w > 0:
@@ -79,6 +91,10 @@ class fixedFlow(baseFlow):
         #US = self.model.nodes[self.US].thermo
         return {'H': US._H, 'P': US._P*PR}
 
+
+    def _get_dP(self, US, PR):
+        return US._P*PR
+
     def get_inlet_state(self, DS, PR):
 
         return {'H': DS._H,
@@ -87,166 +103,6 @@ class fixedFlow(baseFlow):
     def _set_flow(self, w):
         self._w = w
 
-
-@addQuantityProperty
-class fixedFlowTurbo3(baseTurbo, fixedFlow):
-    _bounds = [1/100, 100]
-
-    _units = baseFlow._units | {
-         'dH': 'SPECIFICENERGY',
-         'W': 'POWER'
-     }
-
-    _displayVars = ['w', 'PR', 'dP', 'dH', 'W']
-
-    def __init__(self, name, US, DS, w, eta):
-
-        super().__init__(name, US, DS, w)
-        self.eta = eta
-
-    def get_outlet_state(self, US, PR):
-        """Calculate pump outlet thermodynamic state."""
-
-        dH_is = _dH_isentropic(US, US._P*PR)
-
-        # Check if expansion or compression
-        if PR == 1:
-            dH = 0
-        elif PR > 1:
-            # Compression
-            dH = dH_is/self.eta
-        else:
-            # Expansion
-            dH = dH_is*self.eta
-
-        return {
-            'P': US._P * PR,
-            'H': US._H + dH
-            }
-
     @property
-    def _dH_is(self):
-
-        US = self.US_node.thermo
-        DS = self.DS_node.thermo
-
-        return _dH_isentropic(US, DS._P)
-
-    @property
-    def _dH(self):
-        US = self.US_node.thermo
-        DS = self.DS_node.thermo
-
-        if US._P/DS._P > 1:
-            return self._dH_is*self.eta
-        else:
-            return self._dH_is/self.eta
-
-
-class PressureController2(baseInertantFlow):
-    
-    @inputParser
-    def __init__(self, name, US, DS,
-                 w:'MASSFLOW',
-                 dP:'PRESSURE'=0,
-                 Z=(1e-5, 'm**-3')):
-        
-        super().__init__(name, US=US, DS=DS, w=w, Z=Z)
-
-        self.w_setpoint = w
-        self.dP_setpoint = dP
-
-    
-    @property
-    def _w(self):
-        US, DS, _ = self.thermostates()
-
-        from pdb import set_trace
-        set_trace()
-        return (self._w_setpoint + (DS._P - US._P)
-                - self.dP_setpoint)
-                            
-                             
-    def get_outlet_state(self, US, w):
-        from pdb import set_trace
-        set_trace()
-
-
-@addQuantityProperty
-class PressureRatioTurbo(baseInertantFlow, baseTurbo):
-    """Turbomachine that maintains a specified pressure ratio by adjusting flow."""
-
-    _bounds = [0, 1e5]
-
-    _units = baseInertantFlow._units | {
-        'dH': 'SPECIFICENERGY',
-        'W': 'POWER',
-    }
-
-    _displayVars = ['w', 'PR', 'dP', 'dH', 'W']
-
-    def __init__(self, name, US, DS, PR,
-                 w,
-                 eta=1.0, Z=(1, 'm**-3')):
-        """Initialize pressure ratio controlled turbomachine.
-
-        Args:
-            name: Component identifier
-            US: Upstream node reference
-            DS: Downstream node reference
-            PR: Pressure ratio to maintain (P_out/P_in)
-            w: Initial mass flow rate
-            PR_bounds: Pressure ratio bounds
-            eta: Isentropic efficiency
-            Z: Flow inertance
-        """
-        super().__init__(name=name, US=US, DS=DS, w=w, Z=Z)
-        self.PR_setpoint = PR
-        self.eta = eta
-
-    def get_outlet_state(self, US, w):
-        """Calculate outlet state based on pressure ratio."""
-        dH_is = _dH_isentropic(US, US._P * self.PR)
-
-        # Determine work based on compression/expansion
-        if self.PR_setpoint == 1:
-            dH = 0
-        elif self.PR_setpoint > 1:
-            # Compression
-            dH = dH_is / self.eta
-        else:
-            # Expansion
-            dH = -dH_is * self.eta
-
-        return {
-            'P': US._P * self.PR_setpoint,
-            'H': US._H + dH
-        }
-
-    def evaluate(self):
-        """Adjust flow to achieve target pressure ratio."""
-        US, DS, _ = self.thermostates()
-        DS_target = self.get_outlet_state(US, self._w)
-
-        # Flow acceleration based on pressure error
-        pressure_error = DS_target['P'] - DS._P
-
-        self._wdot = pressure_error / self._Z
-
-    @property
-    def _dH_is(self):
-        """Calculate isentropic enthalpy change."""
-        US = self.US_node.thermo
-        DS = self.DS_node.thermo
-        return _dH_isentropic(US, DS._P)
-
-    @property
-    def _dH(self):
-        """Calculate actual enthalpy change."""
-        US = self.US_node.thermo
-        DS = self.DS_node.thermo
-
-        if US._P/DS._P > 1:
-            return self._dH_is * self.eta
-        else:
-            return self._dH_is / self.eta
+    def _area(self):
+        return self.flow_func._cdA(self.US_node.thermo, self.DS_node.thermo, self._w)

@@ -86,6 +86,7 @@ class baseThermo(Node):
             bool: False if successful, True if an error occurs.
         """
 
+        HP0 = self.thermo._HP
         try:
             # Attempt to update the thermodynamic state
             self.thermo._update_state(state)
@@ -94,6 +95,8 @@ class baseThermo(Node):
             # If an error occurs, trigger debugging and return True
             logger.error(f"Failed to update thermo state for {self.name} to: "
                          f"{state}\nThermo error:{e}")
+
+            self.thermo._HP = HP0
             return True
 
     @property

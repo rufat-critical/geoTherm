@@ -13,7 +13,7 @@ from ...utils import thermo_data
 import numpy as np
 import geoTherm as gt
 from ...thermostate import thermo
-from ...nodes.heatsistor import Qdot
+from ...nodes.heatsistor import Qdot, ConvectiveResistor
 from ...nodes.pump import Pump, basePump
 from ...nodes.turbine import Turbine, simpleTurbine, chokedTurbine
 from ...utils import eps
@@ -88,7 +88,18 @@ class baseBranch:
         if isinstance(self.US_junction.node, baseThermo):
             self._thermo = thermo.from_state(self.US_junction.node.thermo.state)
         else:
-            self._thermo = thermo.from_state(self.DS_junction.node.thermo.state)
+            if isinstance(self.DS_junction.node, baseThermo):
+                self._thermo = thermo.from_state(self.DS_junction.node.thermo.state)
+            elif isinstance(self.DS_junction.node, baseFlow):
+                self._thermo = thermo.from_state(self.DS_junction.node.US_node.thermo.state)
+            else:
+                if isinstance(self.US_junction.node, baseFlow):
+                    self._thermo = thermo.from_state(self.US_junction.node.DS_node.thermo.state)
+                else:
+                    from pdb import set_trace
+                    set_trace()
+
+
 
     def reset_flags(self):
         self.fixed_flow = False
@@ -163,11 +174,11 @@ class baseBranch:
                                 f"{self._bounds[0]}")
             else:
                 self.state = self._state
-                self.penalty = (self._bounds[1] - x[1] - 10)*1e5
+                self.penalty = (self._bounds[1] - x[0] - 10)*1e5
                 logger.warn(f"Flow Branch {self.name} has a flow value of "
                                 f" {x[0]} which is above the upper bound of "
                                 f"{self._bounds[1]}")
-
+        
     def solve(self):
         from pdb import set_trace
         set_trace()
@@ -337,8 +348,7 @@ class FlowBranch(baseBranch):
 
             if isinstance(node, (Pump, cycleCloser, fixedFlow)):
                 # Check for pressure gain components
-                from pdb import set_trace
-                #set_trace()
+                self.pressure_gain = True
 
            # print('Check for pressure gain components')
 
@@ -461,6 +471,7 @@ class FlowBranch(baseBranch):
         self._state = np.copy(self.x)
         self.initialized = True
 
+
     @property
     def average_w(self):
         """
@@ -529,7 +540,7 @@ class FlowBranch(baseBranch):
         if self.DS_target['P'] < 0:
             if np.sign(self.error) == np.sign(self._w):
                 from pdb import set_trace
-                set_trace()
+                #set_trace()
 
         return np.array([self.error])
 
@@ -859,11 +870,11 @@ class FlowBranch(baseBranch):
 
 
         US_thermo = US_junction.node.thermo
+        # Track Qin to this branch
+        Qin = 0
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
 
-            # Track Qin to this branch
-            Qin = 0
             if inode == len(nodes) - 1:
                 # Set node flow to branch mass flow
                 node._set_flow(self._w)
@@ -872,10 +883,26 @@ class FlowBranch(baseBranch):
                 if isinstance(node, fixedFlow):
                     # It doesn't matter what the outlet state is
                     # because the flow is fixed
+                    
                     if self.stateful:
                         from pdb import set_trace
                         set_trace()
                     return
+                
+                if isinstance(node, gt.chokedTurbine):
+                    node.evaluate()
+                    from pdb import set_trace
+                    #set_trace()
+                    #if node._w > self._w:
+                    #    from pdb import set_trace
+                        #set_trace()
+                    #    self.penalty = (node._w/self._w + 10)*10#*1e5
+                    #else:
+                   #     self.penalty = -(self._w - node._w + 10)*10#*1e5
+                    self.penalty = (node._w/self._w-1)*10#*1e5
+                    
+                    return
+
 
                 self.DS_target = node.get_outlet_state(US_thermo, self._w)
 
@@ -974,7 +1001,7 @@ class FlowBranch(baseBranch):
 
                 if self.fixed_flow:
                     # Calculate penalty based on pressure
-                    if isinstance(self.fixed_flow_node, gt.Pump):
+                    if isinstance(self.fixed_flow_node, gt.basePump):
                         # Increase Pressure Ratio
                         self.penalty = (-DS_state['P']+10)*1e5
                     elif isinstance(self.fixed_flow_node, gt.Turbine):
@@ -1241,7 +1268,8 @@ class FlowBranch(baseBranch):
         def solve_func(x):
             # Convert x array to dictionary mapping nodes to PR values
             ixPR = {node: x[i] for node, i in iPR.items()}
-            
+
+    
             # Check bounds and return error vectors pointing back to valid range if violated
             error = np.zeros_like(x)
             self.penalty = False
@@ -1547,7 +1575,6 @@ class FlowBranch(baseBranch):
         sol = self.solve_compressible(x0, nodes, US, PR_max, iResistors)
 
 
-
     def update_choked_thermo(self, US, DS, res, PR):
         # Update the thermo for the choked node
         # US Resistor
@@ -1659,7 +1686,7 @@ class ThermalBranch(baseBranch):
         self.state = np.array([])
 
         if len(self.nodes) == 1:
-            if isinstance(self.nodes[0], Qdot):
+            if isinstance(self.nodes[0], (Qdot, ConvectiveResistor)):
                 # The heat is specified via the Qdot object
                 self.stateful = False
                 return
@@ -1668,6 +1695,9 @@ class ThermalBranch(baseBranch):
                 self.stateful = False
                 return
 
+
+        from pdb import set_trace
+        set_trace()
         for inode, node in enumerate(self.nodes):
             nMap = self.model.node_map[node.name]
 
@@ -1754,19 +1784,42 @@ class ThermalBranch(baseBranch):
             nodes = nodes[::-1]
             US_junction = self.DS_junction.node
             DS_junction = self.US_junction.node
-            hot_junction = self.DS_junction.node
-            cool_junction = self.US_junction.node
+            hot_junction = self.DS_junction#.node
+            cool_junction = self.US_junction#.node
+
+            if isinstance(hot_junction, baseFlow):
+                from pdb import set_trace
+                set_trace()
+            if isinstance(cool_junction, baseFlow):
+                from pdb import set_trace
+                set_trace()
+                cool_junction = cool_junction.US_node
         else:
             US_junction = self.US_junction.node
             DS_junction = self.DS_junction.node
-            hot_junction = self.US_junction.node
-            cool_junction = self.DS_junction.node
-    
+            hot_junction = self.US_junction#.node
+            cool_junction = self.DS_junction#.node
+
+            #if isinstance(hot_junction, baseFlow):
+            #    from pdb import set_trace
+            #    set_trace()
+            #if isinstance(cool_junction, baseFlow):
+
+             #   _,_, i = cool_junction.thermostates()
+
+             #   if i > 1:
+             #       cool_junction = cool_junction.US_node
+             #   else:
+             #       cool_junction = cool_junction.DS_node
+
+            #from pdb import set_trace
+            #set_trace()
+
         #US_junction = self.US_junction.node
         #DS_junction = self.DS_junction.node
 
         if not self.fixed_flow:
-            if hot_junction.thermo._T < cool_junction.thermo._T:
+            if hot_junction._T < cool_junction._T:
                 if self._Q < 0:
                     self.penalty = (-self.state[0] + 10)*1e10
                 else:
@@ -1775,6 +1828,7 @@ class ThermalBranch(baseBranch):
                 logger.warn(f"Thermal Branch {self.name} has heat flowing from "
                             "cold to hot")
                 return
+
 
         hot_thermo = hot_junction.thermo
         for inode, node in enumerate(nodes):
@@ -1862,9 +1916,11 @@ class ThermalBranch(baseBranch):
             return np.array([self.penalty])
 
         if self._Q < 0:
-            Tout = self.US_junction.node.thermo._T
+            Tout = self.US_junction._T
         else:
-            Tout = self.DS_junction.node.thermo._T
+            Tout = self.DS_junction._T
+            from pdb import set_trace
+            set_trace()
 
         if self.fixed_flow:
             from pdb import set_trace

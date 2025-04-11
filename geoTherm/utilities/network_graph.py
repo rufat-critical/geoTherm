@@ -34,6 +34,10 @@ def generate_dot_code(model):
     # Start building the DOT graph
     dot = 'digraph G {\nnode [width=0, height=0, margin=0];\n'
 
+    # Helper function to escape node names
+    def escape_node_name(name):
+        return f'"{name}"'
+
     # Iterate through all nodes to define their properties in the DOT format
     for name, node in nodes.items():
 
@@ -84,21 +88,21 @@ def generate_dot_code(model):
             shape = 'circle'
             label = f"{name}"
 
-        # Add the node to the DOT graph
-        dot += f'{name} [shape={shape}, label="{label}", color={color}]\n'
+        # Add the node to the DOT graph with escaped name
+        dot += f'{escape_node_name(name)} [shape={shape}, label="{label}", color={color}]\n'
 
     # Iterate through the node map to define connections
     for name, nMap in node_map.items():
         for US in nMap['US']:
-            dot += f'{US} -> {name};\n'
+            dot += f'{escape_node_name(US)} -> {escape_node_name(name)};\n'
 
         for hot in nMap['hot']:
-            dot += f'{hot} -> {name} [style=dashed]; \n'
+            dot += f'{escape_node_name(hot)} -> {escape_node_name(name)} [style=dashed];\n'
 
         # Connect Rotor Node to turbo objects
         if isinstance(nodes[name], Rotor):
             for load in nodes[name].loads:
-                dot += f'{name} -> {load} [dir=both, style=dashed];\n'
+                dot += f'{escape_node_name(name)} -> {escape_node_name(load)} [dir=both, style=dashed];\n'
 
     dot += '}'
 

@@ -1,6 +1,43 @@
 from dataclasses import dataclass
 
-# UNIT Systems for geoTherm
+
+_DISPLAY_FORMAT = {
+    # Temperature units
+    'degC': '°C',                      # Celsius
+    'degF': '°F',                      # Fahrenheit 
+    'degK': 'K',                       # Kelvin
+    'degR': '°R',                      # Rankine
+
+        # Basic units
+        'm**2': 'm²',                      # Square meter
+        'm**3': 'm³',                      # Cubic meter
+        'in**2': 'in²',                    # Square inch
+        'in**3': 'in³',                    # Cubic inch
+        'ft**2': 'ft²',                    # Square feet
+        'ft**3': 'ft³',                    # Cubic feet
+
+        # Common compound units
+        'kg/m**3': 'kg/m³',                # Density
+        'm**3/kg': 'm³/kg',                # Specific volume
+        'kg/s/m**2': 'kg/(s·m²)',          # Mass flux
+        'W/m**2/degK': 'W/(m²·K)',         # Heat transfer coefficient
+        'W/m/K': 'W/(m·K)',                # Thermal conductivity
+        'J/kg/degK': 'J/(kg·K)',           # Specific heat
+        'kJ/kg/K': 'kJ/(kg·K)',            # Specific heat (kilo)
+        'Btu/lb/degR': 'Btu/(lb·°R)',      # Specific heat (English)
+        'Pa*s': 'Pa·s',                    # Pascal-second
+
+        # Basic units without changes
+        'J': 'J',                          # Joule
+        'm': 'm',                          # Meter
+        'kg': 'kg',                        # Kilogram
+        'Pa': 'Pa',                        # Pascal
+        'W': 'W',                          # Watt
+        'N': 'N',                          # Newton
+        'bar': 'bar',                      # Bar
+        'psi': 'psi',                      # Pounds per square inch
+        'rpm': 'rpm',                      # Revolutions per minute
+    }
 
 
 @dataclass
@@ -42,7 +79,9 @@ class SI:
         'ROTATIONSPEED': 'rpm',            # Revolutions per minute
         'SURFACETENSION': 'N/m',
         'INERTANCE': 'm**-3',
-        'GASCONSTANT': 'J/kmol/K'
+        'GASCONSTANT': 'J/kmol/K',
+        'RPM': 'rpm',
+        'ANGLE': 'deg'
     }
 
 
@@ -86,7 +125,8 @@ class ENGLISH:
         'ROTATIONSPEED': 'rpm',            # Revolutions per minute
         'SURFACETENSION': 'lbf/in',
         'INERTANCE': 'in**-3',
-        'GASCONSTANT': 'ft*lbf/lb/degR'
+        'GASCONSTANT': 'ft*lbf/lb/degR',
+        'RPM': 'rpm'
     }
 
 
@@ -129,5 +169,6 @@ class MIXED:
         'ROTATIONSPEED': 'rpm',            # Revolutions per minute
         'SURFACETENSION': 'N/m',
         'INERTANCE': 'm**-3',
-        'GASCONSTANT': 'J/kmol/K'
+        'GASCONSTANT': 'J/kmol/K',
+        'RPM': 'rpm'
     }
