@@ -3,7 +3,7 @@ from ...nodes.boundary import Boundary
 from ...nodes.heatsistor import Qdot
 from ...nodes.volume import lumpedMass, Volume, Station
 from ...logger import logger
-
+from ...nodes.baseNodes.baseThermo import baseThermo
 
 class Junction:
 
@@ -75,6 +75,7 @@ class ThermalJunction(Junction):
 
         super().initialize()
 
+
         if len(self.network.net_map[self.name]['flow']) != 0:
             # This is associated with a flow branch and state
             # is updated in the branch
@@ -82,6 +83,31 @@ class ThermalJunction(Junction):
         else:
             # Need to update state
             self.stateful = True
+
+    @property
+    def _T(self):
+
+        if isinstance(self.node, baseThermo):
+            return self.node.thermo._T
+        else:
+            iflow = self.network.net_map[self.name]['flow'][0]
+            w = self.network.branches[iflow]._w
+            if w > 0:
+                return self.node.US_node.thermo._T
+            else:
+                return self.node.DS_node.thermo._T
+
+    @property
+    def thermo(self):
+        if isinstance(self.node, baseThermo):
+            return self.node.thermo
+        else:
+            iflow = self.network.net_map[self.name]['flow'][0]
+            w = self.network.branches[iflow]._w
+            if w > 0:
+                return self.node.US_node.thermo
+            else:
+                return self.node.DS_node.thermo
 
     @property
     def Q_flux(self):
@@ -143,6 +169,13 @@ class BoundaryJunction(Junction):
     def xdot(self):
         return np.array([])
 
+    @property
+    def _T(self):
+        return self.node.thermo._T
+
+    @property
+    def thermo(self):
+        return self.node.thermo  
 
 class OutletJunction(BoundaryJunction):
     """

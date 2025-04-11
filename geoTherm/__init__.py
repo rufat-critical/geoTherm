@@ -1,6 +1,6 @@
 # __init__.py
 
-from geoTherm.main import Model, Solution
+from geoTherm.main import Model, Solution, load
 from geoTherm.units import units, unit_converter
 from geoTherm.utilities.thermo_plotter import thermoPlotter
 from geoTherm.utilities.flowcalc import flowCalc
@@ -24,3 +24,6 @@ from geoTherm.nodes.controller import *
 from geoTherm.nodes.schedule import *
 from geoTherm.thermostate import thermo
 from . import flow_funcs
+from geoTherm.nodes.geometry import *
+from geoTherm.resistance_models.heat import *
+from geoTherm.DEFAULTS import DEFAULTS
