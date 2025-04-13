@@ -29,12 +29,12 @@ class Station(baseThermo):
         self.penalty = False
 
         # This is the current state
-        self.state = np.array([self.thermo._density, self.thermo._H])
+        self.state = np.array([self.thermo._H, self.thermo._P])
         
         #self._x = np.array([self.thermo._H, self.thermo._P])
         # This is the latest state that didn't make thermostate
         # complain
-        self._state = np.array([self.thermo._density, self.thermo._H])
+        self._state = np.array([self.thermo._H, self.thermo._P])
         #self.__x = np.array([self.thermo._H, self.thermo._P])
 
     def update_thermo(self, state):
@@ -46,7 +46,7 @@ class Station(baseThermo):
         return error
 
     def _reinit_state_vars(self):
-        self.state = np.array([self.thermo._density, self.thermo._H])
+        self.state = np.array([self.thermo._H, self.thermo._P])
 
     @property
     def x(self) -> np.ndarray:
@@ -68,7 +68,7 @@ class Station(baseThermo):
         # Calculate fluxes (net mass and energy flow)
         wNet, Hnet, Wnet, Qnet = self.flux
 
-        return np.array([wNet, (Hnet + Wnet + Qnet)])
+        return np.array([(Hnet + Wnet + Qnet), wNet])
 
     def update_state(self, x):
         """
@@ -83,17 +83,17 @@ class Station(baseThermo):
         self.state = x
         try:
             #self.thermo._DU = x[0], x[1]
-            self.thermo._DH = x[0], x[1]
+            self.thermo._HP = x[0], x[1]
             self.penalty = False
             # If thermo did not complain then update __x
             self._state = x
         except Exception as e:
             logger.warn(f'Failed to update thermo state for {self.name} to:'
-                        f'D, H: {x}, resetting to D0, H0: {self._state}. '
+                        f'H, P: {x}, resetting to H0, P0: {self._state}. '
                         f'Error: {e}')
             # If thermo complained then revert it back to __x state
             #self.thermo._DU = x0
-            self.thermo._DH = self._state
+            self.thermo._HP = self._state
             # Point penalty in direction of working state
             self.penalty = (self._state - x) * 1e5
 
@@ -399,7 +399,16 @@ class Volume(Station):
         return self._x
         return np.array([self._mass, self._U])
 
+    @property
+    def xdot(self):
 
+        if self.penalty is not False:
+            return self.penalty
+
+        # Calculate fluxes (net mass and energy flow)
+        wNet, Hnet, Wnet, Qnet = self.flux
+
+        return np.array([wNet, (Hnet + Wnet + Qnet)])
 
 
 @addQuantityProperty
