@@ -158,7 +158,7 @@ def T_dQ(Q, mdot_hot, mdot_cold, n_points=100, config='counter',
             hot_in._HP = hot_out._H + Q/mdot_hot, hot_out._P + dP_hot        
 
     if cold_in is not None and cold_out is not None:
-        Q_cold = mdot_cold * (cold_in._H - cold_out._H)
+        Q_cold = -mdot_cold * (cold_in._H - cold_out._H)
         if np.abs(Q_cold - Q) > 1:
             from pdb import set_trace
             set_trace()
@@ -246,19 +246,24 @@ def T_dQ_counter_flow(Q, mdot_hot, mdot_cold,
 
         # If phase change, insert saturation point at i-1
         if cold_state.phase != prev_phase: 
+            
+            # Create saturation state
+            sat_state = thermo.from_state(cold_state.state)
+            
             # Phase change detected - insert saturation point at i-1
             if prev_phase == 'liquid' and cold_state.phase == 'two-phase':
                 # Calculate state at saturation point
-                sat_state = thermo.from_state(cold_state.state)
                 sat_state._PQ = current_P_cold, 0  # saturated liquid
                 i_pos = i
 
             elif prev_phase == 'two-phase' and cold_state.phase in ['gas', 'supercritical_gas']:
                 # Found transition to vapor, calculate Q at saturation point
-                sat_state = thermo.from_state(cold_state.state)
                 sat_state._PQ = current_P_cold, 1  # saturated vapor
                 i_pos = i+1
 
+            elif prev_phase == 'supercritical_liquid' and cold_state.phase == 'supercritical':
+                sat_state._TP = sat_state._T, current_P_cold
+                i_pos = i
             else:
                 from pdb import set_trace
                 set_trace()
@@ -374,7 +379,7 @@ def T_pinch_counter(cold_inlet, cold_outlet, hot_inlet, hot_outlet, mdot_cold, m
     return (dT_cold_inlet, dT_cold_outlet, dT_cold_intermediate)
 
 
-def T_pinch_Q(cold_inlet, cold_outlet, hot_inlet, mdot_hot, T_pinch, T_pinch_out, dP_cold, dP_hot):
+def T_pinch_Q2(cold_inlet, cold_outlet, hot_inlet, mdot_hot, T_pinch, T_pinch_out, dP_cold, dP_hot):
     """
     Calculate heat duty, pinch point, and hot outlet state for a heat exchanger
     using enthalpy changes and state updates
@@ -461,6 +466,37 @@ def T_pinch_Q(cold_inlet, cold_outlet, hot_inlet, mdot_hot, T_pinch, T_pinch_out
         set_trace()
 
     return Q, Q/(cold_outlet._H - cold_inlet._H)
+
+
+
+
+#def T_pinch_counter_flow(cold_inlet, cold_outlet, hot_inlet, hot_outlet, mdot_cold, mdot_hot)
+
+
+
+def find_Pinch_Q(cold_inlet, cold_outlet, hot_inlet, mdot_hot, dP_hot, T_pinch):
+    """
+    Find the heat transfer rate that results in a pinch point temperature difference of T_pinch
+    """
+
+    # Get Q_max
+    hot_out = hot_inlet.from_state(hot_inlet.state)
+    hot_out._TP = cold_inlet._T + T_pinch, hot_inlet._P - dP_hot
+    Q_max = mdot_hot * (hot_inlet._H - hot_out._H)
+    Q_min = 0.001
+
+    # Get max and min cold_inlet mdots
+    mdot_cold_max = Q_max/(cold_outlet._H - cold_inlet._H)
+    mdot_cold_min = Q_min/(cold_outlet._H - cold_inlet._H)
+
+
+    if cold_inlet._P >= cold_inlet._P_crit:
+        from pdb import set_trace
+        set_trace()
+
+
+    from pdb import set_trace
+    set_trace()
 
 
 @inputParser
