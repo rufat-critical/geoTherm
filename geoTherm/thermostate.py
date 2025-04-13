@@ -148,6 +148,74 @@ coolprop_phase_index = {
     cp.iphase_unknown: 'unknown'
 }
 
+class Incompressible:
+
+    def __init__(self, cDict=None, state=None, stateVars=None, cType='Y',
+                 cp=4184):
+        
+
+        # Temperature is calculated using this specific heat
+        self._cp = cp
+
+        if state is not None:
+            self.update_state(state, stateVars=stateVars)
+        else:
+            self.update_state({'T': 300, 'P': 101325}, stateVars='TP')
+
+        if cDict is not None:
+            self.update_composition(cDict, cType=cType)
+        else:
+            self.update_composition({'Water': 1}, cType='Y')
+
+    def update_state(self, state, stateVars):
+
+        if stateVars == 'cp':
+            self._cp = state['cp']
+        elif stateVars == 'TP':
+            self.update_enthalpy(state['T'])
+            self._P = state['P']
+        elif stateVars == 'HP':
+            self._H = state['H']
+            self._P = state['P']
+        elif stateVars == 'DP':
+            self._P = state['P']
+            if state['D'] != 1000:
+                from pdb import set_trace
+                set_trace()
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    def update_composition(self, cDict, cType):
+        self._cDict = cDict
+        self._cType = cType
+
+    def get_property(self, property):
+
+        if property == 'H':
+            return self._H
+        elif property == 'T':
+            return self._H/self._cp + 273.15
+        elif property == 'species_names':
+            return list(self._cDict.keys())
+        elif property == 'phase':
+            return 'INCOMPRESSIBLE'
+        elif property == 'Y':
+            return list(self._cDict.values())
+        elif property == 'D':
+            # Return water for now
+            return 1000
+        elif property == 'cp':
+            return self._cp
+        elif property == 'P':
+            return self._P
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    def update_enthalpy(self, T):
+        self._H = self._cp*(T - 273.15)
+    
 
 
 class coolprop_wrapper:
@@ -375,7 +443,7 @@ def addThermoGetters(getterList):
         for name in getterList:
             prop = name[1:] if name.startswith('_') else name
             def getter(self, prop=prop):
-                return self.pObj.getProperty(prop)
+                return self.pObj.get_property(prop)
             setattr(cls, name, property(getter))
         return cls
     return decorator
@@ -389,13 +457,13 @@ def addThermoSetters(setterList):
 
             # Getter method that returns a tuple for the corresponding properties in SI units
             def getterSI(self, name=name, properties=properties):
-                return tuple(self.pObj.getProperty(p) for p in properties)
+                return tuple(self.pObj.get_property(p) for p in properties)
 
             # Getter method that returns a tuple for the corresponding properties in specified units
             def getterUnit(self, name=name, properties=properties):
                 return tuple(
-                    fromSI(self.pObj.getProperty(p), cls._units[p]) if p in cls._units 
-                    else self.pObj.getProperty(p) for p in properties
+                    fromSI(self.pObj.get_property(p), cls._units[p]) if p in cls._units 
+                    else self.pObj.get_property(p) for p in properties
                 )
 
             if len(properties) == 1:
@@ -533,6 +601,10 @@ class thermo:
             self.pObj = coolprop_wrapper(cDict=cDict, state=state,
                                          stateVars=stateVars,
                                          EoS=EoS, **kwargs)
+        elif self.model == 'incompressible':
+            self.pObj = Incompressible(cDict=cDict, state=state,
+                                       stateVars=stateVars,
+                                       **kwargs)
         else:
             logger.critical(f'Invalid thermo model used in input: {model}'
                             "The Valid Models are: 'coolprop'")
@@ -743,8 +815,8 @@ class thermo:
         Returns:
             dict: Dictionary of species mass fractions.
         """
-        species_names = self.pObj.getProperty('species_names')
-        Y = self.pObj.getProperty('Y')
+        species_names = self.pObj.get_property('species_names')
+        Y = self.pObj.get_property('Y')
         return {name: Y[i] for i, name in enumerate(species_names)}
 
     @property 
@@ -796,10 +868,10 @@ class thermo:
 
         # Set the quality to 0 at the same pressure and evaluate properties
         self._PQ = self._P, 0
-        prop0 = self.getProperty(prop)
+        prop0 = self.get_property(prop)
         # Set the quality to 1 at the same pressure and evaluate properties
         self._PQ = self._P, 1
-        prop1 = self.getProperty(prop)
+        prop1 = self.get_property(prop)
 
         # Revert state back to initial state
         self._HP = HP0
