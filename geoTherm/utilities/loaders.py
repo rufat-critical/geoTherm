@@ -98,3 +98,100 @@ def tube_reader(xls_path):
         tube_data[fluid_node][part][component].append(dimension)
 
     return tube_data
+
+
+def fluid_property_reader(xls_path):
+    """
+    Read fluid property data from an Excel file and return a pandas DataFrame with SI-converted values.
+    The Excel file should have a structure where:
+    - A row contains "DATA" followed by property names
+    - A row contains "UNITS" followed by corresponding units
+    - The actual data follows below these rows
+
+    Args:
+        xls_path (str): Path to the Excel file containing fluid property data
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing fluid properties with values converted to SI units.
+                         Original units are stored in the column names.
+
+    Raises:
+        FileNotFoundError: If the Excel file doesn't exist
+        ValueError: If the file is not an Excel file, required keywords not found, or unrecognized property header
+        Exception: If there's an error reading the Excel file
+    """
+    # Check if file exists
+    if not os.path.exists(xls_path):
+        raise FileNotFoundError(f"Excel file '{xls_path}' not found. Please check the file path and try again.")
+
+    # Check if file has the correct extension
+    if not xls_path.endswith(('.xlsx', '.xlsm', '.xls')):
+        raise ValueError(f"File '{xls_path}' is not an Excel file. Please provide a file with .xlsx, .xlsm, or .xls extension.")
+
+    # Define recognized property headers and their corresponding SI quantity types
+    PROPERTY_QUANTITIES = {
+        'Temperature': 'TEMPERATURE',
+        'Pressure': 'PRESSURE',
+        'Density': 'DENSITY',
+        'Specific Heat': 'SPECIFICHEAT',
+        'Thermal Conductivity': 'CONDUCTIVITY',
+        'Vapor Pressure': 'PRESSURE',
+        'Kinematic Viscosity': 'KINEMATICVISCOSITY',
+    }
+
+    try:
+        # Read the entire Excel file without specifying header
+        df = pd.read_excel(xls_path, header=None)
+        
+        # Find the row containing "DATA"
+        data_row = df[df.apply(lambda x: x.astype(str).str.contains('DATA', case=False, na=False)).any(axis=1)].index
+        if len(data_row) == 0:
+            raise ValueError("Could not find 'DATA' keyword in the Excel file")
+        data_row = data_row[0]
+        
+        # Find the row containing "UNITS"
+        units_row = df[df.apply(lambda x: x.astype(str).str.contains('UNITS', case=False, na=False)).any(axis=1)].index
+        if len(units_row) == 0:
+            raise ValueError("Could not find 'UNITS' keyword in the Excel file")
+        units_row = units_row[0]
+        
+        # Find the column containing "DATA"
+        data_col = df.iloc[data_row].astype(str).str.contains('DATA', case=False, na=False)
+        data_col = data_col[data_col].index[0]
+        
+        # Get property names and units
+        properties = df.iloc[data_row, (data_col + 1):].dropna().tolist()
+        
+        # Validate property headers
+        for prop in properties:
+            if prop not in PROPERTY_QUANTITIES:
+                raise ValueError(f"Unrecognized property header: '{prop}'. Valid headers are: {', '.join(PROPERTY_QUANTITIES.keys())}")
+        
+        units = df.iloc[units_row, (data_col + 1):len(properties) + data_col + 1].tolist()
+        
+        # Read the actual data, starting from the row after units
+        data_df = df.iloc[(units_row + 1):, (data_col + 1):len(properties) + data_col + 1]
+        data_df.columns = properties
+        
+        # Create a new DataFrame for SI-converted values
+        si_df = pd.DataFrame()
+        
+        # Convert each column to SI units
+        for prop, unit in zip(properties, units):
+            if unit.strip():  # Only convert if unit is specified
+                try:
+                    # Convert non-NaN values to SI units
+                    si_df[f"{prop}"] = data_df[prop].apply(
+                        lambda x: toSI((x, unit), PROPERTY_QUANTITIES[prop]) if pd.notna(x) else x
+                    )
+                except Exception as e:
+                    print(f"Warning: Could not convert {prop} to SI units. Error: {str(e)}")
+                    si_df[f"{prop}"] = data_df[prop]
+            else:
+                # If no unit specified, keep original values
+                si_df[prop] = data_df[prop]
+        
+        return si_df
+
+    except Exception as e:
+        raise Exception(f"Error reading Excel file '{xls_path}': {str(e)}")
