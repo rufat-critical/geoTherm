@@ -58,6 +58,7 @@ class Pump(baseInertantPump):
         self.eta = eta
         self.PumpMap = PumpMap
 
+    
     def evaluate(self):
 
         US, DS, _ = self.thermostates()
@@ -102,11 +103,27 @@ class fixedFlowPump(basePump, fixedFlow):
         eta (float): Isentropic efficiency
         """
     _displayVars = ['w', 'eta', 'dH', 'W', 'PR']
-    _bounds = [0, 100]
+    _bounds = [1, 100]
 
-    def __init__(self, name, US, DS, w, eta):
-        super().__init__(name, US, DS, w)
+    def __init__(self, name, US, DS, w, eta, flow_func='isentropic'):
+        super().__init__(name, US, DS, w, flow_func)
         self.eta = eta
+
+    @property
+    def _state_dict(self):
+        """
+        Get the state dictionary containing the node's current state information.
+
+        This property extends basePump's state dictionary by adding the
+        current efficiency value to it.
+        """
+        # Get only basePump's state dictionary by explicitly calling its _state_dict
+        state_dict = super()._state_dict
+
+        # Add the current efficiency value to the dictionary
+        state_dict['config'].update({'eta': self.eta})
+
+        return state_dict
 
     def get_outlet_state(self, US, PR):
         dH_is = _dH_isentropic(US, US._P*PR)/self.eta

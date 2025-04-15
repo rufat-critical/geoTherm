@@ -15,6 +15,20 @@ class Node:
     _displayVars = []  # Variables to display in the node table
     _units = {}  # Dictionary of quanities with associated units
 
+    @property
+    def _state_dict(self):
+        """
+        Returns a dictionary containing the basic identification information
+        of the node.
+
+        Returns:
+            dict: A dictionary with the following keys:
+                - 'Node_Name': The name of the node
+                - 'Node_Type': The class name of the node type
+        """
+        return {'Node_Type': type(self).__name__,
+                'config': {}}
+
     def initialize(self, model):
         """
         Attach the model to the component.

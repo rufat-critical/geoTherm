@@ -73,6 +73,10 @@ class GeometryGroup:
             config_dict[key] = geom_dict[list(geom_dict.keys())[0]]
             
         return config_dict
+    
+    def _state_dict(self):
+        from pdb import set_trace
+        set_trace()
 
     def __iadd__(self, geometry):
         if isinstance(geometry, Geometry):

@@ -58,12 +58,30 @@ class fixedFlow(baseFlow):
 
         self._w = w
 
+        self.flow_func_name = flow_func
         if flow_func == 'isentropic':
             from geoTherm.flow_funcs import IsentropicFlow
             self.flow_func = IsentropicFlow
         else:
             from pdb import set_trace
             set_trace()
+
+    @property
+    def _state_dict(self):
+        """
+        Get the state dictionary containing the node's current state information.
+
+        This property extends the parent class's state dictionary by adding the
+        current state vector 'x' to it. The state vector typically contains
+        enthalpy and pressure values for the node.
+        """ 
+        # Get the parent class's state dictionary
+        state_dict = super()._state_dict
+
+        # Add the current state vector to the dictionary
+        state_dict['config'].update({'w': (self._w, 'kg/s'),
+                                    'flow_func': self.flow_func_name})
+        return state_dict
 
     def thermostates(self):
         if self._w > 0:

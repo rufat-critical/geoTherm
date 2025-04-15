@@ -243,9 +243,35 @@ class fixedFlowTurbine(baseTurbine, fixedFlow):
     _displayVars = ['w', 'eta', 'dH', 'W', 'PR']
     _bounds = [0, 1]
 
-    def __init__(self, name, US, DS, w, eta):
-        super().__init__(name, US, DS, w)
+    def __init__(self, name, US, DS, w, eta, flow_func='isentropic'):
+        """
+        Initialize the fixed flow turbine.
+
+        Args:
+            name (str): The name of the turbine.
+            US (Node): The upstream node.
+            DS (Node): The downstream node.
+            w (float): The mass flow rate.
+            eta (float): The isentropic efficiency.
+            flow_func (str): The flow function to use.
+        """
+        super().__init__(name, US, DS, w, flow_func=flow_func)
         self.eta = eta
+
+    @property
+    def _state_dict(self):
+        """
+        Get the state dictionary containing the node's current state
+        information.
+        """
+
+        # Get the parent class's state dictionary
+        state_dict = super()._state_dict
+
+        # Add the current state vector to the dictionary
+        state_dict['config'].update({'eta': self.eta})
+
+        return state_dict
 
     def get_outlet_state(self, US, PR):
 

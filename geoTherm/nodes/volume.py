@@ -97,6 +97,30 @@ class Station(baseThermo):
             # Point penalty in direction of working state
             self.penalty = (self._state - x) * 1e5
 
+    @property
+    def _state_dict(self):
+        """
+        Get the state dictionary containing the node's current state
+        information.
+
+        This property extends the parent class's state dictionary by adding the
+        current state vector 'x' to it. The state vector typically contains
+        enthalpy and pressure values for the node.
+
+        Returns:
+            dict: A dictionary containing the node's state information,
+            including:
+                - All state variables from the parent class
+                - 'x': Current state vector [H, P] as a numpy array
+        """
+        # Get the base state dictionary from parent class
+        state_dict = super()._state_dict
+
+        # Add the current state vector to the dictionary
+        state_dict['x'] = self.state
+
+        return state_dict
+
 
 class TStation(Station):
 

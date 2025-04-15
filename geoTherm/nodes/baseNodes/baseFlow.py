@@ -41,6 +41,34 @@ class baseFlow(Node, ABC):
         self.penalty = False
         self._unidirectional = unidirectional
 
+    @property
+    def _state_dict(self):
+        """Returns a dictionary containing the component's state information.
+
+        This property extends the base state dictionary from the parent class by adding
+        flow-specific configuration details.
+
+        Returns:
+            dict: A dictionary containing:
+                - All state information from the parent class
+                - A 'config' key with flow-specific details:
+                    - 'US': Name of the upstream node
+                    - 'DS': Name of the downstream node
+        """
+        # Get base state from parent class
+        base_state = super()._state_dict
+
+        # Add flow-specific configuration
+        flow_config = {
+            'US': self.US,  # Upstream node
+            'DS': self.DS   # Downstream node
+        }
+
+        # Merge base state with flow configuration
+        base_state['config'].update(flow_config)
+
+        return base_state
+
     def initialize(self, model):
         """Initialize node with model and set up node connections.
 
@@ -244,6 +272,22 @@ class baseInertantFlow(baseFlow):
         super().__init__(name=name, US=US, DS=DS)
         self._w = w
         self._Z = Z
+
+    @property
+    def _state_dict(self):
+        # Get base state dict from parent class
+        base_state = super()._state_dict
+
+        # Add inertant flow specific config
+        inertant_config = {
+            'w': (self._w, 'kg/s'),
+            'Z': (self._Z, 'm**-3')
+        }
+
+        # Merge base config with inertant config
+        base_state['config'].update(inertant_config)
+
+        return base_state
 
     def update_state(self, x):
         """

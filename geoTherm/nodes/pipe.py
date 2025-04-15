@@ -37,10 +37,10 @@ class Pipe(baseInertantFlow, GeometryProperties):
                  dP:'PRESSURE'=None):
 
 
-        #super().__init__(name, US, DS)
-        self.name = name
-        self.US = US
-        self.DS = DS
+        super().__init__(name, US, DS)
+        #self.name = name
+        #self.US = US
+        #self.DS = DS
         self._w = w
         self.penalty = False
 
@@ -59,12 +59,54 @@ class Pipe(baseInertantFlow, GeometryProperties):
         # Initialize Loss Model
         self.loss = PipeLoss(self, self.geometry, dP=dP)
 
+    @property
+    def _state_dict(self):
+        """
+        Get the state dictionary containing the node's current state
+        information.
+
+        This property extends the parent class's state dictionary by adding the
+        current state vector 'x' to it. The state vector typically contains
+        enthalpy and pressure values for the node.
+        """
+
+        if self.geometry is None:
+            geometry_state = None
+            dP_state = self._dP
+        else:
+            geometry_state = self.geometry._state_dict
+            dP_state = None
+
+        # Get the parent class's state dictionary
+        state_dict = super()._state_dict
+
+        # Add the current state vector to the dictionary
+        state_dict['config'] = {'US': self.US,
+                                'DS': self.DS,
+                                'geometry': geometry_state,
+                                'w': (self._w, 'kg/s'),
+                                'dP': (dP_state, 'Pa')}
+        state_dict['x'] = self.x
+
+        return state_dict
 
     @property
     def _dP(self):
         US, _, _ = self.thermostates()
         return self.loss.evaluate(self._w, US)
 
+    @_dP.setter
+    def _dP(self, value):
+        
+        if value is None:
+            # Check if geometry is specified
+            if self.geometry is None:
+                logger.warn("Can't set dP to none because geometry is not "
+                            f"specified for {self.name} node")
+                return
+        
+        logger.info(f"Setting dP for {self.name} to {value}")        # Check if geometry is a Cylinder
+        self.loss.fixed_dP = value
 
     @property
     def _U(self):
@@ -133,6 +175,14 @@ class LumpedPipe(Pipe):
         
         self._Z = self.geometry._L / self.geometry._area_avg**2
 
+    @property
+    def _state_dict(self):
+        return {'name': self.name,
+                'US': self.US._state_dict,
+                'DS': self.DS._state_dict,
+                'geometry': self.geometry._state,
+                'w': (self._w ,'kg/s'),
+                'x': self.x}
 
     def initialize(self, model):
         super().initialize(model)

@@ -24,6 +24,7 @@ class baseThermo(Node):
                  S: 'SPECIFICENTROPY'=None,    # noqa
                  Q=None,
                  state=None):
+
         self.name = name
         self.model = None
 
@@ -41,11 +42,33 @@ class baseThermo(Node):
             self.thermo = thermo(fluid, state=state)
         elif isinstance(fluid, thermo):
             # If fluid is a thermo object, use it for calculations
-            self.thermo = fluid
+            self.thermo = thermo.from_state(fluid.state)
 
             # Update the thermo object with the provided state, if any
             if state is not None:
                 self.thermo._update_state(state)
+        elif isinstance(fluid, dict):
+            self.thermo = thermo.from_state(fluid)
+
+    @property
+    def _state_dict(self):
+        """
+        Get the state dictionary containing node configuration and
+        thermodynamic state.
+
+        This property extends the base class's state dictionary by adding the
+        thermodynamic fluid state configuration.
+
+        Returns:
+            dict: A dictionary containing:
+                - All properties from the parent class's state dictionary
+                - A 'config' key with the fluid's thermodynamic state
+        """
+        # Get the parent class's state dictionary
+        state_dict = super()._state_dict
+        # Add fluid configuration
+        state_dict['config'].update({'fluid': self.thermo.state})
+        return state_dict
 
     def initialize(self, model):
         """

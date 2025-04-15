@@ -1,9 +1,10 @@
-from ..utils import Re_
+from ..utils import Re_, eps
 from ..logger import logger
 from .data.K_factors import K_bend
 import numpy as np
 from scipy.optimize import root_scalar
 from maps.Pipe.Bend.Interpolators import KBend
+
 
 def friction_factor(Re, rel_roughness):
     """ Calculate the friction factor based on Reynolds number and 
@@ -17,9 +18,10 @@ def friction_factor(Re, rel_roughness):
         float: Friction factor
     """
     if Re < 2100:
-        return 64 / Re
+        return 64 / (Re + eps)
     else:
         return colebrook(rel_roughness, Re)
+
 
 def colebrook(k, Re):
     """ Get the friction factor using Colebook Equation 
@@ -39,6 +41,7 @@ def colebrook(k, Re):
     f = root_scalar(res, method='brentq', bracket=[1e-10, 1e4]).root
 
     return f
+
 
 def pipe_K(thermo, L, Dh, w, roughness=2.5e-6):
     """ Calculate the loss coefficient for pipe flow.

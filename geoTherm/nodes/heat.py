@@ -258,6 +258,15 @@ class Qdot(baseThermal):
         
         self._Q = Q
 
+    @property
+    def _state_dict(self):
+        return {
+            'name': self.name,
+            'hot': self.hot,
+            'cool': self.cool,
+            'Q': (self._Q, 'W')
+        }
+
 
 
 @addQuantityProperty

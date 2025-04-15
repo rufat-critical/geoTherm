@@ -228,4 +228,19 @@ class Qdot(baseThermal):
 
         self._Q = Q
 
+    @property
+    def _state_dict(self):
+        """
+        Get the state dictionary containing the node's current state information.
 
+        This property extends the parent class's state dictionary by adding the
+        current state vector 'x' to it. The state vector typically contains
+        enthalpy and pressure values for the node.
+        """
+        # Get the parent class's state dictionary
+        state_dict = super()._state_dict
+
+        # Add the current state vector to the dictionary
+        state_dict['config'].update({'Q': (self._Q, 'W')})
+
+        return state_dict
