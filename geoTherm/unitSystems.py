@@ -127,7 +127,8 @@ class ENGLISH:
         'SURFACETENSION': 'lbf/in',
         'INERTANCE': 'in**-3',
         'GASCONSTANT': 'ft*lbf/lb/degR',
-        'RPM': 'rpm'
+        'RPM': 'rpm',
+        'ANGLE': 'deg',
     }
 
 
@@ -171,5 +172,6 @@ class MIXED:
         'SURFACETENSION': 'N/m',
         'INERTANCE': 'm**-3',
         'GASCONSTANT': 'J/kmol/K',
-        'RPM': 'rpm'
+        'RPM': 'rpm',
+        'ANGLE': 'deg'
     }

@@ -158,7 +158,7 @@ class Model(modelTable):
         return model
 
     @property
-    def state_dict(self):
+    def state(self):
         """Return a dictionary of the model state organized with Models and Nodes sections"""
         organized_dict = {
             'Model': [node.name for node in self.nodes.values()],
@@ -173,7 +173,7 @@ class Model(modelTable):
 
     def save(self, yaml_path='model.yaml'):
         """Save the model to a YAML file"""
-        yaml_writer(yaml_path, self.state_dict)
+        yaml_writer(yaml_path, self.state)
 
     def __getitem__(self, nodeName):
         # Return Node if model is indexed by node name
@@ -425,12 +425,12 @@ class Model(modelTable):
                 # Call addNode for each node individually
                 self.addNode(node)
         elif isinstance(nodes, dict):
-            # Get Node Type from geoTherm module
             NodeType = getattr(gt.nodes, nodes['Node_Type'])
             node = NodeType(nodes['name'], **nodes['config'])
             if 'x' in nodes['config']:
                 node.update_state(nodes['x'])
             self.addNode(node)
+
         elif isinstance(nodes, Node):
             # This is for single node input
             if nodes.name in self.nodes:

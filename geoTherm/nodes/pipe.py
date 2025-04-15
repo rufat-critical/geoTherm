@@ -44,7 +44,6 @@ class Pipe(baseInertantFlow, GeometryProperties):
         #self.US = US
         #self.DS = DS
         self._w = w
-        self.penalty = False
 
         if geometry is not None:
             self.geometry = geometry
@@ -80,17 +79,14 @@ class Pipe(baseInertantFlow, GeometryProperties):
 
         if self.geometry is None:
             geometry_state = None
-            dP_state = self._dP
+            dP_state = (self._dP, 'Pa')
         else:
-            geometry_state = self.geometry._state_dict
+            geometry_state = self.geometry._state
             dP_state = None
 
         # Add the current state vector to the dictionary
         return {'geometry': geometry_state,
-                'w': (self._w, 'kg/s'),
-                'dP': (dP_state, 'Pa')}
-
-        return state_dict
+                'dP': dP_state}
 
     @property
     def _dP(self):
@@ -159,14 +155,18 @@ class LumpedPipe(Pipe):
         'dP_split': 'PRESSURE'
     }}
 
+    @inputParser
     def __init__(self, name, US, DS, geometry,
-                 w:'MASSFLOW'=0):
-        
+                 w:'MASSFLOW'=0,
+                 Z:'INERTANCE'=None,
+                 dP:'PRESSURE'=None):
+
         
         self.name = name
         self.US = US
         self.DS = DS
         self._w = w
+        self.penalty = False
 
         if isinstance(geometry, GeometryGroup):
             self.geometry = geometry
@@ -175,16 +175,10 @@ class LumpedPipe(Pipe):
 
         #self.loss = PipeLossModel(self, self.geometry)
         
-        self._Z = self.geometry._L / self.geometry._area_avg**2
-
-    @property
-    def _state_dict(self):
-        return {'name': self.name,
-                'US': self.US._state_dict,
-                'DS': self.DS._state_dict,
-                'geometry': self.geometry._state,
-                'w': (self._w ,'kg/s'),
-                'x': self.x}
+        if Z is None:
+            self._Z = self.geometry._L / self.geometry._area_avg**2
+        else:
+            self._Z = Z
 
     def initialize(self, model):
         super().initialize(model)

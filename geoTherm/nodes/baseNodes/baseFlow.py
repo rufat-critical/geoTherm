@@ -5,7 +5,8 @@ from ...units import addQuantityProperty, inputParser
 import numpy as np
 from abc import ABC, abstractmethod
 #from ...nodes.heatsistor import Qdot
-
+from geoTherm.decorators import state_dict
+from ...units import units
 
 @addQuantityProperty
 class baseFlow(Node, ABC):
@@ -41,7 +42,7 @@ class baseFlow(Node, ABC):
         self.penalty = False
         self._unidirectional = unidirectional
 
-    @property
+    @state_dict
     def _state_dict(self):
         """Returns a dictionary containing the component's state information.
 
@@ -55,19 +56,8 @@ class baseFlow(Node, ABC):
                     - 'US': Name of the upstream node
                     - 'DS': Name of the downstream node
         """
-        # Get base state from parent class
-        base_state = super()._state_dict
-
-        # Add flow-specific configuration
-        flow_config = {
-            'US': self.US,  # Upstream node
-            'DS': self.DS   # Downstream node
-        }
-
-        # Merge base state with flow configuration
-        base_state['config'].update(flow_config)
-
-        return base_state
+        return {'US': self.US,
+                'DS': self.DS}
 
     def initialize(self, model):
         """Initialize node with model and set up node connections.
@@ -259,7 +249,7 @@ class baseInertantFlow(baseFlow):
 
     @inputParser
     def __init__(self, name, US, DS, w:'MASSFLOW'=0,
-                 Z:'INERTANCE'=(1e-5, 'm**-3')):
+                 Z:'INERTANCE'=None):
         """Initialize inertant flow component.
 
         Args:
@@ -272,22 +262,12 @@ class baseInertantFlow(baseFlow):
         super().__init__(name=name, US=US, DS=DS)
         self._w = w
         self._Z = Z
+        self.penalty = False
 
-    @property
+    @state_dict
     def _state_dict(self):
-        # Get base state dict from parent class
-        base_state = super()._state_dict
-
-        # Add inertant flow specific config
-        inertant_config = {
-            'w': (self._w, 'kg/s'),
-            'Z': (self._Z, 'm**-3')
-        }
-
-        # Merge base config with inertant config
-        base_state['config'].update(inertant_config)
-
-        return base_state
+        return {'w': (self.w, units.output_units['MASSFLOW']),
+                'Z': (self.Z, units.output_units['INERTANCE'])}
 
     def update_state(self, x):
         """

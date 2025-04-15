@@ -1,10 +1,12 @@
 from .baseNodes.baseThermal import baseThermal, baseHeatsistor
 from .baseNodes.baseThermo import baseThermo
 from .baseNodes.baseFlow import baseFlow
-from ..units import inputParser, addQuantityProperty
+from ..units import inputParser, addQuantityProperty, units
 from ..logger import logger
 import numpy as np
 from ..resistance_models.heat import HTC
+from ..decorators import state_dict
+
 
 @addQuantityProperty
 class Heatsistor(baseHeatsistor):
@@ -18,6 +20,10 @@ class Heatsistor(baseHeatsistor):
         self.hot = hot
         self.cool = cool
         self._R = R
+
+    @state_dict
+    def _state_dict(self):
+        return {'R': (self._R, 'THERMALRESISTANCE')}
 
     def evaluate(self):
         T_hot = self.model[self.hot].thermo._T
@@ -228,7 +234,7 @@ class Qdot(baseThermal):
 
         self._Q = Q
 
-    @property
+    @state_dict
     def _state_dict(self):
         """
         Get the state dictionary containing the node's current state information.
@@ -237,10 +243,5 @@ class Qdot(baseThermal):
         current state vector 'x' to it. The state vector typically contains
         enthalpy and pressure values for the node.
         """
-        # Get the parent class's state dictionary
-        state_dict = super()._state_dict
 
-        # Add the current state vector to the dictionary
-        state_dict['config'].update({'Q': (self._Q, 'W')})
-
-        return state_dict
+        return {'Q': (self.Q, units.output_units['POWER'])}

@@ -2,6 +2,7 @@ from .baseNodes.baseFlow import baseFlow, baseInertantFlow
 from ..units import inputParser, addQuantityProperty
 from .baseNodes.baseTurbo import baseTurbo
 from ..flow_funcs import _dH_isentropic
+from ..decorators import state_dict
 
 @addQuantityProperty
 class PressureController(baseInertantFlow):
@@ -28,6 +29,10 @@ class PressureController(baseInertantFlow):
         """
         super().__init__(name, US, DS, w, Z)
         self._P_setpoint = P_setpoint
+
+    @state_dict
+    def _state_dict(self):
+        return {'P_setpoint': self._P_setpoint}
 
     def get_outlet_state(self, US, w):
         """Calculate outlet state based on current conditions."""
@@ -66,22 +71,15 @@ class fixedFlow(baseFlow):
             from pdb import set_trace
             set_trace()
 
-    @property
+    @state_dict
     def _state_dict(self):
         """
         Get the state dictionary containing the node's current state information.
 
-        This property extends the parent class's state dictionary by adding the
-        current state vector 'x' to it. The state vector typically contains
-        enthalpy and pressure values for the node.
-        """ 
-        # Get the parent class's state dictionary
-        state_dict = super()._state_dict
+        """
 
-        # Add the current state vector to the dictionary
-        state_dict['config'].update({'w': (self._w, 'kg/s'),
-                                    'flow_func': self.flow_func_name})
-        return state_dict
+        return {'w': (self._w, 'kg/s'),
+                'flow_func': self.flow_func_name}
 
     def thermostates(self):
         if self._w > 0:

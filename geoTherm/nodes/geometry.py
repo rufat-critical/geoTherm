@@ -1,6 +1,6 @@
 import numpy as np
 from ..logger import logger
-from ..units import inputParser, addQuantityProperty
+from ..units import inputParser, addQuantityProperty, units
 
 @addQuantityProperty
 class GeometryGroup:
@@ -35,17 +35,42 @@ class GeometryGroup:
         >>> group += another_geometry_group   # Combine with another group
     """
 
-    _units = {'L': 'LENGTH', 'area_avg': 'AREA', 'surface_inner': 'AREA', 'surface_outer': 'AREA',
-              'Do': 'LENGTH', 'Di': 'LENGTH', 'Ain': 'AREA', 'Aout': 'AREA'}
+    _units = {'L': 'LENGTH', 'area_avg': 'AREA', 'surface_inner': 'AREA',
+              'surface_outer': 'AREA', 'Do': 'LENGTH', 'Di': 'LENGTH',
+              'Ain': 'AREA', 'Aout': 'AREA'}
 
     def __init__(self, geometries=None):
+        """Initialize a GeometryGroup.
+
+        Args:
+            geometries (list or dict, optional): A list of Geometry instances or
+                a dictionary of named geometries.
+        """
+        
+        # Initialize empty list of geometries
+        self.geometries = []
+
+        # If no geometries are provided, return
         if geometries is None:
-            self.geometries = []
-        else:
+            return
+
+        # If geometries is a list, add each geometry to the group
+        if isinstance(geometries, list):
             for geometry in geometries:
-                if not isinstance(geometry, Geometry):
-                    logger.critical("All geometries must be instances of Geometry")
-            self.geometries = geometries
+                if isinstance(geometry, Geometry):
+                    self.geometries.append(geometry)
+                elif isinstance(geometry, dict):
+                    self.geometries.append(Geometry.from_dict(geometry))
+                else:
+                    logger.critical("All geometries in list must be instances "
+                                    "of Geometry or a dictionary")
+        # If geometries is a single Geometry instance, add it to the group
+        elif isinstance(geometries, Geometry):
+            self.geometries.append(geometries)
+        else:
+            logger.critical("GeometryGroup must be initialized with a list or "
+                            "a Geometry instance")
+
 
     @classmethod
     def from_dict(cls, config_dict):
@@ -59,24 +84,13 @@ class GeometryGroup:
 
         return cls(geometries=geometries)
 
-
-    def to_dict(self):
-        """Convert the GeometryGroup to a dictionary representation."""
-        config_dict = {}
-        for i, geometry in enumerate(self.geometries):
-            geom_dict = geometry.to_dict()
-            key = list(geom_dict.keys())[0]  # Get the geometry type
-            
-            # If there are multiple geometries of the same type, append a number
-            if key in config_dict:
-                key = f"{key}_{i}"
-            config_dict[key] = geom_dict[list(geom_dict.keys())[0]]
-            
-        return config_dict
-    
-    def _state_dict(self):
-        from pdb import set_trace
-        set_trace()
+    @property
+    def _state(self):
+        """Return a list of the state of the geometries in the group."""
+        geometries = []
+        for geometry in self.geometries:
+            geometries.append(geometry._state)
+        return geometries
 
     def __iadd__(self, geometry):
         if isinstance(geometry, Geometry):
@@ -171,31 +185,32 @@ class Geometry:
         else:
             logger.critical(f"Unknown geometry type: {geom_type}")
 
-    def to_dict(self):
+    @property
+    def _state(self):
         """Convert the geometry to a dictionary representation."""
         if isinstance(self, Cylinder):
             return {'Cylinder': {
-                'D': self._Do,
-                'L': self._L,
-                't': self._t,
-                'dz': self._dz,
-                'roughness': self._roughness
+                'D': [self._Do, units.output_units['LENGTH']],
+                'L': [self._L, units.output_units['LENGTH']],
+                't': [self._t, units.output_units['LENGTH']],
+                'dz': [self._dz, units.output_units['LENGTH']],
+                'roughness': [self._roughness, units.output_units['LENGTH']]
             }}
         elif isinstance(self, CylinderBend):
             return {'CylinderBend': {
-                'D': self._Do,
-                'angle': self.angle,
-                'R': self._R,
-                't': self._t,
-                'dz': self._dz,
-                'roughness': self._roughness
+                'D': [self._Do, units.output_units['LENGTH']],
+                'angle': [self.angle, units.output_units['ANGLE']],
+                'R': [self._R, units.output_units['LENGTH']],
+                't': [self._t, units.output_units['LENGTH']],
+                'dz': [self._dz, units.output_units['LENGTH']],
+                'roughness': [self._roughness, units.output_units['LENGTH']]
             }}
         elif isinstance(self, Rectangular):
             return {'Rectangular': {
-                'width': self._width,
-                'height': self._height,
-                'L': self._L,
-                'roughness': self._roughness
+                'width': [self._width, units.output_units['LENGTH']],
+                'height': [self._height, units.output_units['LENGTH']],
+                'L': [self._L, units.output_units['LENGTH']],
+                'roughness': [self._roughness, units.output_units['LENGTH']]
             }}
 
 
