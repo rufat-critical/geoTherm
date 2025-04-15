@@ -899,8 +899,6 @@ class Network:
         for _, junction in self.junctions.items():
             junction.evaluate()
 
-        print('x:', self.x)
-        print('xdot:', self.xdot)
         return self.xdot
 
     @property

@@ -3,9 +3,9 @@ import numpy as np
 from ..thermostate import thermo, addThermoAttributes
 from ..units import inputParser, addQuantityProperty
 from ..logger import logger
-from .node import Node
+from .baseNodes.baseNode import Node
 from .baseNodes.baseThermo import baseThermo
-
+from ..decorators import state_dict
 
 class Station(baseThermo):
     """
@@ -96,30 +96,6 @@ class Station(baseThermo):
             self.thermo._HP = self._state
             # Point penalty in direction of working state
             self.penalty = (self._state - x) * 1e5
-
-    @property
-    def _state_dict(self):
-        """
-        Get the state dictionary containing the node's current state
-        information.
-
-        This property extends the parent class's state dictionary by adding the
-        current state vector 'x' to it. The state vector typically contains
-        enthalpy and pressure values for the node.
-
-        Returns:
-            dict: A dictionary containing the node's state information,
-            including:
-                - All state variables from the parent class
-                - 'x': Current state vector [H, P] as a numpy array
-        """
-        # Get the base state dictionary from parent class
-        state_dict = super()._state_dict
-
-        # Add the current state vector to the dictionary
-        state_dict['x'] = self.state
-
-        return state_dict
 
 
 class TStation(Station):

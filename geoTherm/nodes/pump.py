@@ -7,7 +7,7 @@ from ..flow_funcs import _dH_isentropic
 from ..logger import logger
 import numpy as np
 from ..maps.pump.D35e import PumpMap
-
+from ..decorators import state_dict
 
 @addQuantityProperty
 class basePump(baseTurbo):
@@ -109,7 +109,7 @@ class fixedFlowPump(basePump, fixedFlow):
         super().__init__(name, US, DS, w, flow_func)
         self.eta = eta
 
-    @property
+    @state_dict
     def _state_dict(self):
         """
         Get the state dictionary containing the node's current state information.
@@ -117,13 +117,7 @@ class fixedFlowPump(basePump, fixedFlow):
         This property extends basePump's state dictionary by adding the
         current efficiency value to it.
         """
-        # Get only basePump's state dictionary by explicitly calling its _state_dict
-        state_dict = super()._state_dict
-
-        # Add the current efficiency value to the dictionary
-        state_dict['config'].update({'eta': self.eta})
-
-        return state_dict
+        return {'eta': self.eta}
 
     def get_outlet_state(self, US, PR):
         dH_is = _dH_isentropic(US, US._P*PR)/self.eta

@@ -9,6 +9,7 @@ from ..resistance_models.flow import PipeLoss#, PipeLossModel, BendLoss
 from rich.console import Console
 from rich.table import Table
 from rich.box import SIMPLE
+from ..decorators import state_dict
 
 
 @addQuantityProperty
@@ -34,7 +35,8 @@ class Pipe(baseInertantFlow, GeometryProperties):
                  t=0,
                  geometry=None,
                  w:'MASSFLOW'=0,
-                 dP:'PRESSURE'=None):
+                 dP:'PRESSURE'=None,
+                 Z:'INERTANCE'=None):
 
 
         super().__init__(name, US, DS)
@@ -51,15 +53,21 @@ class Pipe(baseInertantFlow, GeometryProperties):
             # Initialize Geometry
             if L is not None and D is not None:
                 self.geometry = Cylinder(D=D, L=L, dz=dz, t=t, roughness=roughness)
-                self._Z = self.geometry._L/self.geometry._area**2
+                if Z is None:
+                    self._Z = self.geometry._L/self.geometry._area**2
+                else:
+                    self._Z = Z
             else:
                 self.geometry = None
-                self._Z = 1
+                if Z is None:
+                    self._Z = 1
+                else:
+                    self._Z = Z
 
         # Initialize Loss Model
         self.loss = PipeLoss(self, self.geometry, dP=dP)
 
-    @property
+    @state_dict
     def _state_dict(self):
         """
         Get the state dictionary containing the node's current state
@@ -77,16 +85,10 @@ class Pipe(baseInertantFlow, GeometryProperties):
             geometry_state = self.geometry._state_dict
             dP_state = None
 
-        # Get the parent class's state dictionary
-        state_dict = super()._state_dict
-
         # Add the current state vector to the dictionary
-        state_dict['config'] = {'US': self.US,
-                                'DS': self.DS,
-                                'geometry': geometry_state,
-                                'w': (self._w, 'kg/s'),
-                                'dP': (dP_state, 'Pa')}
-        state_dict['x'] = self.x
+        return {'geometry': geometry_state,
+                'w': (self._w, 'kg/s'),
+                'dP': (dP_state, 'Pa')}
 
         return state_dict
 

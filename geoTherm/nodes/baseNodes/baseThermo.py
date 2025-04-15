@@ -2,6 +2,7 @@ from .baseNode import Node
 from geoTherm.logger import logger
 from geoTherm.units import inputParser, addQuantityProperty
 from geoTherm.thermostate import thermo, addThermoAttributes
+from geoTherm.decorators import state_dict
 
 @addThermoAttributes
 @addQuantityProperty
@@ -50,7 +51,7 @@ class baseThermo(Node):
         elif isinstance(fluid, dict):
             self.thermo = thermo.from_state(fluid)
 
-    @property
+    @state_dict
     def _state_dict(self):
         """
         Get the state dictionary containing node configuration and
@@ -65,10 +66,7 @@ class baseThermo(Node):
                 - A 'config' key with the fluid's thermodynamic state
         """
         # Get the parent class's state dictionary
-        state_dict = super()._state_dict
-        # Add fluid configuration
-        state_dict['config'].update({'fluid': self.thermo.state})
-        return state_dict
+        return {'fluid': self.thermo.state}
 
     def initialize(self, model):
         """

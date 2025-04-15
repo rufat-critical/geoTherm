@@ -10,6 +10,7 @@ from ..flow_funcs import FlowModel
 from scipy.optimize import root_scalar
 from ..logger import logger
 from .flowDevices import fixedFlow
+from ..decorators import state_dict
 
 @addQuantityProperty
 class baseTurbine(baseTurbo):
@@ -258,20 +259,14 @@ class fixedFlowTurbine(baseTurbine, fixedFlow):
         super().__init__(name, US, DS, w, flow_func=flow_func)
         self.eta = eta
 
-    @property
+    @state_dict
     def _state_dict(self):
         """
         Get the state dictionary containing the node's current state
         information.
         """
 
-        # Get the parent class's state dictionary
-        state_dict = super()._state_dict
-
-        # Add the current state vector to the dictionary
-        state_dict['config'].update({'eta': self.eta})
-
-        return state_dict
+        return {'eta': self.eta}
 
     def get_outlet_state(self, US, PR):
 
