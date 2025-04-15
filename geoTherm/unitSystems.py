@@ -69,6 +69,7 @@ class SI:
         'TEMPERATURE': 'degK',             # Kelvin
         'VELOCITY': 'm/s',                 # Meter per second
         'VISCOSITY': 'Pa*s',               # Pascal-second
+        'KINEMATICVISCOSITY': 'm**2/s',    # Square meter per second
         'CONDUCTIVITY': 'W/m/K',           # Watt per meter-Kelvin
         'VOLUME': 'm**3',                  # Cubic meter
         'THERMALRESISTANCE': 'degK/W',     # Kelvin per Watt

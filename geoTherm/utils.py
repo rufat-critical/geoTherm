@@ -407,6 +407,43 @@ def yaml_loader(yaml_path):
     except FileNotFoundError:
         logger.critical(f"Could not find file: {yaml_path}")
 
+class CleanDumper(yaml.SafeDumper):
+    """Custom YAML dumper that creates cleaner output"""
+    
+    def represent_tuple(self, data):
+        # Convert tuples to lists for cleaner output
+        return self.represent_list(list(data))
+        
+    def represent_numpy_array(self, data):
+        # Convert numpy arrays to lists for cleaner output
+        return self.represent_list(data.tolist())
+        
+    def represent_numpy_float(self, data):
+        # Convert numpy float types to regular Python float
+        return self.represent_float(float(data))
+        
+    def represent_numpy_int(self, data):
+        # Convert numpy int types to regular Python int
+        return self.represent_int(int(data))
+
+# Register the custom representers
+CleanDumper.add_representer(tuple, CleanDumper.represent_tuple)
+CleanDumper.add_representer(np.ndarray, CleanDumper.represent_numpy_array)
+CleanDumper.add_representer(np.float64, CleanDumper.represent_numpy_float)
+CleanDumper.add_representer(np.int64, CleanDumper.represent_numpy_int)
+
+def yaml_writer(yaml_path, config):
+    """
+    Write a configuration dictionary to a YAML file with clean formatting.
+
+    Args:
+        yaml_path (str): Path to the YAML file.
+        config (dict): Configuration dictionary.
+    """
+    with open(yaml_path, 'w') as file:
+        yaml.dump(config, file, Dumper=CleanDumper, default_flow_style=False)
+        
+
 def parse_dimension(value):
     """
     Parse a dimensional value into a (number, unit) tuple.
