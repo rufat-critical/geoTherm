@@ -1,6 +1,7 @@
 from geoTherm.nodes.baseNodes.baseThermo import baseThermo
 from geoTherm.nodes.baseNodes.baseThermal import baseThermal
 from geoTherm.nodes.flowDevices import baseFlow
+from geoTherm.nodes.baseNodes.baseTurbo import baseTurbo
 import pandas as pd
 from tabulate import tabulate
 from geoTherm.unitSystems import SI, ENGLISH, MIXED
@@ -22,6 +23,7 @@ def print_model_tables(model):
     thermo_data = []
     flow_data = []
     thermal_data = []
+    turbo_data = []
     
     for name, node in model.nodes.items():
         if isinstance(node, baseThermo):
@@ -30,6 +32,16 @@ def print_model_tables(model):
                 f"P [{units['PRESSURE']}]": f"{node.thermo.P:.2e}",
                 f"T [{units['TEMPERATURE']}]": f"{node.thermo.T:.2f}",
                 f"H [{units['SPECIFICENERGY']}]": f"{node.thermo.H:.2e}"
+            })
+        elif isinstance(node, baseTurbo):
+            turbo_data.append({
+                'Node': name,
+                'Upstream': node.US_node.name if hasattr(node, 'US_node') else 'None',
+                'Downstream': node.DS_node.name if hasattr(node, 'DS_node') else 'None',
+                f"ṁ [{units['MASSFLOW']}]": f"{node.w:.3f}",
+                f"PR": f"{node.PR:.3f}",
+                f"W [{units['POWER']}]": f"{node.W:.2e}",
+                f"η": f"{node.eta:.3f}"
             })
         elif isinstance(node, baseFlow):
             # Get upstream and downstream connections
@@ -59,6 +71,7 @@ def print_model_tables(model):
     thermo_df = pd.DataFrame(thermo_data)
     flow_df = pd.DataFrame(flow_data)
     thermal_df = pd.DataFrame(thermal_data)
+    turbo_df = pd.DataFrame(turbo_data)
     
     print("\nThermodynamic Nodes:")
     print(tabulate(thermo_df, headers='keys', tablefmt='psql', showindex=False))
@@ -68,3 +81,7 @@ def print_model_tables(model):
     
     print("\nThermal Nodes:")
     print(tabulate(thermal_df, headers='keys', tablefmt='psql', showindex=False))
+    
+    if len(turbo_data) > 0:
+        print("\nTurbomachinery Nodes:")
+        print(tabulate(turbo_df, headers='keys', tablefmt='psql', showindex=False))

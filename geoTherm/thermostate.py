@@ -7,6 +7,7 @@ from .logger import logger
 import re
 from .utils import R_ideal
 from .DEFAULTS import DEFAULTS
+from scipy.interpolate import interp1d
 
 
 # Utility functions for thermostate
@@ -148,6 +149,149 @@ coolprop_phase_index = {
     cp.iphase_unknown: 'unknown'
 }
 
+
+class CustomFluid:
+    """Custom fluid state model"""
+    
+    def __init__(self, properties, state=None, stateVars=None):
+        """
+        Initialize the CustomFluid object.
+        
+        Args:
+            properties (pd.DataFrame): DataFrame containing fluid properties.
+            state (dict): Dictionary containing thermodynamic state variables.
+            stateVars (str): State variables to use for initialization.
+        """
+        self.initialize(properties)
+
+        if state is not None:
+            self.update_state(state, stateVars)
+        else:
+            self.update_state({'T': 300, 'P': 101325}, stateVars='TP')
+    
+
+    def initialize(self, properties):
+        """Initialize interpolators for fluid properties.
+        
+        Args:
+            properties (pd.DataFrame): DataFrame containing fluid properties with columns
+                for temperature and various properties like density, viscosity, etc.
+        """
+        # Store the original data
+        self.properties = properties
+        
+        property_name_map = {'Temperature': 'T',
+                            'Pressure': 'P',
+                            'Vapor Pressure': 'Pvap',
+                            'Specific Heat': 'cp',
+                            'Thermal Conductivity': 'conductivity',
+                            'Density': 'density'}
+
+        # Get the temperature values which will be our x-axis for interpolation
+        temperatures = properties['Temperature'].values
+        
+        # Create interpolators for each property column except Temperature
+        self.interpolators = {}
+        for column in properties.columns:
+            if column != 'Temperature':
+                # Map the column name to standardized property name if it exists
+                property_name = property_name_map.get(column, column)
+                
+                # Create cubic interpolation function for this property
+                self.interpolators[property_name] = interp1d(
+                    temperatures,
+                    properties[column].values,
+                    kind='cubic',
+                    bounds_error=False,  # Allow extrapolation
+                    fill_value='extrapolate'  # Extrapolate beyond bounds
+                )
+        
+        # Handle viscosity calculation if needed
+        if 'viscosity' not in self.interpolators:
+            if 'Kinematic Viscosity' in properties.columns and 'Density' in properties.columns:
+                # Create viscosity interpolator using kinematic viscosity * density
+                kinematic_viscosity = properties['Kinematic Viscosity'].values
+                density = properties['Density'].values
+                viscosity = kinematic_viscosity * density
+                
+                self.interpolators['viscosity'] = interp1d(
+                    temperatures,
+                    viscosity,
+                    kind='cubic',
+                    bounds_error=False,
+                    fill_value='extrapolate'
+                )
+        
+        # Store temperature bounds for validation
+        self.T_min = temperatures.min()
+        self.T_max = temperatures.max()
+
+    def get_property(self, property_name):
+        """Get interpolated property value at current temperature.
+        
+        Args:
+            property_name (str): Name of the property to interpolate
+            
+        Returns:
+            float: Interpolated property value
+        """
+
+        if property_name == 'T':
+            return self._T
+        elif property_name == 'P':
+            return self._P
+        elif property_name == 'D':
+            return self.get_property('density')
+        elif property_name in self.interpolators:
+            return float(self.interpolators[property_name](self._T))
+        elif property_name == 'H':
+            return self._H
+        elif property_name == 'species_names':
+            return np.array(["CUSTOM"])
+        elif property_name == 'Y':
+            return np.array([1])
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    def update_state(self, state, stateVars):
+        """Update the state of the fluid.
+        
+        Args:
+            state (dict): Dictionary containing state variables
+            stateVars (str): String indicating which state variables are being used
+        """
+        
+        if stateVars == 'TP':
+            self._T = state['T']
+            self._P = state['P']
+            self.update_enthalpy(state['T'])
+        elif stateVars == 'HP':
+            # For incompressible fluid, H = cp * (T - T_ref)
+            # So T = H/cp + T_ref
+            self._H = state['H']
+            self._T = self.T_from_H(state['H'])
+            self._P = state['P']
+        else:
+            from pdb import set_trace; set_trace()
+
+    def update_enthalpy(self, T):
+
+        cp = self.get_property('cp')
+        self._H = cp*(T - 273.15)
+
+    def T_from_H(self, H):
+        
+        def f(T):
+            cp = self.interpolators['cp'](T)
+            return cp*(T - 273.15) - H
+        
+        from scipy.optimize import root_scalar
+        T_guess = 300
+        result = root_scalar(f, bracket=[200, 600], method='brentq')
+        return result.root
+
+
 class Incompressible:
 
     def __init__(self, cDict=None, state=None, stateVars=None, cType='Y',
@@ -166,6 +310,13 @@ class Incompressible:
             self.update_composition(cDict, cType=cType)
         else:
             self.update_composition({'Water': 1}, cType='Y')
+
+    @property
+    def _state(self):
+        return {'fluid': self._cDict,
+                'state': {'T': (self.get_property('T'), 'K'),
+                          'P': (self.get_property('P'), 'Pa')},
+                'model': 'incompressible'}
 
     def update_state(self, state, stateVars):
 
@@ -250,6 +401,42 @@ class coolprop_wrapper:
             self.update_state(state, stateVars)
         else:
             self.update_state(state={'T': 300, 'P': 101325}, stateVars='TP')
+
+    @property
+    def _state(self):
+        """Return a dictionary containing the complete thermodynamic state information.
+
+        This property returns a dictionary that fully describes the current thermodynamic
+        state of the fluid. For two-phase states, it uses H-P (enthalpy-pressure) pairs
+        instead of T-P (temperature-pressure) pairs due to REFPROP convergence issues
+        in the two-phase region.
+
+        Returns:
+            dict: A dictionary with the following structure:
+                {
+                    'fluid': {species_name: mass_fraction, ...},  # Mass fractions for each species
+                    'state': {
+                        'T': (temperature, 'K'),     # For single-phase states
+                        'P': (pressure, 'Pa'),       # Always present
+                        'H': (enthalpy, 'J/kg')      # For two-phase states instead of T
+                    },
+                    'EoS': str,                      # Equation of state being used
+                    'model': 'coolprop'              # Model identifier
+                }
+        """
+        # Store TP if not two-phase. REFPROP has problems converging to TP sometimes
+        # so this is a workaround. I pulled too much hair out over this.
+        if self.get_property('phase') == 'two-phase':
+            state = {'H': (self.get_property('H'), 'J/kg'),
+                     'P': (self.get_property('P'), 'Pa')}
+        else:
+            state = {'T': (self.get_property('T'), 'K'),
+                     'P': (self.get_property('P'), 'Pa')}
+
+        return {'fluid': {name: self.Y[i] for i, name in enumerate(self.species_names)},
+                'state': state,
+                'EoS': self.EoS,
+                'model': 'coolprop'}
 
     def updateComposition(self, cDict, cType):
         """
@@ -605,6 +792,16 @@ class thermo:
             self.pObj = Incompressible(cDict=cDict, state=state,
                                        stateVars=stateVars,
                                        **kwargs)
+        elif self.model == 'custom':
+            try:
+                self.pObj = CustomFluid(state=state,
+                                        stateVars=stateVars,
+                                        **kwargs)
+            except Exception as e:
+                from pdb import set_trace
+                set_trace()
+                logger.critical(f'Error initializing custom fluid: {e}')
+                raise e
         else:
             logger.critical(f'Invalid thermo model used in input: {model}'
                             "The Valid Models are: 'coolprop'")
@@ -724,26 +921,12 @@ class thermo:
     def state(self):
         """
         Output a dictionary defining the thermodynamic state.
-        
+
         Returns:
             dict: Dictionary containing the thermodynamic state.
         """
 
-        if self.model == 'coolprop':
-            return {
-                'fluid': self.Ydict,
-                'state': {'D': (self._D, 'kg/m^3'),
-                        'P': (self._P, 'Pa')},
-                'EoS': self.pObj.EoS,
-                'model': self.model
-            }
-        else:
-            return {
-            'fluid': self.Ydict,
-            'state': {'D': (self._D, 'kg/m^3'),
-                    'P': (self._P, 'Pa')},
-            'model': self.model
-            }          
+        return self.pObj._state
 
     @staticmethod
     def from_state(state):
@@ -777,13 +960,17 @@ class thermo:
         table.add_row('PRESSURE', f'{self.P:0.5g}',
                       units.output_units['PRESSURE'])
         
-        if (self.phase == 'supercritical_gas'
-                or self.phase =='supercritical_liquid'):
+        if (self.phase in ['supercritical_gas', 'supercritical_liquid',
+                           'supercritical']):
             table.add_row('VAPOR P', 'supercritical')
         else:
             table.add_row('VAPOR P', f'{self.Pvap:0.5g}',
                           units.output_units['PRESSURE'])
                                
+        table.add_row('Tcrit', f'{self.T_crit:0.5g}',
+                      units.output_units['TEMPERATURE'])
+        table.add_row('Pcrit', f'{self.P_crit:0.5g}',
+                      units.output_units['PRESSURE'])
         table.add_row('DENSITY', f'{self.density:0.5g}',
                       units.output_units['DENSITY'])
         table.add_row('Cp', f'{self.cp:0.5g}',

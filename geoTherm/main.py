@@ -15,7 +15,7 @@ from .nodes.baseNodes.baseNode import Node
 from .nodes.baseNodes.baseThermal import baseThermal
 from .solvers.network.network import Network
 from .solvers.network.junctions import FlowJunction
-from .utils import yaml_loader, parse_dimension
+from .utils import yaml_loader, yaml_writer, parse_dimension
 
 class GlobalLimits:
     P = [1, 1e8]
@@ -147,6 +147,33 @@ class Model(modelTable):
         except Exception:
             logger.warn('Failed to Initialize Model')
             self.initialized = False
+
+    @staticmethod
+    def load(state_dict):
+        """Load a state dictionary into the model"""
+        model = Model()
+        for name, node in state_dict['Nodes'].items():
+            node['name'] = name
+            model.addNode(node)
+        return model
+
+    @property
+    def state_dict(self):
+        """Return a dictionary of the model state organized with Models and Nodes sections"""
+        organized_dict = {
+            'Model': [node.name for node in self.nodes.values()],
+            'Nodes': {}
+        }
+
+        for name, node in self.nodes.items():
+            node_state = node._state_dict.copy()  # Create a copy to avoid modifying original
+            organized_dict['Nodes'][name] = node_state
+
+        return organized_dict
+
+    def save(self, yaml_path='model.yaml'):
+        """Save the model to a YAML file"""
+        yaml_writer(yaml_path, self.state_dict)
 
     def __getitem__(self, nodeName):
         # Return Node if model is indexed by node name
@@ -397,6 +424,13 @@ class Model(modelTable):
             for node in nodes:
                 # Call addNode for each node individually
                 self.addNode(node)
+        elif isinstance(nodes, dict):
+            # Get Node Type from geoTherm module
+            NodeType = getattr(gt.nodes, nodes['Node_Type'])
+            node = NodeType(nodes['name'], **nodes['config'])
+            if 'x' in nodes['config']:
+                node.update_state(nodes['x'])
+            self.addNode(node)
         elif isinstance(nodes, Node):
             # This is for single node input
             if nodes.name in self.nodes:
