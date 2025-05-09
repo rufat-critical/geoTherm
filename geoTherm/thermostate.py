@@ -134,7 +134,8 @@ coolprop_property_names = {
             'conductivity': 'conductivity',
             "P_crit": "p_critical",
             "T_crit": "T_critical",
-            "surface_tension": "surface_tension"
+            "surface_tension": "surface_tension",
+            "compressibility_factor": "compressibility_factor",
         }
 
 
@@ -316,7 +317,8 @@ class Incompressible:
         return {'fluid': self._cDict,
                 'state': {'T': (self.get_property('T'), 'K'),
                           'P': (self.get_property('P'), 'Pa')},
-                'model': 'incompressible'}
+                'model': 'incompressible',
+                'cp': self._cp}
 
     def update_state(self, state, stateVars):
 
@@ -360,6 +362,10 @@ class Incompressible:
             return self._cp
         elif property == 'P':
             return self._P
+        elif property == 'P_crit':
+            return 0
+        elif property == 'Q':
+            return -1
         else:
             from pdb import set_trace
             set_trace()
@@ -388,6 +394,12 @@ class coolprop_wrapper:
 
         # The Equation of State
         self.EoS = EoS
+
+        # Check if tabular
+        if 'BICUBIC' in EoS or 'TTSE' in EoS:
+            self.tabular = True
+        else:
+            self.tabular = False
 
         # Update composition based on input or use default
         if cDict is not None:
@@ -431,7 +443,7 @@ class coolprop_wrapper:
                      'P': (self.get_property('P'), 'Pa')}
         else:
             state = {'T': (self.get_property('T'), 'K'),
-                     'P': (self.get_property('P'), 'Pa')}
+                     'D': (self.get_property('D'), 'kg/m**3')}
 
         return {'fluid': {name: self.Y[i] for i, name in enumerate(self.species_names)},
                 'state': state,
@@ -455,6 +467,10 @@ class coolprop_wrapper:
         #else:
         #    from pdb import set_trace
         #    set_trace()
+
+        if self.tabular:
+            # Can't set composition for tabular EoS
+            return
 
         # Set the mass or mole fractions via list comprehension
         if cType == 'Y':
@@ -569,7 +585,8 @@ class coolprop_wrapper:
     @property
     def Pvap(self):
 
-        if self.EoS in ['HEOS', 'REFPROP']:
+        if self.EoS in ['HEOS', 'REFPROP', 'BICUBIC&REFPROP', 'TTSE&REFPROP',
+                        'BICUBIC&HEOS', 'TTSE&HEOS']:
             # Return vapor pressure if Helmholtz or Refprop EoS
             vapor = cp.AbstractState(self.EoS, self.cpObj.name())
             vapor.update(cp.QT_INPUTS, 0.0, self.cpObj.T())
@@ -716,10 +733,10 @@ def addThermoSetters(setterList):
 thermoGetters = ['_T', '_P', 'Q', '_H', '_S', '_U', '_cp', '_cv', '_density',
                  '_viscosity', 'species_names', 'phase', '_sound', '_Pvap',
                  '_Tvap', '_conductivity', '_D', '_T_crit', '_P_crit',
-                 '_molecular_weight', '_surface_tension']
+                 '_molecular_weight', '_surface_tension', 'compressibility_factor']
 
 thermoSetters = ['TP', 'TS', 'HP', 'SP', 'DU', 'PU', 'DP', 'HS',
-                 'DH', 'HQ', 'TQ', 'PQ', 'TD', 'TPY', 'HPY', 'X', 'Y']
+                 'DH', 'HQ', 'TQ', 'PQ', 'TD', 'TPY', 'HPY', 'TDY', 'X', 'Y']
 
 
 @addThermoGetters(thermoGetters)
@@ -737,7 +754,8 @@ class thermo:
                  'DU', '_DU', 'TPY', '_TPY', 'model', 'sound', '_sound',
                  '_Pvap', '_Tvap', '_conductivity', 'HQ', '_HQ', '_P_crit',
                  'P_crit', '_T_crit', 'T_crit', 'molecular_weight',
-                 '_molecular_weight', '_surface_tension', 'HPY', '_HPY']
+                 '_molecular_weight', '_surface_tension', 'HPY', '_HPY',
+                 'compressibility_factor']
 
     _units = {'T': 'TEMPERATURE',               # Temperature
               'P': 'PRESSURE',                  # Pressure

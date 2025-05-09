@@ -4,6 +4,7 @@ from scipy.optimize import root_scalar
 from .logger import logger
 import geoTherm as gt
 import yaml
+from scipy.interpolate import interp1d
 
 # Get Machine precision
 eps = np.finfo(float).eps
@@ -149,7 +150,7 @@ def dittus_boelter(Re, Pr, heating=True):
     else:
         n = 0.3
 
-    return 0.023*Re*Pr**n
+    return 0.023*Re**(0.8)*Pr**n
 
 
 def pump_eta(phi):
@@ -465,3 +466,85 @@ def parse_dimension(value):
             return float(value)
     except (ValueError, TypeError):
         return value
+    
+
+
+#https://www.mydatabook.org/fluid-mechanics/flow-coefficient-opening-and-closure-curves-of-full-bore-ball-valves/
+cv_2in = {
+    "angle_deg": np.array([0, 10, 20, 30, 40, 50, 60, 70, 80, 90]),
+    "Cv":        np.array([0, 15, 27, 45, 76, 118, 180, 301, 404, 470])
+}
+
+
+def get_SCFM(mdot, US):
+    Q = mdot/US._density*2118.88
+    return Q*(US._P/101325)*(273.15/US._T)
+
+
+def get_Cv(mdot, US, DS):
+    # based on Swagelok Valve Sizing Technical Bulletin
+    # https://www.swagelok.com/downloads/webcatalogs/EN/MS-06-84.pdf
+    # --- 1. Upstream state and fluid properties ---
+    phase = US.phase
+
+    # --- 2. Pressure conversions ---
+    Pup_psi = US._P/6894.76
+    Pdown_psi = DS._P/6894.76
+    Tup_R = US._T*9/5
+    deltaP_psi = (Pup_psi - Pdown_psi)
+
+    if deltaP_psi <= 0:
+        raise ValueError("Pressure drop must be positive.")
+
+    # --- 3. Cv calculation ---
+    if phase in ['liquid', 'supercritical_liquid']:
+        Q_GPM = mdot/US._density*15850.3
+        # Liquid-like behavior → use incompressible formula
+        G = US._density / 999.0 # specific gravity
+        Cv = Q_GPM / np.sqrt(deltaP_psi / G)
+
+    else:
+        gamma = US.gamma
+        # Gas-like behavior → check for choked flow
+        P_crit_ratio = (2 / (gamma + 1)) ** (gamma / (gamma - 1))
+        is_choked = (DS._P / US._P) < P_crit_ratio
+
+
+        Q_SCFM = get_SCFM(mdot, US)
+
+        G = US._density*(101325/US._P)*(273.15/US._T)/1.29307
+
+        if is_choked:
+            # Choked flow: no dependence on P2
+            Cv = Q_SCFM / (0.471 * 22.67 * Pup_psi * np.sqrt(1/(G * Tup_R)))
+        else:
+            # Subsonic gas flow
+            Cv = (Q_SCFM /
+                  ((0.471 * 22.67 * Pup_psi * (1 -2/3*deltaP_psi/Pup_psi))
+                   * np.sqrt(deltaP_psi/(Pup_psi*G * Tup_R)))
+                  )
+
+    return Cv
+
+
+def get_valve_position(Cv, cv_curve=cv_2in):
+    """
+    Returns the valve position (in degrees) for a 2" full-bore ball valve
+    given flow conditions and a fluid using CoolProp.
+    Includes choked flow handling for gases.
+
+    Parameters:
+        mdot (float): Mass flow rate [kg/s]
+        P1 (float): Upstream pressure [Pa]
+        P2 (float): Downstream pressure [Pa]
+        T1 (float): Inlet temperature [K]
+        fluid (str): CoolProp-compatible fluid name
+
+    Returns:
+        float: Valve opening angle [deg]
+    """
+    # --- 5. Interpolate Cv → valve angle ---
+    interp = interp1d(cv_curve['Cv'], cv_curve['angle_deg'], bounds_error=False, fill_value='extrapolate')
+    angle = float(interp(Cv))
+
+    return angle

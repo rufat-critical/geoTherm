@@ -8,35 +8,35 @@ _DISPLAY_FORMAT = {
     'degK': 'K',                       # Kelvin
     'degR': '°R',                      # Rankine
 
-        # Basic units
-        'm**2': 'm²',                      # Square meter
-        'm**3': 'm³',                      # Cubic meter
-        'in**2': 'in²',                    # Square inch
-        'in**3': 'in³',                    # Cubic inch
-        'ft**2': 'ft²',                    # Square feet
-        'ft**3': 'ft³',                    # Cubic feet
+    # Basic units
+    'm**2': 'm²',                      # Square meter
+    'm**3': 'm³',                      # Cubic meter
+    'in**2': 'in²',                    # Square inch
+    'in**3': 'in³',                    # Cubic inch
+    'ft**2': 'ft²',                    # Square feet
+    'ft**3': 'ft³',                    # Cubic feet
 
-        # Common compound units
-        'kg/m**3': 'kg/m³',                # Density
-        'm**3/kg': 'm³/kg',                # Specific volume
-        'kg/s/m**2': 'kg/(s·m²)',          # Mass flux
-        'W/m**2/degK': 'W/(m²·K)',         # Heat transfer coefficient
-        'W/m/K': 'W/(m·K)',                # Thermal conductivity
-        'J/kg/degK': 'J/(kg·K)',           # Specific heat
-        'kJ/kg/K': 'kJ/(kg·K)',            # Specific heat (kilo)
-        'Btu/lb/degR': 'Btu/(lb·°R)',      # Specific heat (English)
-        'Pa*s': 'Pa·s',                    # Pascal-second
+    # Common compound units
+    'kg/m**3': 'kg/m³',                # Density
+    'm**3/kg': 'm³/kg',                # Specific volume
+    'kg/s/m**2': 'kg/(s·m²)',          # Mass flux
+    'W/m**2/degK': 'W/(m²·K)',         # Heat transfer coefficient
+    'W/m/K': 'W/(m·K)',                # Thermal conductivity
+    'J/kg/degK': 'J/(kg·K)',           # Specific heat
+    'kJ/kg/K': 'kJ/(kg·K)',            # Specific heat (kilo)
+    'Btu/lb/degR': 'Btu/(lb·°R)',      # Specific heat (English)
+    'Pa*s': 'Pa·s',                    # Pascal-second
 
-        # Basic units without changes
-        'J': 'J',                          # Joule
-        'm': 'm',                          # Meter
-        'kg': 'kg',                        # Kilogram
-        'Pa': 'Pa',                        # Pascal
-        'W': 'W',                          # Watt
-        'N': 'N',                          # Newton
-        'bar': 'bar',                      # Bar
-        'psi': 'psi',                      # Pounds per square inch
-        'rpm': 'rpm',                      # Revolutions per minute
+    # Basic units without changes
+    'J': 'J',                          # Joule
+    'm': 'm',                          # Meter
+    'kg': 'kg',                        # Kilogram
+    'Pa': 'Pa',                        # Pascal
+    'W': 'W',                          # Watt
+    'N': 'N',                          # Newton
+    'bar': 'bar',                      # Bar
+    'psi': 'psi',                      # Pounds per square inch
+    'rpm': 'rpm',                      # Revolutions per minute
     }
 
 
@@ -120,7 +120,7 @@ class ENGLISH:
         'THERMALRESISTANCE': 'degR/Btu/s',  # Rankine per BTU per second
         'CONVECTION': 'Btu/s/ft**2/degR',  # BTU per second per square foot
                                            # per Rankine
-        'VOLUMETRICFLOW': 'ft**3/s',       # Cubic foot per second
+        'VOLUMETRICFLOW': 'gallons/min',       # Cubic foot per second
         'SPECIFICSPEED': 'rpm*(ft**3/s)**(0.5)/(ft*lbf/lb)**(3/4)',
         'SPECIFICDIAMETER': 'ft*(ft*lbf/lb)**(1/4)/(ft**3/s)**(0.5)',
         'ROTATIONSPEED': 'rpm',            # Revolutions per minute
@@ -165,7 +165,7 @@ class MIXED:
         'VOLUME': 'in**3',                 # Cubic inch
         'THERMALRESISTANCE': 'degK/W',     # Kelvin per Watt
         'CONVECTION': 'W/m**2/degK',       # Watt per square meter per Kelvin
-        'VOLUMETRICFLOW': 'm**3/s',        # Cubic meter per second
+        'VOLUMETRICFLOW': 'gallons/min',        # Cubic meter per second
         'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
         'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
         'ROTATIONSPEED': 'rpm',            # Revolutions per minute

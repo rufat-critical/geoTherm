@@ -601,12 +601,14 @@ class Model(modelTable):
             else:
                 return self.x, True
 
+
         self.initialize()
         conditioner = Conditioner(self)
         conditioned = conditioner.conditioner(self.steady_evaluate)
         # Scale the state vector for fsolve
         x_scaled = conditioner.scale_x(self.x)
         conditioned(x_scaled)
+
         sol = fsolve(conditioned, x_scaled, full_output=True)
 
         x = conditioner.unscale_x(sol[0])
