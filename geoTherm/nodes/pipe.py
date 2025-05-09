@@ -6,6 +6,7 @@ from ..utils import dP_pipe
 from ..logger import logger
 import numpy as np
 from ..resistance_models.flow import PipeLoss#, PipeLossModel, BendLoss
+from ..resistance_models.flow import ConstantPhysics, CustomPhysics, PipePhysics
 from rich.console import Console
 from rich.table import Table
 from rich.box import SIMPLE
@@ -63,8 +64,15 @@ class Pipe(baseInertantFlow, GeometryProperties):
                 else:
                     self._Z = Z
 
-        # Initialize Loss Model
-        self.loss = PipeLoss(self, self.geometry, dP=dP)
+        if dP is not None:
+            if isinstance(dP, (float, int)):
+                self.physics = ConstantPhysics(self, dP)
+            else:
+                from pdb import set_trace
+                set_trace()
+        else:
+            self.physics = PipePhysics(self, self.geometry)
+
 
     @state_dict
     def _state_dict(self):
@@ -90,11 +98,18 @@ class Pipe(baseInertantFlow, GeometryProperties):
 
     @property
     def _dP(self):
-        US, _, _ = self.thermostates()
-        return self.loss.evaluate(self._w, US)
+        US, DS, _ = self.thermostates()
+
+        return self.physics.evaluate(self._w, US, DS)['dP']
 
     @_dP.setter
     def _dP(self, value):
+
+        if callable(value):
+            self.physics = CustomPhysics(self, dP_func=value)
+        else:
+            self.physics = ConstantPhysics(self, dP=value)
+            logger.info(f"Setting dP for {self.name} to {value}")
         
         if value is None:
             # Check if geometry is specified
@@ -103,8 +118,7 @@ class Pipe(baseInertantFlow, GeometryProperties):
                             f"specified for {self.name} node")
                 return
         
-        logger.info(f"Setting dP for {self.name} to {value}")        # Check if geometry is a Cylinder
-        self.loss.fixed_dP = value
+            self.physics = PipePhysics(self, self.geometry)
 
     @property
     def _U(self):
@@ -119,17 +133,14 @@ class Pipe(baseInertantFlow, GeometryProperties):
         dP = np.abs(US.thermo._P - DS.thermo._P)
         return self._w/np.sqrt(2*US._density*dP)
 
-    def get_outlet_state2(self, US, w):
+    def get_outlet_state(self, US, w):
 
         # Evaluate loss
-        dP = self.loss.evaluate(np.abs(w), US)
+        dz = self.physics.evaluate(w, US, None)
 
-        return {'H': US._H + self._dH,
-                'P': US._P + dP}
+        return {'H': US._H + dz['dH'],
+                'P': US._P + dz['dP']}
 
-
-    def _get_dP(self, US, w):
-        return self.loss.evaluate(np.abs(w), US)
 
     @property
     def xdot2(self):
@@ -224,11 +235,8 @@ class LumpedPipe(Pipe):
             dP += loss.evaluate(w, US)
         return dP
 
-    def _get_dP(self, US, w):
-        return self.evaluate_losses(np.abs(w), US)
 
-
-    def get_outlet_state2(self, US, w):
+    def get_outlet_state(self, US, w):
         dP = self.evaluate_losses(np.abs(w), US)
         H = US._H + self._dH
 

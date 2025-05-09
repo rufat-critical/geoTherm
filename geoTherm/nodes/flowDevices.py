@@ -53,6 +53,8 @@ class fixedFlow(baseFlow):
     _units = baseFlow._units | {
         'area': 'AREA'
     }
+    _bounds = [1e-5, 1]
+    _displayVars = ['w', 'area', 'flow_func_name', 'PR']
 
     @inputParser
     def __init__(self, name, US, DS,

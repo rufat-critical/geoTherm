@@ -123,6 +123,7 @@ class baseFlow(Node, ABC):
 
         return US, DS, flow_sign
 
+    @abstractmethod
     def get_outlet_state(self, US, w):
         """Calculate outlet state given inlet conditions and flow rate.
 
@@ -142,21 +143,45 @@ class baseFlow(Node, ABC):
         return {'H': US._H + dH,
                 'P': US._P + dP}
 
+    def _get_outlet_state(self, US, w):
+        """Calculate outlet state including heat transfer effects.
 
-    @abstractmethod
-    def _get_dP(self, US, w):
-        """Calculate outlet state given inlet conditions and flow rate.
-
-        Must be implemented by derived classes.
+        This method extends the base outlet state calculation by adding the heat
+        transfer contribution (Q) from any connected heat nodes (hot/cool nodes).
+        The heat transfer is added to the outlet enthalpy.
 
         Args:
             US: Upstream thermodynamic state
             w (float): Mass flow rate [kg/s]
 
         Returns:
-            float: Pressure difference [Pa]
-        """ 
-        logger.critical(f"get_dP not implemented in {self.name}")
+            dict: Outlet state dictionary containing pressure and enthalpy,
+                  with heat transfer effects included in the enthalpy
+
+        Note:
+            The heat transfer Q is divided by mass flow rate to convert
+            from total heat transfer [W] to specific enthalpy change [J/kg]
+        """
+        # Get base outlet state first
+        outlet_state = self.get_outlet_state(US, w)
+
+        # Add heat transfer contribution to enthalpy if flow rate is non-zero
+        if w != 0:  # Avoid division by zero
+            outlet_state['H'] += self._Q/ w
+
+        return outlet_state
+
+    @property
+    def _Q(self):
+
+        Q =0
+        if self.hot_node is not None:
+            Q += self.hot_node._Q
+        if self.cool_node is not None:
+            Q -= self.cool_node._Q
+
+        return Q
+
 
 
     def _get_dH(self, US, w):
@@ -184,17 +209,6 @@ class baseFlow(Node, ABC):
         return dH
 
 
-
-    def get_DS_state(self, US, w):
-
-        # Get Downstream Node
-        # w must be positive
-
-        # Get the Outlet State
-        DS_state = self.get_outlet_state(US, w)
-        
-        return DS_state
-
     def get_US_state(self, DS, w):
 
         # Get Upstream Node
@@ -218,7 +232,7 @@ class baseFlow(Node, ABC):
     @property
     def PR(self):
         US, DS, _ = self.thermostates()
-        return US._P / DS._P
+        return DS._P / US._P
 
     @property
     def _dH(self):
@@ -347,18 +361,3 @@ class baseInertantFlow(baseFlow):
         self._w = w
 
         return False
-
-    def get_DS_state(self, US, w):
-
-        DS_state = self.get_outlet_state(US, w)
-
-        return DS_state
-
-
-    def get_US_state(self, DS, w):
-
-        # Get the Inlet State
-        US_state = self.get_inlet_state(DS, w)
-
-
-        return US_state

@@ -13,13 +13,15 @@ from .flowDevices import fixedFlow
 from ..decorators import state_dict
 
 @addQuantityProperty
-class baseTurbine(baseTurbo):
+class baseTurbine(baseTurbo, turbineParameters):
     """Base turbine class implementing isentropic expansion calculations.
 
     Extends baseTurbo with specific turbine functionality for:
     - Isentropic enthalpy change calculation
     - Outlet state determination
     """
+
+    _units = baseTurbo._units | turbineParameters._units
 
     @property
     def _dH_is(self):
@@ -35,20 +37,6 @@ class baseTurbine(baseTurbo):
     def _dH(self):
         return self._dH_is*self.eta
 
-    @property
-    def PR(self):
-        """Calculate actual pressure ratio across turbine.
-
-        Pressure ratio is defined as upstream pressure divided by downstream
-        pressure.
-        For turbines, PR > 1 indicates normal operation (expansion),
-        while PR < 1 indicates reverse flow.
-
-        Returns:
-            float: Pressure ratio (P_upstream / P_downstream)
-        """
-        US, DS, _ = self.thermostates()
-        return US._P/DS._P
 
 @addQuantityProperty
 class chokedTurbine(baseTurbo):
@@ -274,6 +262,11 @@ class fixedFlowTurbine(baseTurbine, fixedFlow):
         dH = dH_is*self.eta
 
         return {'H': US._H + dH, 'P': US._P*PR}
+
+    def _update_outlet_thermo(self):
+        US, _, _ = self.thermostates()
+        outlet = self.get_outlet_state(US, self.PR)
+        self._ref_thermo._HP = outlet['H'], outlet['P']
 
 
 class fixedPRTurbine(baseInertantFlow, baseTurbine):

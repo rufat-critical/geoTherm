@@ -1,4 +1,4 @@
-from .baseNodes.baseTurbo import Turbo, pumpParameters, fixedFlowTurbo, baseTurbo, fixedPressureRatioTurbo
+from .baseNodes.baseTurbo import Turbo, pumpParameters, fixedFlowTurbo, baseTurbo, fixedPressureRatioTurbo, turboParameters
 from .baseNodes.baseFlow import baseInertantFlow
 from .flowDevices import fixedFlow
 from ..units import addQuantityProperty
@@ -10,12 +10,16 @@ from ..maps.pump.D35e import PumpMap
 from ..decorators import state_dict
 
 @addQuantityProperty
-class basePump(baseTurbo):
+class basePump(baseTurbo, turboParameters):
     """Base class for pump components.
 
-    Implements pump-specific behavior for pressure increase and 
+    Implements pump-specific behavior for pressure increase and
     isentropic enthalpy calculations.
     """
+
+    _units = turboParameters._units | {'NPSP': 'PRESSURE'}
+
+    _displayVars = baseTurbo._displayVars + ['Q_in', 'Q_out']
 
     @property
     def _dH_is(self):
@@ -44,6 +48,16 @@ class basePump(baseTurbo):
         US, DS, _ = self.thermostates()
         return DS._P / US._P
 
+    @property
+    def _NPSP(self):
+        try:
+            return self.US_node.thermo._P - self._ref_thermo._Pvap
+        except:
+            return 0
+
+class baseRotorPump(basePump):
+    pass
+
 @addQuantityProperty
 class baseInertantPump(basePump, baseInertantFlow):
     pass
@@ -63,10 +77,9 @@ class Pump(baseInertantPump):
 
         US, DS, _ = self.thermostates()
         N = self.rotor_node.N
-        self._Q = self._w/US._density
-        self.P_target, error = self.PumpMap.get_pressure(N, self._Q)
+        dP, error = self.PumpMap.get_dP(N, self._Q_in)
 
-        self._wdot = (self.P_target - US._P)/self._Z
+        self._wdot = ((US._P + dP)- DS._P)/self._Z
 
 
     def initialize(self, model):
@@ -79,13 +92,19 @@ class Pump(baseInertantPump):
 
         Q = w/US._density
         N = self.rotor_node.N
-        P_target, error = self.PumpMap.get_pressure(N, Q)
+        dP, error = self.PumpMap.get_dP(N, Q)
+
+
+        dH_is = _dH_isentropic(US, US._P + dP)
 
         if error:
             return {'P': 1e9, 'H': US._H}
         else:
-            return {'P': US._P + P_target, 'H': US._H + self._dH_is/self.eta}
+            return {'P': US._P + dP, 'H': US._H + dH_is/self.eta}
 
+    def _get_dP(self, US, w):
+        from pdb import set_trace
+        set_trace()
 
 
 @addQuantityProperty

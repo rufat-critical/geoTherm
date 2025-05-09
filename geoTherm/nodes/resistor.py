@@ -9,11 +9,11 @@ class resistor(baseFlowResistor):
     """ Resistor where mass flow is calculated based on
     flow func"""
 
-    _displayVars = ['w', 'area', 'dP', 'flow_func']
+    _displayVars = ['w', 'area', 'dP', 'PR', 'flow_func']
     _units = {'w': 'MASSFLOW', 'area': 'AREA', 'dP': 'PRESSURE'}
 
     @inputParser
-    def __init__(self, name, US, DS, area: 'AREA', flow_func='isentropic'):  # noqa
+    def __init__(self, name, US, DS, area: 'AREA', flow_func='isen'):  # noqa
 
         super().__init__(name, US, DS)
 
@@ -37,8 +37,9 @@ class resistor(baseFlowResistor):
 
 
         if dP is None:
+            # Set outlet to high dP to tell
+            # solver to reduce mass flow
             dP = -1e9
-
 
         return {'H': US._H, 'P': US._P + dP}
 

@@ -47,7 +47,19 @@ class baseTurbo(baseFlow, ABC):
         """Set the mass flow rate"""
         self._w = w
         return False
+    
+    def initialize(self, model):
+        super().initialize(model)
 
+        self._ref_thermo = thermo.from_state(model.nodes[self.US].thermo.state)
+
+    def _update_outlet_thermo(self):
+
+        US, _, _ = self.thermostates()
+        outlet = self.get_outlet_state(US, self._w)
+        self._ref_thermo._HP = outlet['H'], outlet['P']
+
+    
 class fixedFlowTurbo(baseTurbo):
 
     @inputParser
@@ -262,22 +274,24 @@ class Turbo(baseFlow):
         dH = self._get_dH()
         return -dH*np.abs(self._w)
 
-    @property
-    def Q(self):
-        "Heat flow from Turbo Machine"
-        return 0
 
 #class InertantTurbo(Turbo, baseInertantFlow):
 #    pass
 
 class turboParameters:
 
+    _units = {'Q_in': 'VOLUMETRICFLOW',
+              'Q_out': 'VOLUMETRICFLOW',
+              'U_tip': 'VELOCITY',
+              'c0_is': 'VELOCITY',
+              'N': 'RPM'}
+
     @property
     def _Q_in(self):
         # Volumeetric flow in
 
         # Get Thermo States
-        US, _ = self._get_thermo()
+        US, _, _ = self.thermostates()
 
         # Get Upstream
         return self._w/US._density
@@ -309,12 +323,13 @@ class turboParameters:
 
     @property
     def Mach_in(self):
-        # Inlet Mach Number
+        # Mach Number using upstream sound speed
+
         return self._c0_is/self.US_node.thermo.sound
 
     @property
     def Mach_out(self):
-        # Outlet Mach Number
+        # Mach Number using downstream sound speed
         self._update_outlet_thermo()
 
         try:
@@ -332,6 +347,8 @@ class turboParameters:
 
 class pumpParameters(turboParameters):
 
+    _units = turboParameters._units | {'NPSP': 'PRESSURE',
+                                       'u_tip': 'VELOCITY'}
 
     @property
     def _NPSP(self):
@@ -372,6 +389,9 @@ class pumpParameters(turboParameters):
 
 
 class turbineParameters(turboParameters):
+
+    _units = turboParameters._units | {'NPSP': 'PRESSURE',
+                                       'u_tip': 'VELOCITY'}
 
     @property
     def phi(self):

@@ -168,6 +168,53 @@ class BendLoss(baseLoss):
         
         return self._dP
 
+class BasePhysicsModel:
+
+    def evaluate(self, w, US, DS):
+        pass
+
+class ConstantPhysics(BasePhysicsModel):
+
+    def __init__(self, node, dP=0, dH=0):
+        self.node = node
+        self.dP = dP
+        self.dH     = dH
+
+    def evaluate(self, w, US, DS):
+        return {'dP': self.dP, 'dH': self.dH}
+
+class CustomPhysics(BasePhysicsModel):
+
+    def __init__(self, node, dP_func=None, dH_func=None):
+        self.node = node
+        self.dP_func = dP_func
+        self.dH_func = dH_func
+
+    def evaluate(self, w, US, DS):
+        return {'dP': self.dP_func(w, US, DS),
+                'dH': 0}
+
+class PipePhysics(BasePhysicsModel):
+
+    def __init__(self, node, geometry, type='straight'):
+        self.node = node
+        self.geometry = geometry
+
+        if type == 'straight':
+            self.dP_model = StraightLoss(self.node, self.geometry)
+        elif type == 'bend':
+            self.dP_model = BendLoss(self.node, self.geometry)
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    def evaluate(self, w, US, DS):
+         
+        dP = self.dP_model.evaluate(w, US)
+
+        dP += -self.geometry._dz*9.81*US._density
+    
+        return {'dP': dP, 'dH': 0}
 
 class PipeLoss:
 
@@ -189,7 +236,13 @@ class PipeLoss:
     def evaluate(self, w, thermo):
 
         if self.fixed_dP is not None:
-            return self.fixed_dP
+            if isinstance(self.fixed_dP, float):
+                return self.fixed_dP
+            elif callable(self.fixed_dP):
+                return self.fixed_dP(self.node)
+            else:
+                from pdb import set_trace
+                set_trace()
 
         self._dP = self.loss_model.evaluate(w, thermo)
 
