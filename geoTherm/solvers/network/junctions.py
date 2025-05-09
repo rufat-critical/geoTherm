@@ -63,6 +63,7 @@ class Junction:
             else:
                 self.penalty = (self._bounds[1] - x[0] - 10)*1e5
 
+
     def error_check(self):
         pass
 
@@ -297,6 +298,8 @@ class FlowJunction(Junction):
             return self.penalty
 
         wNet, Hnet, Wnet, Qnet = self.node.flux
+
+        #wNet = self.US_branches[0]._w - self.DS_branches[0]._w - self.DS_branches[1]._w #self.DS_branches[1].penalty
 
         if self.solve_energy:
             error = np.array([wNet, Hnet+Wnet+Qnet])

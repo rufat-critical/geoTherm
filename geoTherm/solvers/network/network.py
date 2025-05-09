@@ -61,8 +61,12 @@ class Conditioner:
         if name in self.model.network.flow_branches:
             branch = self.model.network.flow_branches[name]
 
-            x_scale = np.array([1e-1])
-            xdot_scale = np.array([1])
+            if branch.fixed_flow:
+                x_scale = np.array([1])
+                xdot_scale = np.array([1])
+            else:
+                x_scale = np.array([1e-1])
+                xdot_scale = np.array([1])
 
             return x_scale, xdot_scale
         elif name in self.model.network.thermal_branches:
@@ -90,7 +94,7 @@ class Conditioner:
                     #x_scale = np.array([1e-6, 1e-6])
                     #xdot_scale = np.array([1, 1/1e-6])
                     x_scale = np.array([1e-5, 1e-5])
-                    xdot_scale = np.array([1e-5, 1])
+                    xdot_scale = np.array([1, 1e-5])
                     return x_scale, xdot_scale
                 else:
                     #x_scale = np.array([1e-5])
@@ -683,12 +687,7 @@ class Network:
         self.evaluate_thermal(x)
 
 
-    
-    def solve_coupled(self):
-        from pdb import set_trace
-        set_trace()
-
-    
+        
     # For Flow
     # Flow initialize_states(flow=True)
     # Only
@@ -789,15 +788,15 @@ class Network:
 
         conditioned = conditioner.conditioner(self.evaluate)
 
-        x_scaled = conditioner.scale_x(self.x)
 
-        # solve with root (hybr, lm)
-        sol = root(conditioned, x_scaled, method='lm')
+        x_scaled = conditioner.scale_x(self.x)
+        sol = root(conditioned, x_scaled, method='lm')#, options={'factor': np.min(abs(x_scaled/1.5))})
+        
         x = conditioner.unscale_x(sol.x)
-        # solve with fsolve
-        #sol = fsolve(conditioned, x_scaled, full_output=True)      
-        #x = conditioner.unscale_x(sol[0])
+        
         self.evaluate(x)
+        from pdb import set_trace
+        #set_trace()
 
 
 

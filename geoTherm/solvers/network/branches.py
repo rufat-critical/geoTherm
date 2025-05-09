@@ -151,7 +151,7 @@ class baseBranch:
         # We may need to revert if penalty are triggered
 
         self.penalty = False
-        self._state = np.copy(self.state)
+        #self._state = np.copy(self.state)
         self.state = x
 
         if self.backflow is False:
@@ -510,6 +510,10 @@ class FlowBranch(baseBranch):
     @property
     def xdot(self):
 
+        
+        if self.penalty is False:
+            self._state = np.copy(self.state)
+
         if self.solver == 'forward':
             return self.xdot_forward
         elif self.solver == 'reverse':
@@ -526,21 +530,7 @@ class FlowBranch(baseBranch):
         else:
             Pout = self.DS_junction.node.thermo._P
 
-        if self.fixed_flow:
-            from pdb import set_trace
-           # set_trace()
-            self.error = -(self.DS_target['P']/Pout - 1)
-
-        else:
-            if self._w >= 0:
-                self.error = (self.DS_target['P'] - Pout)/np.abs(self._w+eps)**.25
-            else:
-                self.error = -(self.DS_target['P'] - Pout)/np.abs(self._w+eps)**.25
-
-        if self.DS_target['P'] < 0:
-            if np.sign(self.error) == np.sign(self._w):
-                from pdb import set_trace
-                #set_trace()
+        self.error = (self.DS_target['P']/Pout - 1)*np.sign(self._w)
 
         return np.array([self.error])
 
@@ -843,6 +833,8 @@ class FlowBranch(baseBranch):
             #    self.penalty = (0-self._w +10)*1e5
             #    return
             # Reverse node order
+            from pdb import set_trace
+            set_trace()
             nodes = nodes[::-1]
             US_junction = self.DS_junction
             DS_junction = self.US_junction
@@ -904,8 +896,7 @@ class FlowBranch(baseBranch):
                     return
 
 
-                self.DS_target = node.get_outlet_state(US_thermo, self._w)
-
+                self.DS_target = node._get_outlet_state(US_thermo, self._w)
                 if not self.stateful:
                     # Evaluate node
                     node.evaluate()
@@ -947,15 +938,32 @@ class FlowBranch(baseBranch):
             if isinstance(node, fixedFlow):
                 if not self.stateful:
                     # This condition shouldnt occur I think?
-                    DS_state = node.get_DS_state(US_thermo, 1)
+                    DS_state = node._get_outlet_state(US_thermo, 1)
                     if not isinstance(self.DS_junction, OutletJunction):
                         from pdb import set_trace
                         #set_trace()
                 else:
-                    DS_state = node.get_DS_state(US_thermo, self.x)
+                    DS_state = node._get_outlet_state(US_thermo, self.x)
 
+                if isinstance(node, gt.fixedFlowPump):
+                    PR_bounds = np.array(
+                        [1, np.max([100, 2*DS_junction.node.thermo._P/US_thermo._P])]
+                    )
+                    self.evaluate_fixed_turbo(inode, US_thermo, PR_bounds=PR_bounds)
+                    return
+                else:
+                    PR_bounds = [DS_junction.node.thermo._P/US_thermo._P, 1]
+                    self.evaluate_fixed_turbo(inode, US_thermo, PR_bounds=PR_bounds)
+                    return
+
+                from pdb import set_trace
+                set_trace()
+                self.evaluate_choked(inode, US_thermo, PR_bounds=PR_bounds)
+                return
             else:
                 if self.compressible:
+                    from pdb import set_trace
+                    set_trace()
                     if inode == self.cnode:
                         w_max = node.flow._w_max(US_thermo)
 
@@ -969,7 +977,50 @@ class FlowBranch(baseBranch):
                             #set_trace()
                             return
 
-                DS_state = node.get_DS_state(US_thermo, self._w)
+                
+
+                if isinstance(node, baseFlowResistor):
+                    w_max = node._w_max(US_thermo)
+                    
+                    CHOKED_TOL = 0.999
+                    BLEND_TOL = 0.99
+ 
+                    if self._w > w_max*BLEND_TOL:
+                        if self._w > w_max:#*(2-CHOKED_TOL):
+                            self.penalty = (self._w - w_max*(1+CHOKED_TOL))*1e5
+                            return
+                        elif self._w > w_max*CHOKED_TOL:
+                            logger.info(f"Choking detected in {node.name} for branch {self.name}")
+                            self.evaluate_choked(inode, US_thermo)
+                            thermoNode = nodes[-2]
+                            flowNode = nodes[-1]    
+                            self.DS_target = flowNode._get_outlet_state(thermoNode.thermo, self._w)
+                            
+                            return
+                            from pdb import set_trace
+                            set_trace()
+                            # Choked state
+                            # Get choked state
+                        
+                        P_choked, w_choked = node.flow.choked_state(US_thermo)
+
+                        DS_state = node._get_outlet_state(US_thermo, self._w)
+
+                        blend_factor = (self._w/w_max - BLEND_TOL)/(CHOKED_TOL - BLEND_TOL)
+
+                        DS_state['P'] = (1-blend_factor)*DS_state['P'] + blend_factor*P_choked
+
+
+                    DS_state = node._get_outlet_state(US_thermo, self._w)
+
+                    # 2 paths
+                    # Get max mass flow rate
+                    # If above max then penalty to reduce
+
+                    # If equal then evaluate choked
+                else:
+                    DS_state = node._get_outlet_state(US_thermo, self._w)
+
 
             if DS_state is None:
                 # If this is none then there was an error
@@ -991,6 +1042,7 @@ class FlowBranch(baseBranch):
                         set_trace()
                 return
 
+
             if DS_state['P'] < 0:
                 # Pressure drop is too high because massflow too high,
                 # lets decrease mass flow by applying penalty
@@ -1001,11 +1053,9 @@ class FlowBranch(baseBranch):
 
                 if self.fixed_flow:
                     # Calculate penalty based on pressure
-                    if isinstance(self.fixed_flow_node, gt.basePump):
-                        # Increase Pressure Ratio
+                    if isinstance(self.fixed_flow_node, gt.fixedFlow):
+                        # Pressure ratio needs to be increased
                         self.penalty = (-DS_state['P']+10)*1e5
-                    elif isinstance(self.fixed_flow_node, gt.Turbine):
-                        self.penalty = -(-DS_state['P']+10)*1e5
                     else:
                         # Add Error to upstream branch
                         # Since this is a fixed flow node
@@ -1045,10 +1095,9 @@ class FlowBranch(baseBranch):
                 # Update thermo for dsNode
                 error = DS_node.update_thermo(DS_state)
 
-
                 if error:
                     from pdb import set_trace
-                    #set_trace()
+                    set_trace()
                     logger.warn("Failed to update thermostate in Branch '{self.name}'"
                                 f" evaluate call for '{DS_node.name}' to state: "
                                 f"{DS_state}")
@@ -1060,11 +1109,17 @@ class FlowBranch(baseBranch):
                         if error is False:
                             logger.warn(f"Heat flow into node '{DS_node.name}' is too high")
 
+
+                    self.penalty = (self._state[0] - self.x[0]-1e2)*1e4
+                    return
+
+
                     # Reduce Mass Flow
                     if self.fixed_flow:
                         try:
                         # Point error back to x0
                             self.penalty = (self._state[0] - self.x[0]-1e2)*1e5
+                            return
                         except:
                             from pdb import set_trace
                             #set_trace()
@@ -1098,7 +1153,7 @@ class FlowBranch(baseBranch):
                         set_trace()
                     return
                 
-                self.DS_target = node.get_DS_state(US_thermo, self._w)
+                self.DS_target = node._get_outlet_state(US_thermo, self._w)
 
                 if not self.stateful:
                     node.evaluate()
@@ -1134,7 +1189,7 @@ class FlowBranch(baseBranch):
                     DS_state = node.get_DS_state(US_thermo, self.x)
 
             else:
-                DS_state = node.get_DS_state(US_thermo, self._w)
+                DS_state = node._get_outlet_state(US_thermo, self._w)
 
             if DS_state is None:
                 # If this is none then there was an error
@@ -1259,11 +1314,9 @@ class FlowBranch(baseBranch):
         
         if self._w < 0:
             nodes = nodes[::-1]
-            US_junction = self.DS_junction
             DS_junction = self.US_junction
         else:
-            US_junction = self.US_junction
-            DS_junction = self.DS_junction
+            DS_junction = self.US_junction
 
         def solve_func(x):
             # Convert x array to dictionary mapping nodes to PR values
@@ -1317,7 +1370,7 @@ class FlowBranch(baseBranch):
 
         return solution[0], True
 
-    def _evaluate_forward_compressible(self, US_thermo, nodes, iPR):
+    def _evaluate_forward_compressible2(self, US_thermo, nodes, iPR):
         
         for inode, node in enumerate(nodes):
             # Track Qin to this branch
@@ -1348,7 +1401,7 @@ class FlowBranch(baseBranch):
                         self.penalty = (self._w - w_max)
                         return
 
-                self.DS_target = node.get_DS_state(US_thermo, self._w)
+                self.DS_target = node._get_outlet_state(US_thermo, self._w)
 
 
                 if not self.stateful:
@@ -1504,9 +1557,8 @@ class FlowBranch(baseBranch):
         set_trace()
 
 
-    def evaluate_choked(self, inode, US):
+    def evaluate_choked2(self, inode, US_thermo):
         # If branch gets choked then DS pressure does not affect US and we need to do stuff
-
 
 
         US_resistor = self.nodes[inode]
@@ -1556,6 +1608,12 @@ class FlowBranch(baseBranch):
             from pdb import set_trace
             set_trace()
 
+        PR_crit = US_resistor.flow.PR_crit(US)
+
+        from pdb import set_trace
+        set_trace()
+
+
         error = self.DS_target['P'] - DS_junction.node.thermo._P
 
         if error < 0:
@@ -1572,7 +1630,168 @@ class FlowBranch(baseBranch):
         PR_max = x0[0]
 
 
-        sol = self.solve_compressible(x0, nodes, US, PR_max, iResistors)
+        sol = self.solve_compressible5(x0, nodes, US, PR_max, iResistors)
+
+
+    def evaluate_choked(self, inode, US_thermo, PR_bounds=None):
+        # If branch gets choked then DS pressure does not affect US and we need to do stuff
+
+
+        # Reverse order if w is negative
+        if self._w < 0:
+
+            #if self.back_flow is False:
+            #    self.penalty = (0-self._w +10)*1e5
+            #    return
+            # Reverse node order
+            nodes = nodes[::-1]
+            DS_junction = self.US_junction
+            from pdb import set_trace
+            set_trace()
+        else:
+            DS_junction = self.DS_junction
+            US_resistor = self.nodes[inode]
+            thermoNode = self.nodes[inode+1]
+            nodes = self.nodes[inode+2:]
+
+        if PR_bounds is None:
+            from pdb import set_trace
+            set_trace()
+
+            if isinstance(US_resistor, gt.fixedFlow):
+                DS_state = US_resistor.get_outlet_state(US_thermo, PR_bounds[1])
+            else:
+                DS_state = US_resistor.get_outlet_state(US_thermo, self._w)
+
+
+            try:
+                US = US_thermo.from_state(US_thermo.state)
+                US._HP = DS_state['H'], DS_state['P']
+            except:
+                from pdb import set_trace
+                set_trace()
+
+
+            # Get Critical Pressure Ratio
+            self._evaluate_forward(nodes, US)
+
+            if self.penalty:
+                from pdb import set_trace
+                set_trace()
+
+            error = self.DS_target['P'] - DS_junction.node.thermo._P
+
+            if error < 0:
+                # Pressure drop is too high in the branch
+                # need to decrease mass flow
+                self.penalty = (error)
+                from pdb import set_trace
+                set_trace()
+                return
+
+
+        if isinstance(US_resistor, gt.fixedFlow):
+            DS_state = US_resistor.get_outlet_state(US_thermo, PR_bounds[1])
+        else:
+            DS_state = US_resistor.get_outlet_state(US_thermo, self._w)
+
+        US = US_thermo.from_state(US_thermo.state)
+        def find_PR(PR):
+
+            if PR < PR_min:
+                return PR_min - PR + 1
+            elif PR > PR_hi:
+                return PR_hi - PR - 1
+            
+            US._HP = DS_state['H'], US_thermo._P * PR
+
+            self._evaluate_forward(nodes, US)
+
+            if self.penalty:
+                return -self.penalty
+            else:
+                return DS_junction.node.thermo._P - self.DS_target['P']
+
+
+        if PR_bounds is None:
+            PR_hi = US_resistor.flow.PR_crit(US_thermo)
+            PR_min = self.DS_junction.thermo._P/US_thermo._P
+        else:
+            PR_hi = PR_bounds[1]
+            PR_min = PR_bounds[0]
+
+        sol = fsolve(find_PR, PR_min, full_output=True)
+
+        PR = sol[0]
+
+        DS_state['P'] = US_thermo._P * PR
+
+        # Update thermo state
+        thermoNode.update_thermo(DS_state)
+
+        from pdb import set_trace
+        set_trace()
+
+    def evaluate_fixed_turbo(self, inode, US_thermo, PR_bounds=None):
+        # If branch gets choked then DS pressure does not affect US and we need to do stuff
+
+
+        # Reverse order if w is negative
+        if self._w < 0:
+
+            #if self.back_flow is False:
+            #    self.penalty = (0-self._w +10)*1e5
+            #    return
+            # Reverse node order
+            nodes = nodes[::-1]
+            DS_junction = self.US_junction
+            from pdb import set_trace
+            set_trace()
+        else:
+            DS_junction = self.DS_junction
+            US_resistor = self.nodes[inode]
+            thermoNode = self.nodes[inode+1]
+            nodes = self.nodes[inode+2:]
+
+        US = US_thermo.from_state(US_thermo.state)
+        def find_PR(PR):
+
+            DS_state = US_resistor.get_outlet_state(US_thermo, PR)
+            if PR < PR_min:
+                return PR_min - PR + 1
+            elif PR > PR_hi:
+                return PR_hi - PR - 1
+            
+            try:
+                US._HP = DS_state['H'], US_thermo._P * PR
+            except:
+                from pdb import set_trace
+                set_trace()
+
+            self._evaluate_forward(nodes, US)
+
+            if self.penalty:
+                return -self.penalty
+            else:
+                return DS_junction.node.thermo._P - self.DS_target['P']
+
+
+        if PR_bounds is None:
+            PR_hi = US_resistor.flow.PR_crit(US_thermo)
+            PR_min = self.DS_junction.thermo._P/US_thermo._P
+        else:
+            PR_hi = PR_bounds[1]
+            PR_min = PR_bounds[0]
+
+        sol = fsolve(find_PR, PR_min, full_output=True)
+
+        PR = sol[0]
+        DS_state = US_resistor.get_outlet_state(US_thermo, PR)
+        DS_state['P'] = US_thermo._P * PR
+
+        # Update thermo state
+        thermoNode.update_thermo(DS_state)
+     
 
 
     def update_choked_thermo(self, US, DS, res, PR):
