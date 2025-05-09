@@ -8,19 +8,28 @@ import matplotlib.pyplot as plt
 from matplotlib.cm import get_cmap
 import matplotlib.colors as colors
 import matplotlib.patheffects as path_effects
+from geoTherm.logger import logger
 
 
 class PumpMap:
-    def __init__(self, csv_file_path):
+    def __init__(self, csv_file_path, fallback_method='extrapolate'):
         """
         Initialize the pump data interpolator with a CSV file path.
         
         Args:
             csv_file_path (str): Path to the CSV file containing pump data
+            fallback_method (str): Method to use for points outside convex hull.
+                                 Options: 'nearest' or 'extrapolate'. Defaults to 'nearest'.
         """
         self.csv_file_path = csv_file_path
         self.info = {}
         self.interpolator = None
+        
+        # Validate and store the fallback method
+        valid_methods = ['nearest', 'extrapolate']
+        if fallback_method not in valid_methods:
+            raise ValueError(f"fallback_method must be one of {valid_methods}")
+        self.fallback_method = fallback_method
         
         # Load the data
         self.load_data()
@@ -96,20 +105,44 @@ class PumpMap:
         # Create the primary interpolator
         self.interpolator = LinearNDInterpolator(points, self.pressure_data)
         
-        # Create a fallback interpolator for points outside the convex hull
-        self.fallback_interpolator = NearestNDInterpolator(points, self.pressure_data)
+        if self.fallback_method == 'nearest':
+            # Create a nearest neighbor interpolator for fallback
+            self.fallback_interpolator = NearestNDInterpolator(points, self.pressure_data)
+        else:  # 'extrapolate'
+            # Create a linear extrapolation function
+            def extrapolate(rpm, q):
+                # Find the k nearest points to use for extrapolation
+                k = 3  # Use 3 nearest points to establish the linear trend
+                distances = np.sqrt((self.rpm_values - rpm)**2 + (self.q_values - q)**2)
+                nearest_indices = np.argsort(distances)[:k]
+                
+                # Get the coordinates and values for these points
+                nearest_points = np.column_stack((self.rpm_values[nearest_indices], 
+                                                self.q_values[nearest_indices]))
+                nearest_pressures = self.pressure_data[nearest_indices]
+                
+                # Fit a linear plane through these points
+                # Add a column of ones for the intercept term
+                A = np.column_stack((nearest_points, np.ones(k)))
+                # Solve for coefficients [a, b, c] in z = ax + by + c
+                coeffs = np.linalg.lstsq(A, nearest_pressures, rcond=None)[0]
+                
+                # Return the extrapolated value
+                return coeffs[0] * rpm + coeffs[1] * q + coeffs[2]
+            
+            self.fallback_interpolator = extrapolate
     
 
-    def get_pressure(self, rpm, q):
+    def get_dP(self, rpm, q):
         """
-        Get the interpolated pressure for a given RPM and flow rate.
+        Get the interpolated dP for a given RPM and flow rate.
         
         Args:
             rpm (float): The RPM value
             q (float): The flow rate value in m³/s
             
         Returns:
-            float: The interpolated pressure value in bar
+            tuple: (float, bool) The interpolated pressure value in bar and whether extrapolation was used
         """
         # Check if we're extrapolating
         data_range = self.get_data_range()
@@ -117,12 +150,12 @@ class PumpMap:
         
         if rpm < data_range['rpm_min'] or rpm > data_range['rpm_max']:
             is_extrapolating = True
-            print(f"Warning: Extrapolating RPM value ({rpm}) outside data range "
+            logger.warn(f"Warning: Extrapolating RPM value ({rpm}) outside data range "
                   f"[{data_range['rpm_min']}, {data_range['rpm_max']}]")
         
         if q < data_range['q_min'] or q > data_range['q_max']:
             is_extrapolating = True
-            print(f"Warning: Extrapolating flow rate value ({q}) outside data range "
+            logger.warn(f"Warning: Extrapolating flow rate value ({q}) outside data range "
                   f"[{data_range['q_min']}, {data_range['q_max']}]")
         
         result = self.interpolator(rpm, q)
@@ -130,8 +163,13 @@ class PumpMap:
         # If the result is NaN (outside the convex hull), use the fallback interpolator
         if np.isnan(result):
             if not is_extrapolating:
-                print("Warning: Using nearest neighbor interpolation for point outside convex hull")
-            result = self.fallback_interpolator(rpm, q)
+                method_name = "nearest neighbor" if self.fallback_method == 'nearest' else "linear extrapolation"
+                logger.warn(f"Warning: Using {method_name} for point outside convex hull")
+            
+            if self.fallback_method == 'nearest':
+                result = self.fallback_interpolator(rpm, q)
+            else:
+                result = self.fallback_interpolator(rpm, q)
         
         return float(result), is_extrapolating
     
