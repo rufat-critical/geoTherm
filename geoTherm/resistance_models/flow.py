@@ -168,27 +168,65 @@ class BendLoss(baseLoss):
         
         return self._dP
 
+def load_physics(physics):
+
+
+
+    if isinstance(physics, dict):
+
+        if physics['type'] == 'ConstantPhysics':
+            return ConstantPhysics(**physics['inputs'])
+        elif physics['type'] == 'CustomPhysics':
+            from pdb import set_trace
+            set_trace()
+        elif physics['type'] == 'PipePhysics':
+            return PipePhysics(physics['inputs']['type'])
+
+
+        from pdb import set_trace
+        set_trace()
+
+    elif isinstance(physics, BasePhysicsModel):
+        return physics
+
+
 class BasePhysicsModel:
 
     def evaluate(self, w, US, DS):
         pass
 
+
+    def initialize(self, node):
+        self.node = node
+        self.geometry = node.geometry
+        
+
 class ConstantPhysics(BasePhysicsModel):
 
-    def __init__(self, node, dP=0, dH=0):
-        self.node = node
+    def __init__(self, dP=0, dH=0, node=None):
         self.dP = dP
         self.dH     = dH
 
+        if node is not None:
+            self.initialize(node)
+
     def evaluate(self, w, US, DS):
         return {'dP': self.dP, 'dH': self.dH}
+    
+    @property
+    def _state(self):
+        return {'type':'ConstantPhysics',
+                'inputs': {'dP': self.dP, 'dH': self.dH}}
 
 class CustomPhysics(BasePhysicsModel):
 
-    def __init__(self, node, dP_func=None, dH_func=None):
+    def __init__(self, node=None, dP_func=None, dH_func=None):
         self.node = node
         self.dP_func = dP_func
         self.dH_func = dH_func
+
+        if node is not None:
+            self.initialize(node)
 
     def evaluate(self, w, US, DS):
         return {'dP': self.dP_func(w, US, DS),
@@ -196,13 +234,20 @@ class CustomPhysics(BasePhysicsModel):
 
 class PipePhysics(BasePhysicsModel):
 
-    def __init__(self, node, geometry, type='straight'):
-        self.node = node
-        self.geometry = geometry
+    def __init__(self, type='straight', node=None):
 
-        if type == 'straight':
+        self.type = type
+
+        if node is not None:
+            self.initialize(node)
+
+
+    def initialize(self, node):
+        super().initialize(node)
+
+        if self.type == 'straight':
             self.dP_model = StraightLoss(self.node, self.geometry)
-        elif type == 'bend':
+        elif self.type == 'bend':
             self.dP_model = BendLoss(self.node, self.geometry)
         else:
             from pdb import set_trace

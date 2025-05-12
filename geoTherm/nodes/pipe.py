@@ -6,7 +6,7 @@ from ..utils import dP_pipe
 from ..logger import logger
 import numpy as np
 from ..resistance_models.flow import PipeLoss#, PipeLossModel, BendLoss
-from ..resistance_models.flow import ConstantPhysics, CustomPhysics, PipePhysics
+from ..resistance_models.flow import ConstantPhysics, CustomPhysics, PipePhysics, load_physics
 from rich.console import Console
 from rich.table import Table
 from rich.box import SIMPLE
@@ -35,6 +35,7 @@ class Pipe(baseInertantFlow, GeometryProperties):
                  roughness=1e-4,
                  t=0,
                  geometry=None,
+                 physics=None,
                  w:'MASSFLOW'=0,
                  dP:'PRESSURE'=None,
                  Z:'INERTANCE'=None):
@@ -64,15 +65,17 @@ class Pipe(baseInertantFlow, GeometryProperties):
                 else:
                     self._Z = Z
 
-        if dP is not None:
-            if isinstance(dP, (float, int)):
-                self.physics = ConstantPhysics(self, dP)
+        if physics is not None:
+            self.physics = load_physics(physics)
+        else:
+            if dP is not None:
+                if isinstance(dP, (float, int)):
+                    self.physics = ConstantPhysics(dP=dP, node=self)
+            elif self.geometry is not None:
+                self.physics = PipePhysics(node=self)
             else:
                 from pdb import set_trace
                 set_trace()
-        else:
-            self.physics = PipePhysics(self, self.geometry)
-
 
     @state_dict
     def _state_dict(self):
@@ -87,14 +90,14 @@ class Pipe(baseInertantFlow, GeometryProperties):
 
         if self.geometry is None:
             geometry_state = None
-            dP_state = (self._dP, 'Pa')
         else:
             geometry_state = self.geometry._state
-            dP_state = None
+
+        physics_state = self.physics._state
 
         # Add the current state vector to the dictionary
         return {'geometry': geometry_state,
-                'dP': dP_state}
+                'physics': physics_state}
 
     @property
     def _dP(self):
@@ -106,9 +109,9 @@ class Pipe(baseInertantFlow, GeometryProperties):
     def _dP(self, value):
 
         if callable(value):
-            self.physics = CustomPhysics(self, dP_func=value)
+            self.physics = CustomPhysics(dP_func=value)
         else:
-            self.physics = ConstantPhysics(self, dP=value)
+            self.physics = ConstantPhysics(dP=value, node=self)
             logger.info(f"Setting dP for {self.name} to {value}")
         
         if value is None:
@@ -118,7 +121,7 @@ class Pipe(baseInertantFlow, GeometryProperties):
                             f"specified for {self.name} node")
                 return
         
-            self.physics = PipePhysics(self, self.geometry)
+            self.physics = PipePhysics(node=self)
 
     @property
     def _U(self):
@@ -136,10 +139,10 @@ class Pipe(baseInertantFlow, GeometryProperties):
     def get_outlet_state(self, US, w):
 
         # Evaluate loss
-        dz = self.physics.evaluate(w, US, None)
+        dProp = self.physics.evaluate(w, US, None)
 
-        return {'H': US._H + dz['dH'],
-                'P': US._P + dz['dP']}
+        return {'H': US._H + dProp['dH'],
+                'P': US._P + dProp['dP']}
 
 
     @property

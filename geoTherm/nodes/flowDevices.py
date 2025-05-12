@@ -109,6 +109,34 @@ class fixedFlow(baseFlow):
         #US = self.model.nodes[self.US].thermo
         return {'H': US._H, 'P': US._P*PR}
 
+    def _get_outlet_state(self, US, PR):
+        """Calculate outlet state including heat transfer effects.
+
+        This method extends the base outlet state calculation by adding the heat
+        transfer contribution (Q) from any connected heat nodes (hot/cool nodes).
+        The heat transfer is added to the outlet enthalpy.
+
+        Args:
+            US: Upstream thermodynamic state
+            w (float): Mass flow rate [kg/s]
+
+        Returns:
+            dict: Outlet state dictionary containing pressure and enthalpy,
+                  with heat transfer effects included in the enthalpy
+
+        Note:
+            The heat transfer Q is divided by mass flow rate to convert
+            from total heat transfer [W] to specific enthalpy change [J/kg]
+        """
+        # Get base outlet state first
+        outlet_state = self.get_outlet_state(US, PR)
+
+        # Add heat transfer contribution to enthalpy if flow rate is non-zero
+        if self._w != 0:  # Avoid division by zero
+            outlet_state['H'] += self._Q/ self._w
+
+        return outlet_state
+
 
     def _get_dP(self, US, PR):
         return US._P*PR
