@@ -1,4 +1,5 @@
 from .baseNodes.baseThermo import baseThermo
+from .flowDevices import fixedFlow
 from ..logger import logger
 import numpy as np
 
@@ -112,6 +113,9 @@ class Outlet(Boundary):
                             f"cool upstream nodes:\n{self.cool_neighbors}\nIt "
                             "should only be downstream of 1 flow node!")
 
+        if len(self.US_nodes + self.DS_nodes + self.hot_neighbors + self.cool_neighbors) == 0:
+            logger.critical(f"Outlet Node '{self.name}' is not connected to any nodes!")
+
 
     def evaluate(self):
 
@@ -122,8 +126,16 @@ class Outlet(Boundary):
         upVol = self.US_nodes[0].US_node.thermo
         w = self.US_nodes[0]._w
 
-        # Update thermo state to US node outlet state
-        outlet_state = self.US_nodes[0].get_outlet_state(upVol, w)
+
+        if isinstance(self.US_nodes[0], fixedFlow):
+            outlet_state = self.US_nodes[0]._get_outlet_state(upVol, 1)
+        else:
+            outlet_state = self.US_nodes[0]._get_outlet_state(upVol, w)
+
+
+        ### need some refactoring here
+        # need to add q to outlet
+        # 
 
         #Update Outlet State
         try:
