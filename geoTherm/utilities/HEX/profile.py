@@ -16,10 +16,22 @@ class HEXProfile:
                  dP_cold=0,
                  config='counterflow',):
 
-        self.hot_inlet = hot_inlet
-        self.hot_outlet = hot_outlet
-        self.cold_inlet = cold_inlet
-        self.cold_outlet = cold_outlet
+        if hot_inlet is not None:
+            self.hot_inlet = hot_inlet.from_state(hot_inlet.state)
+        else:
+            self.hot_inlet = None
+        if hot_outlet is not None:
+            self.hot_outlet = hot_outlet.from_state(hot_outlet.state)
+        else:
+            self.hot_outlet = None
+        if cold_inlet is not None:
+            self.cold_inlet = cold_inlet.from_state(cold_inlet.state)
+        else:
+            self.cold_inlet = None
+        if cold_outlet is not None:
+            self.cold_outlet = cold_outlet.from_state(cold_outlet.state)
+        else:
+            self.cold_outlet = None
         self.dP_hot = dP_hot
         self.dP_cold = dP_cold
         self.w_hot = w_hot
@@ -133,11 +145,34 @@ class HEXProfile:
         T_hot = results['T_hot']
         T_cold = results['T_cold']
 
-        # Calculate pinch point
+        # Calculate pinch points
         temp_diff = T_hot - T_cold
-        pinch_point = min(temp_diff)
-        pinch_idx = np.argmin(temp_diff)
-        pinch_position = position[pinch_idx]
+        min_temp_diff = min(temp_diff)
+        
+        # Find points that are within 0.1K of the minimum temperature difference
+        pinch_indices = np.where(np.abs(temp_diff - min_temp_diff) < 0.1)[0]
+        
+        # If only one pinch point, find the second smallest temperature difference point
+        if len(pinch_indices) == 1:
+            # Create a copy of temperature differences
+            temp_diff_copy = temp_diff.copy()
+            # Set the first pinch point and surrounding points to a large value
+            start_idx = max(0, pinch_indices[0] - 1)
+            end_idx = min(len(temp_diff), pinch_indices[0] + 2)
+            temp_diff_copy[start_idx:end_idx] = float('inf')
+            
+            # Find the second minimum point
+            second_min_val = np.min(temp_diff_copy)
+            second_min_indices = np.where(np.abs(temp_diff - second_min_val) < 0.1)[0]
+            
+            # Take the first occurrence if multiple points have the same value
+            second_min_idx = second_min_indices[0]
+            
+            # Only add if it's a different point
+            if second_min_idx not in pinch_indices:
+                pinch_indices = np.append(pinch_indices, second_min_idx)
+            
+        pinch_positions = position[pinch_indices]
 
         # Plot temperature profiles
         ax1.plot(position, T_hot, 'ro-', label='Hot fluid', linewidth=2)
@@ -152,20 +187,28 @@ class HEXProfile:
         Quality = results['Quality']
         ax3.plot(position, Quality, 'k.', label='Quality', linewidth=2)
 
-        # Plot pinch point
-        ax1.plot(pinch_position, T_hot[pinch_idx], 'go', markersize=8, label='Pinch point')
-        ax1.plot(pinch_position, T_cold[pinch_idx], 'go', markersize=8)
+        # Plot all pinch points with different labels
+        for i, (pinch_idx, pinch_position) in enumerate(zip(pinch_indices, pinch_positions)):
+            label = "Pinch point" if i == 0 else "Second closest approach" if len(pinch_indices) > 1 else ""
+            ax1.plot(pinch_position, T_hot[pinch_idx], 'go', markersize=8, label=label)
+            ax1.plot(pinch_position, T_cold[pinch_idx], 'go', markersize=8)
 
         # Move legend and pinch text to the right side
         ax1.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
 
         # Add pinch point text box to the right of the plot, below the legend
         pinch_text = (f"Pinch Point Analysis:\n"
-                    f"Position: {pinch_position:.1f}% Q\n"
-                    f"Hot T: {T_hot[pinch_idx]:.1f}{T_unit}\n"
-                    f"Cold T: {T_cold[pinch_idx]:.1f}{T_unit}\n"
-                    f"ΔT: {pinch_point:.1f}{T_unit}\n"
-                    f"Q at pinch: {(Q_tot * pinch_position/100):.1f} {Q_unit}")
+                     f"Number of pinch points: {len(pinch_indices)}\n")
+        
+        # Update pinch point text for second smallest point if applicable
+        for i, (pinch_idx, pinch_position) in enumerate(zip(pinch_indices, pinch_positions)):
+            label = "Pinch point" if i == 0 else "Second closest approach" if len(pinch_indices) > 1 else ""
+            pinch_text += (f"\n{'Pinch Point' if i == 0 else 'Second Closest Point'} {i+1}:\n"
+                         f"Position: {pinch_position:.1f}% Q\n"
+                         f"Hot T: {T_hot[pinch_idx]:.1f}{T_unit}\n"
+                         f"Cold T: {T_cold[pinch_idx]:.1f}{T_unit}\n"
+                         f"ΔT: {temp_diff[pinch_idx]:.1f}{T_unit}\n"
+                         f"Q at point: {(Q_tot * pinch_position/100):.1f} {Q_unit}")
 
         ax1.text(1.02, 0.7, pinch_text,
                 transform=ax1.transAxes,
@@ -220,8 +263,8 @@ class HEXProfile:
         # Add pressure annotations
         P_hot_in = P_hot[0]
         P_hot_out = P_hot[-1]
-        P_hot_pinch = P_hot[pinch_idx]
-        P_cold_pinch = P_cold[pinch_idx]
+        P_hot_pinch = P_hot[pinch_indices[0]]
+        P_cold_pinch = P_cold[pinch_indices[0]]
         # Customize temperature subplot
         ax1.set_title(f'Heat Exchanger Temperature Profile\nQ = {Q_tot:.1f} {Q_unit}',
                     fontsize=14, pad=20)
@@ -285,6 +328,8 @@ def T_dQ_counter_flow(Q, w_hot, w_cold,
     P_hot = np.zeros(n_points+1)
     P_cold = np.zeros(n_points+1)
     Quality = np.zeros(n_points+1)
+    H_hot = np.zeros(n_points+1)
+    H_cold = np.zeros(n_points+1)
 
     # Create fluid state objects for calculations
     hot_state = thermo.from_state(hot_inlet.state)
@@ -302,7 +347,6 @@ def T_dQ_counter_flow(Q, w_hot, w_cold,
         # Update hot fluid state
         hot_state._HP = hot_inlet._H - (Q-current_Q)/w_hot, current_P_hot
 
-
         # Update cold fluid state
         prev_phase = cold_state.phase
         cold_state._HP = cold_inlet._H + current_Q/w_cold, current_P_cold
@@ -312,7 +356,10 @@ def T_dQ_counter_flow(Q, w_hot, w_cold,
         P_hot[j] = current_P_hot    
         T_cold[j] = cold_state._T
         P_cold[j] = current_P_cold
-        Quality[j] = cold_state.Q
+        Quality[j] = cold_state.Q   
+        H_hot[j] = hot_state._H
+        H_cold[j] = cold_state._H
+
 
         # If phase change, insert saturation point at i-1
         if cold_state.phase != prev_phase: 
@@ -336,7 +383,7 @@ def T_dQ_counter_flow(Q, w_hot, w_cold,
                 i_pos = j
             else:
                 from pdb import set_trace
-                set_trace()
+                #set_trace()
 
             q_sat = w_cold * (cold_state._H - sat_state._H)
             hot_state._HP = hot_inlet._H - (Q-current_Q-q_sat)/w_hot, current_P_hot
@@ -347,9 +394,12 @@ def T_dQ_counter_flow(Q, w_hot, w_cold,
             T_cold = np.insert(T_cold, i_pos, sat_state._T)
             P_cold = np.insert(P_cold, i_pos, current_P_cold)
             Quality = np.insert(Quality, i_pos, sat_state.Q)
+            H_hot = np.insert(H_hot, i_pos, hot_state._H)
+            H_cold = np.insert(H_cold, i_pos, sat_state._H)
             j += 1
             #n_points += 1
             continue
+
 
         # If no phase change, continue
         i += 1
@@ -360,7 +410,7 @@ def T_dQ_counter_flow(Q, w_hot, w_cold,
         Quality[Quality < 0] = -1
         Quality[Quality > 1] = -1
 
-    if Q_array[-1] != Q:
+    if np.abs(Q_array[-1] - Q) > 1:
         from pdb import set_trace
         set_trace()
 
@@ -371,4 +421,6 @@ def T_dQ_counter_flow(Q, w_hot, w_cold,
         'P_hot': P_hot,
         'P_cold': P_cold,
         'Quality': Quality,
+        'H_hot': H_hot,
+        'H_cold': H_cold,
     }

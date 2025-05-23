@@ -13,6 +13,9 @@ from geoTherm.nodes.flowDevices import *
 
 from geoTherm.maps.turbine.turbine_maps import Claudio_Turbine
 
+from geoTherm.geometry import simple
+from . import pressure_drop
+
 
 from geoTherm.nodes.heatsistor import *
 from geoTherm.nodes.turbine import *
@@ -24,6 +27,8 @@ from geoTherm.nodes.controller import *
 from geoTherm.nodes.schedule import *
 from geoTherm.thermostate import thermo
 from . import flow_funcs
-from geoTherm.nodes.geometry import *
+
 from geoTherm.resistance_models.heat import *
 from geoTherm.DEFAULTS import DEFAULTS
+
+from . import geometry

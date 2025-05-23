@@ -13,7 +13,7 @@ def test_fixed_flow():
     Pin = foo.nodes['Inlet'].thermo._P
     Pout = foo.nodes['Outlet'].thermo._P
 
-    assert(math.isclose(PR, Pin/Pout, abs_tol = 1e-5))
+    assert(math.isclose(PR, Pout/Pin, abs_tol = 1e-5))
     
     
 def test_fixed_PR():
@@ -32,7 +32,7 @@ def test_fixed_PR():
     Pout = foo.nodes['Vol'].thermo._P
     Tout = foo.nodes['Outlet'].thermo._T
 
-    assert(math.isclose(PR, Pin/Pout, abs_tol = 1e-5))
+    assert(math.isclose(PR, Pout/Pin, abs_tol = 1e-5))
     assert(math.isclose(Tout, 373.132, abs_tol =1e-3))
         
 

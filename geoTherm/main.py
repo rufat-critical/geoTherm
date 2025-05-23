@@ -427,6 +427,7 @@ class Model(modelTable):
         elif isinstance(nodes, dict):
             NodeType = getattr(gt.nodes, nodes['Node_Type'])
             node = NodeType(nodes['name'], **nodes['config'])
+
             if 'x' in nodes['config']:
                 node.update_state(nodes['x'])
             self.addNode(node)

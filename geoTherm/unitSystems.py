@@ -54,6 +54,7 @@ class SI:
         'SPECIFICVOLUME': 'm**3/kg',       # Cubic meter per kilogram
         'ENERGY': 'J',                     # Joule
         'LENGTH': 'm',                     # Meter
+        '1/LENGTH': 'm**-1',               # Reciprocal meter
         'MASS': 'kg',                      # Kilogram
         'MASSFLOW': 'kg/s',                # Kilogram per second
         'MASSFLOWDERIV': 'kg/s**2',        # Kilogram per second squared
@@ -100,6 +101,7 @@ class ENGLISH:
         'SPECIFICVOLUME': 'in**3/lb',      # Cubic inch per pound
         'ENERGY': 'Btu',                   # British thermal unit
         'LENGTH': 'in',                    # Inch
+        '1/LENGTH': 'in**-1',               # Reciprocal inch
         'MASS': 'lb',                      # Pound
         'MOLARMASS': 'lb/mol',           # Pound per lbmol
         'MASSFLOW': 'lb/s',                # Pound per second
@@ -131,6 +133,53 @@ class ENGLISH:
         'ANGLE': 'deg',
     }
 
+@dataclass
+class ENGLISHFT:
+    """
+    English Units Class
+
+    This class defines the standard units used in the English unit system
+    for various physical quantities.
+    """
+    units = {
+        'AREA': 'ft**2',                   # Square inch
+        'DENSITY': 'lb/ft**3',             # Pound per cubic inch
+        'SPECIFICVOLUME': 'ft**3/lb',      # Cubic inch per pound
+        'ENERGY': 'Btu',                   # British thermal unit
+        'LENGTH': 'ft',                    # Inch   
+        '1/LENGTH': 'ft**-1',               # Reciprocal inch
+        'MASS': 'lb',                      # Pound
+        'MOLARMASS': 'lb/mol',           # Pound per lbmol
+        'MASSFLOW': 'lb/s',                # Pound per second
+        'MASSFLOWDERIV': 'lb/s**2',        # Pound per second squared
+        'MASSFLUX': 'lbs/s/ft**2',         # Pounds per second per square inch
+        'POWER': 'Btu/s',                  # British thermal unit per second
+        'PRESSURE': 'psi',                 # Pounds per square inch
+        'SPECIFICENERGY': 'Btu/lb',        # British thermal unit per pound
+        'SPECIFICENTROPY': 'Btu/lb/degR',  # BTU per pound per Rankine
+        'SPECIFICHEAT': 'Btu/lb/degR',     # BTU per pound per Rankine
+        'SPECIFICPOWER': 'Btu/s/lb',       # BTU per second per pound
+        'TEMPERATURE': 'degR',             # Rankine
+        'VELOCITY': 'ft/s',                # Feet per second
+        'VISCOSITY': 'lb/in/s',            # Pound per inch per second
+        'CONDUCTIVITY': 'Btu/hr/ft/F',     # BTU per hour per foot per
+                                           # Fahrenheit
+        'VOLUME': 'ft**3',                 # Cubic inch
+        'THERMALRESISTANCE': 'degR/Btu/s',  # Rankine per BTU per second
+        'CONVECTION': 'Btu/s/ft**2/degR',  # BTU per second per square foot
+                                           # per Rankine
+        'VOLUMETRICFLOW': 'gallons/min',       # Cubic foot per second
+        'SPECIFICSPEED': 'rpm*(ft**3/s)**(0.5)/(ft*lbf/lb)**(3/4)',
+        'SPECIFICDIAMETER': 'ft*(ft*lbf/lb)**(1/4)/(ft**3/s)**(0.5)',
+        'ROTATIONSPEED': 'rpm',            # Revolutions per minute
+        'SURFACETENSION': 'lbf/in',
+        'INERTANCE': 'ft**-3',
+        'GASCONSTANT': 'ft*lbf/lb/degR',
+        'RPM': 'rpm',
+        'ANGLE': 'deg',
+    }
+
+
 
 @dataclass
 class MIXED:
@@ -146,6 +195,7 @@ class MIXED:
         'SPECIFICVOLUME': 'm**3/kg',       # Cubic meter per kilogram
         'ENERGY': 'MJ',                    # Megajoule
         'LENGTH': 'in',                    # Inch
+        '1/LENGTH': 'in**-1',               # Reciprocal inch
         'MASS': 'lb',                      # Pound
         'MOLARMASS': 'kg/kmol',
         'MASSFLOW': 'kg/s',                # Kilogram per second

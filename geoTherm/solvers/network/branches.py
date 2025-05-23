@@ -864,6 +864,7 @@ class FlowBranch(baseBranch):
         US_thermo = US_junction.node.thermo
         # Track Qin to this branch
         Qin = 0
+
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
 

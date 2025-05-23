@@ -35,17 +35,21 @@ def find_pinch_Q(cold_inlet, cold_outlet, hot_inlet, w_hot, dP_hot, T_pinch):
     Find the heat transfer rate that results in a pinch point temperature difference of T_pinch
     """
 
+    cold_inlet = cold_inlet.from_state(cold_inlet.state)
+    cold_outlet = cold_outlet.from_state(cold_outlet.state)
+    hot_inlet = hot_inlet.from_state(hot_inlet.state)
+
     # Check that cold_inlet and cold_outlet are not below T_pinch
-    if hot_inlet._T - cold_inlet._T < T_pinch:
-        logger.warn(f'dT at cold inlet is below T_pinch with no heat transfer: {hot_inlet._T - cold_inlet._T} K')
-        return 0
-    elif hot_inlet._T - cold_outlet._T < T_pinch:
+    #if hot_inlet._T - cold_inlet._T < T_pinch:
+    #    logger.warn(f'dT at cold inlet is below T_pinch with no heat transfer: {hot_inlet._T - cold_inlet._T} K')
+    #    return 0, 0
+    if hot_inlet._T - cold_outlet._T < T_pinch:
         logger.warn(f'dT at cold outlet is below T_pinch with no heat transfer: {hot_inlet._T - cold_outlet._T} K')
-        return 0
+        return 0, 0
 
     hot_outlet = hot_inlet.from_state(hot_inlet.state)
     # Max possible heat transfer is when outlet temperature is at T_pinch for counter flow
-    hot_outlet._TP = cold_inlet._T + T_pinch, hot_inlet._P - dP_hot
+    hot_outlet._TP = cold_inlet._T + (T_pinch-1), hot_inlet._P - dP_hot
     Q_max = w_hot * (hot_inlet._H - hot_outlet._H)
     Q_min = 0.001
 
@@ -56,13 +60,36 @@ def find_pinch_Q(cold_inlet, cold_outlet, hot_inlet, w_hot, dP_hot, T_pinch):
     # Generate thermo objects
     hot_thermo = hot_inlet.from_state(hot_inlet.state)
     cold_thermo = cold_inlet.from_state(cold_inlet.state)
+    
+    
+    cold_outlet._TP = cold_outlet._T, cold_inlet._P
 
-    if cold_inlet._P >= cold_inlet._P_crit or cold_outlet._P >= cold_outlet._P_crit:
-        mdot_cold, Q = find_pinch_Q_general(cold_inlet, cold_outlet, hot_inlet,
-                                   hot_outlet, w_hot, dP_hot, T_pinch, mdot_cold_bounds = [w_cold_min, w_cold_max],
-                                   hot_thermo=hot_thermo, cold_thermo=cold_thermo)
-        
-        return mdot_cold, Q
+    if (cold_inlet._P >= cold_inlet._P_crit
+        or cold_outlet._P >= cold_outlet._P_crit
+        or cold_inlet._T >= cold_inlet._T_crit
+        or cold_outlet._T >= cold_outlet._T_crit):
+
+        # For debugging
+        # HEX = HEXProfile(w_hot= w_hot, w_cold=w_cold_max, hot_inlet=hot_inlet,
+        #                 cold_inlet=cold_inlet, cold_outlet=cold_outlet, dP_hot=dP_hot)
+        # Q = w_cold_max * (cold_outlet._H - cold_inlet._H)
+        # HEX.evaluate(Q, n_points=100)
+        # from pdb import set_trace
+        # set_trace()
+
+        w_cold, Q = find_pinch_Q_general(cold_inlet=cold_inlet,
+                                         cold_outlet=cold_outlet,
+                                         hot_inlet=hot_inlet,
+                                         hot_outlet=hot_outlet,
+                                         w_hot=w_hot,
+                                         dP_hot=dP_hot,
+                                         T_pinch=T_pinch,
+                                         w_cold_bounds=[w_cold_min,
+                                                        w_cold_max],
+                                         hot_thermo=hot_thermo,
+                                         cold_thermo=cold_thermo)
+
+        return w_cold, Q
 
 
     def find_Q(w_cold):
@@ -72,7 +99,7 @@ def find_pinch_Q(cold_inlet, cold_outlet, hot_inlet, w_hot, dP_hot, T_pinch):
         except:
             from pdb import set_trace
             set_trace()
-        
+
         dT = dT_subcritical_counter_flow(cold_inlet, cold_outlet, hot_inlet, hot_outlet, w_hot, w_cold, Q=Q, dP_hot=dP_hot, hot_thermo=hot_thermo, cold_thermo=cold_thermo)
 
         return np.min(dT['dT'][:2]) - T_pinch
@@ -94,42 +121,114 @@ def find_pinch_Q(cold_inlet, cold_outlet, hot_inlet, w_hot, dP_hot, T_pinch):
 
     return mdot_cold, Q
 
-def find_pinch_Q_general(cold_inlet, cold_outlet, hot_inlet, hot_outlet, mdot_hot, dP_hot, T_pinch, 
-                                mdot_cold_bounds,
-                                hot_thermo=None, cold_thermo=None):
+def find_pinch_T(cold_inlet, cold_outlet, hot_inlet, w_hot, w_cold):
 
+    cold_inlet = cold_inlet.from_state(cold_inlet.state)
+    cold_outlet = cold_outlet.from_state(cold_outlet.state)
+    cold_inlet._TP = cold_inlet._T, cold_outlet._P
 
-    dP_cold = (cold_outlet._P - cold_inlet._P)
+    hot_inlet = hot_inlet.from_state(hot_inlet.state)
+    hot_outlet = hot_inlet.from_state(hot_inlet.state)
 
-    def dT_Q(Q, Q_tot, mdot_cold):
-        hot_thermo._HP = hot_inlet._H - (Q_tot-Q)/mdot_hot, hot_inlet._P - dP_hot*(Q_tot-Q)/Q_tot
-        cold_thermo._HP = cold_inlet._H + Q/mdot_cold, cold_inlet._P + dP_cold*Q/Q_tot
+    Q = w_cold * (cold_outlet._H - cold_inlet._H)
+
+    hot_thermo = hot_inlet.from_state(hot_inlet.state)
+    cold_thermo = cold_inlet.from_state(cold_inlet.state)
+
+    def dT_Q(logQ, Q_tot, w_cold):
+
+        Q = np.exp(logQ)
+
+        hot_thermo._HP = hot_inlet._H - (Q_tot-Q)/w_hot, hot_inlet._P
+        cold_thermo._HP = cold_inlet._H + Q/w_cold, cold_inlet._P
 
         dT = hot_thermo._T - cold_thermo._T
         return dT
 
-    def deltaT(mdot_cold):
-        Q = mdot_cold * (cold_outlet._H - cold_inlet._H)
-        hot_thermo._HP = hot_inlet._H - Q/mdot_hot, hot_inlet._P - dP_hot
+    sol = minimize_scalar(dT_Q, args=(Q, w_cold), bounds=[np.log(1e-8), np.log(Q*.999)], method='bounded')
 
-        sol = minimize_scalar(dT_Q, args=(Q, mdot_cold), bounds=[0, Q*.99], method='bounded')
+
+    return sol.fun
+
+
+
+def find_pinch_Q_general(cold_inlet, cold_outlet, hot_inlet, hot_outlet, w_hot, dP_hot, T_pinch, 
+                                w_cold_bounds,
+                                hot_thermo=None, cold_thermo=None):
+
+
+    dP_cold = 0#(cold_outlet._P - cold_inlet._P)
+    cold_outlet._TP = cold_outlet._T, cold_inlet._P
+    def dT_Q(logQ, Q_tot, w_cold):
+
+        Q = np.exp(logQ)
+
+        hot_thermo._HP = hot_inlet._H - (Q_tot-Q)/w_hot, hot_inlet._P - dP_hot*(Q_tot-Q)/Q_tot
+        cold_thermo._HP = cold_inlet._H + Q/w_cold, cold_inlet._P + dP_cold*Q/Q_tot
+
+        dT = hot_thermo._T - cold_thermo._T
+        return dT
+
+    def dT_Q2(Q, Q_tot, w_cold):
+        #Q = np.exp(logQ)
+        hot_thermo._HP = hot_inlet._H - (Q_tot-Q)/w_hot, hot_inlet._P - dP_hot*(Q_tot-Q)/Q_tot
+        cold_thermo._HP = cold_inlet._H + Q/w_cold, cold_inlet._P + dP_cold*Q/Q_tot
+
+        dT = hot_thermo._T - cold_thermo._T
+        return dT
+
+    def deltaT(w_cold):
+        Q = w_cold * (cold_outlet._H - cold_inlet._H)
+        #hot_thermo._HP = hot_inlet._H - Q/w_hot, hot_inlet._P - dP_hot
+
+        # Look for pinch point in interior of hot stream
+        sol = minimize_scalar(dT_Q, args=(Q, w_cold), bounds=[np.log(1e-8), np.log(Q*.999)], method='bounded')
 
         return sol.fun - T_pinch
 
-    mdot_cold = mdot_cold_bounds[0]
 
-    Q = mdot_cold * (cold_outlet._H - cold_inlet._H)
+    if bool(np.sign(deltaT(w_cold_bounds[0])) == np.sign(deltaT(w_cold_bounds[1]))):
+        
+        HEX_hot = HEXProfile(w_hot= w_hot, w_cold=w_cold_bounds[1], hot_inlet=hot_inlet,
+                         cold_inlet=cold_inlet, cold_outlet=cold_outlet, dP_hot=dP_hot)
+        Q = w_cold_bounds[1] * (cold_outlet._H - cold_inlet._H)
+        HEX_hot.evaluate(Q, n_points=100)
+
+        HEX_cold = HEXProfile(w_hot= w_hot, w_cold=w_cold_bounds[0], hot_inlet=hot_inlet,
+                         cold_inlet=cold_inlet, cold_outlet=cold_outlet, dP_hot=dP_hot)
+        Q = w_cold_bounds[0] * (cold_outlet._H - cold_inlet._H)
+        HEX_cold.evaluate(Q, n_points=10000)
+        w_cold = w_cold_bounds[0]
+       # sol = minimize_scalar(dT_Q, args=(Q, w_cold), bounds=[0, Q*.99], method='bounded')
+        print("CHECK find_pinch_Q_general")
+        from pdb import set_trace
+        set_trace()
 
 
-    sol = root_scalar(deltaT, bracket=[mdot_cold_bounds[0], mdot_cold_bounds[1]], method='brentq')
-    mdot_cold = sol.root
-    Q = mdot_cold * (cold_outlet._H - cold_inlet._H)
-    sol = minimize_scalar(dT_Q, args=(Q, mdot_cold), bounds=[0, Q*.99], method='bounded')
-
-    Q = mdot_cold * (cold_outlet._H - cold_inlet._H)
+    
+    sol = root_scalar(deltaT, bracket=[w_cold_bounds[0], w_cold_bounds[1]], method='brentq')
 
 
-    return mdot_cold, Q
+
+    if False:
+        HEX_hot = HEXProfile(w_hot= w_hot, w_cold=sol.root, hot_inlet=hot_inlet,
+                         hot_outlet=hot_outlet, cold_inlet=cold_inlet)
+        Q = sol.root * (cold_outlet._H - cold_inlet._H)
+        hot_outlet._HP = hot_inlet._H - Q/w_hot, hot_inlet._P - dP_hot
+        from pdb import set_trace
+        #set_trace()
+        HEX_hot.evaluate(Q, n_points=100)
+
+    #from pdb import set_trace
+    #set_trace()
+
+    w_cold = sol.root
+    Q = w_cold * (cold_outlet._H - cold_inlet._H)
+    #sol = minimize_scalar(dT_Q, args=(Q, w_cold), bounds=[0, Q*.99], method='bounded')
+
+
+
+    return w_cold, Q
 
 
 
@@ -177,6 +276,7 @@ def dT_subcritical_counter_flow(cold_inlet, cold_outlet, hot_inlet, hot_outlet, 
 
     # Calculate saturation point properties, assume no pressure drop
     cold_thermo._PQ = cold_inlet._P, 0
+
     Q_sat = w_cold * (cold_thermo._H - cold_inlet._H)
 
     hot_thermo._HP = (
@@ -194,3 +294,92 @@ def dT_subcritical_counter_flow(cold_inlet, cold_outlet, hot_inlet, hot_outlet, 
         'Qs': np.array([0, Q_sat, Q])
     }
 
+
+
+def find_pinch_Q_hot(hot_inlet, hot_outlet, cold_inlet, w_hot, Q, dP_cold, T_pinch):
+    """
+    Find the heat transfer rate that results in a pinch point temperature difference of T_pinch
+    """
+
+    # Check that cold_inlet and cold_outlet are not below T_pinch
+    if hot_outlet._T - cold_inlet._T < T_pinch:
+        logger.warn(f'dT at hot outlet is below T_pinch with no heat transfer: {hot_outlet._T - hot_inlet._T} K')
+        from pdb import set_trace
+        set_trace()
+        #return 0, 0
+
+
+    cold_outlet = cold_inlet.from_state(cold_inlet.state)
+    # Max possible heat transfer is when outlet temperature is at T_pinch for counter flow
+    cold_outlet._TP = hot_inlet._T + (T_pinch-1), hot_inlet._P - dP_cold
+
+    # Get max and min cold_inlet mdots
+    w_cold_min = Q/(cold_outlet._H - cold_inlet._H)
+    w_cold_max = 1e5
+
+    # Generate thermo objects
+    hot_thermo = hot_inlet.from_state(hot_inlet.state)
+    cold_thermo = cold_inlet.from_state(cold_inlet.state)
+
+
+    dP_hot =0# hot_outlet._P - hot_inlet._P
+
+
+    def dT_Q(Q, Q_tot, w_cold):
+        hot_thermo._HP = hot_inlet._H - (Q_tot-Q)/w_hot, hot_inlet._P - dP_hot*(Q_tot-Q)/Q_tot
+        cold_thermo._HP = cold_inlet._H + Q/w_cold, cold_inlet._P + dP_cold*Q/Q_tot
+
+        dT = hot_thermo._T - cold_thermo._T
+        return dT
+
+    def deltaT(w_cold):
+        #Q = w_cold * (cold_outlet._H - cold_inlet._H)
+        #hot_thermo._HP = hot_inlet._H - Q/w_hot, hot_inlet._P - dP_hot
+
+
+        cold_thermo._HP = cold_inlet._H + Q/w_cold, cold_inlet._P + dP_cold
+
+        sol = minimize_scalar(dT_Q, args=(Q, w_cold), bounds=[0, Q*.999], method='bounded')
+
+        return sol.fun - T_pinch
+
+
+    if np.sign(deltaT(w_cold_max)) == np.sign(deltaT(w_cold_min)):
+        from pdb import set_trace
+        set_trace()
+
+        # For debugging
+        HEX_hot = HEXProfile(w_hot= w_hot, w_cold=w_cold_max, hot_inlet=hot_inlet,
+                         cold_inlet=cold_inlet, cold_outlet=cold_outlet, dP_hot=dP_hot)
+        Q = w_cold_max * (cold_outlet._H - cold_inlet._H)
+        HEX_hot.evaluate(Q, n_points=100)
+        HEX_cold = HEXProfile(w_hot= w_hot, w_cold=w_cold_min, hot_inlet=hot_inlet,
+                         cold_inlet=cold_inlet, cold_outlet=cold_outlet, dP_hot=dP_hot)
+        Q = w_cold_min * (cold_outlet._H - cold_inlet._H)
+        HEX_cold.evaluate(Q, n_points=100)
+        
+        print("CHECK find_pinch_Q_general")
+        from pdb import set_trace
+        set_trace()
+
+
+    sol = root_scalar(deltaT, bracket=[w_cold_min, w_cold_max], method='brentq')
+
+    if True:
+        hot_outlet._HP = hot_outlet._H, hot_inlet._P
+        HEX_hot = HEXProfile(w_hot=w_hot, w_cold=sol.root, hot_inlet=hot_inlet,
+                             hot_outlet=hot_outlet, cold_inlet=cold_inlet)
+        #Q = w_cold_max * (cold_outlet._H - cold_inlet._H)
+        HEX_hot.evaluate(Q, n_points=100)        
+
+
+
+
+    w_cold = sol.root
+    cold_outlet._HP = cold_inlet._H + Q/w_cold, cold_inlet._P
+    #ol = minimize_scalar(dT_Q, args=(Q, w_cold), bounds=[0, Q*.99], method='bounded')
+
+    #Q = w_cold * (cold_outlet._H - cold_inlet._H)
+
+
+    return w_cold, cold_outlet

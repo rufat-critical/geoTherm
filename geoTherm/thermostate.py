@@ -335,6 +335,10 @@ class Incompressible:
             if state['D'] != 1000:
                 from pdb import set_trace
                 set_trace()
+        elif stateVars == 'SP':
+            T = 273.15*np.exp(state['S']/self._cp)
+            self.update_enthalpy(T)
+            self._P = state['P']
         else:
             from pdb import set_trace
             set_trace()
@@ -366,13 +370,16 @@ class Incompressible:
             return 0
         elif property == 'Q':
             return -1
+        elif property == 'Pvap':
+            return 9999
+        elif property == 'S':
+            return self._cp*np.log(self._T/273.15)
         else:
             from pdb import set_trace
             set_trace()
 
     def update_enthalpy(self, T):
         self._H = self._cp*(T - 273.15)
-    
 
 
 class coolprop_wrapper:
@@ -1082,3 +1089,6 @@ class thermo:
         self._HP = HP0
         # Linearly interpolate properties
         return prop0*(1-Q) + prop1*Q
+
+    def copy(self):
+        return self.from_state(self.state)

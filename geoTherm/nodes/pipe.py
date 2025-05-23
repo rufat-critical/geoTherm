@@ -1,5 +1,5 @@
 from .node import Node
-from .geometry import Cylinder, GeometryProperties, GeometryGroup
+from .geometry import GeometryProperties, GeometryGroup
 from .baseNodes.baseFlow import baseInertantFlow
 from ..units import inputParser, addQuantityProperty
 from ..utils import dP_pipe
@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.box import SIMPLE
 from ..decorators import state_dict
+from geoTherm.geometry.internal import Cylinder
 
 
 @addQuantityProperty
@@ -33,7 +34,6 @@ class Pipe(baseInertantFlow, GeometryProperties):
                  D=None,
                  dz=0,
                  roughness=1e-4,
-                 t=0,
                  geometry=None,
                  physics=None,
                  w:'MASSFLOW'=0,
@@ -53,7 +53,7 @@ class Pipe(baseInertantFlow, GeometryProperties):
         else:
             # Initialize Geometry
             if L is not None and D is not None:
-                self.geometry = Cylinder(D=D, L=L, dz=dz, t=t, roughness=roughness)
+                self.geometry = Cylinder(D=D, L=L, dz=dz, roughness=roughness)
                 if Z is None:
                     self._Z = self.geometry._L/self.geometry._area**2
                 else:

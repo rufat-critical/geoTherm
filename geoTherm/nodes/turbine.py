@@ -268,6 +268,34 @@ class fixedFlowTurbine(baseTurbine, fixedFlow):
         outlet = self.get_outlet_state(US, self.PR)
         self._ref_thermo._HP = outlet['H'], outlet['P']
 
+from geoTherm.utils import TurbineInterpolator
+
+class fixedFlowTurbineMap(baseTurbine, fixedFlow):
+
+    def __init__(self, name, US, DS, eta_map, w, flow_func='isentropic'):
+        super().__init__(name, US, DS, w, flow_func=flow_func)
+
+        if isinstance(eta_map, str):
+            self.eta_map = TurbineInterpolator(eta_map)
+        else:
+            self.eta_map = eta_map
+
+    def evaluate(self):
+
+        US, DS, _ = self.thermostates()
+        
+        from pdb import set_trace
+        set_trace()
+        self.eta = self.eta_map.get_optimal_rpm(US._P/DS._P)
+
+
+    def get_outlet_state(self, US, PR):
+        from pdb import set_trace
+        set_trace()
+
+    @state_dict
+    def _state_dict(self):
+        return {'eta_map': self.eta_map.csv_file}
 
 class fixedPRTurbine(baseInertantFlow, baseTurbine):
 

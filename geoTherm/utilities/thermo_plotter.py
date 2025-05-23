@@ -644,6 +644,11 @@ class thermoPlotter:
         plt.xlabel(self.labels[x_prop])
         plt.ylabel(self.labels[y_prop])
 
+        # Add major and minor gridlines
+        ax.minorticks_on()
+        ax.grid(which='major', linestyle='-', linewidth=0.75, alpha=0.7)
+        ax.grid(which='minor', linestyle=':', linewidth=0.5, alpha=0.5)
+
         if show is True:
             fig.show()
 

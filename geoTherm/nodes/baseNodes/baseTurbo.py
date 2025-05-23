@@ -126,6 +126,7 @@ class fixedFlowTurbo(baseTurbo):
         self._w_setpoint = w
 
 
+
 class fixedPressureRatioTurbo(baseInertantFlow, baseTurbo):
     """Base class for turbomachinery (pumps/compressors) with a fixed pressure ratio.
 
@@ -164,6 +165,7 @@ class fixedPressureRatioTurbo(baseInertantFlow, baseTurbo):
         pressure_error = DS_target['P'] - DS._P
 
         self._wdot = pressure_error
+
 
 class Turbo(baseFlow):
     """Base Turbo Class for turbines and pumps."""

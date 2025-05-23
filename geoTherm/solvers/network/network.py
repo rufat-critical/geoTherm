@@ -795,8 +795,6 @@ class Network:
         x = conditioner.unscale_x(sol.x)
         
         self.evaluate(x)
-        from pdb import set_trace
-        #set_trace()
 
 
 
