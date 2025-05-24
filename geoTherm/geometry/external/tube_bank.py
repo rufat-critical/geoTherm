@@ -119,6 +119,7 @@ class ExternalCircularFinnedTubeBank(ExternalTubeBank):
     _units = ExternalTubeBank._units | {'D_fin': 'LENGTH', 'th_fin': 'LENGTH', 
                                        'N_fin': '1/LENGTH'}
 
+    @inputParser
     def __init__(self, D: 'LENGTH', L: 'LENGTH', S_t: 'LENGTH', S_l: 'LENGTH', 
                  N_l, N_t, N_fin:'1/LENGTH', D_fin: 'LENGTH', th_fin: 'LENGTH'):
         """

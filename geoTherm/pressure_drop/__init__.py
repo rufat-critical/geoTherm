@@ -1,2 +1,3 @@
-from .tube_banks import *
+from . import internal  
+from . import external
 from .flow import *

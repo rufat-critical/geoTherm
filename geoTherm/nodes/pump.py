@@ -1,5 +1,5 @@
 from .baseNodes.baseTurbo import Turbo, pumpParameters, fixedFlowTurbo, baseTurbo, fixedPressureRatioTurbo, turboParameters
-from .baseNodes.baseFlow import baseInertantFlow
+from .baseNodes.baseFlow import baseInertantFlow, FixedFlow
 from .flowDevices import fixedFlow
 from ..units import addQuantityProperty
 from ..utils import pump_eta
@@ -108,7 +108,7 @@ class Pump(baseInertantPump):
 
 
 @addQuantityProperty
-class fixedFlowPump(basePump, fixedFlow):
+class fixedFlowPump(basePump, FixedFlow):
     """Pump with a fixed mass flow rate.
 
     A pump that maintains a constant mass flow rate.
@@ -124,8 +124,8 @@ class fixedFlowPump(basePump, fixedFlow):
     _displayVars = ['w', 'eta', 'dH', 'W', 'PR']
     _bounds = [1, 100]
 
-    def __init__(self, name, US, DS, w, eta, flow_func='isentropic'):
-        super().__init__(name, US, DS, w, flow_func)
+    def __init__(self, name, US, DS, w, eta):
+        super().__init__(name, US, DS, w)
         self.eta = eta
 
     @state_dict

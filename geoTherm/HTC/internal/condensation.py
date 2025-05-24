@@ -1,6 +1,6 @@
-from ..logger import logger
-from .HTC import BaseHTC
-from .single_phase import Dittus_Boelter
+from geoTherm.common import logger
+from ..HTC import BaseHTC
+from geoTherm.HTC.internal.single_phase import Dittus_Boelter
 import numpy as np
 
 

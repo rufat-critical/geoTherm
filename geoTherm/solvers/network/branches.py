@@ -3,7 +3,7 @@ from .junctions import (Junction, BoundaryJunction,
 from geoTherm.units import addQuantityProperty
 from ...nodes.baseNodes.baseThermal import baseThermal
 from ...nodes.baseNodes.baseThermo import baseThermo
-from ...nodes.baseNodes.baseFlow import baseFlow, baseInertantFlow
+from ...nodes.baseNodes.baseFlow import baseFlow, baseInertantFlow, FixedFlow
 from ...nodes.baseNodes.baseTurbo import Turbo
 from ...nodes.flowDevices import fixedFlow
 from ...nodes.baseNodes.baseFlowResistor import baseFlowResistor
@@ -346,13 +346,13 @@ class FlowBranch(baseBranch):
                     else:
                         self._bounds[1] = np.min([self._bounds[1], 0])
 
-            if isinstance(node, (Pump, cycleCloser, fixedFlow)):
+            if isinstance(node, (Pump, cycleCloser, fixedFlow, FixedFlow)):
                 # Check for pressure gain components
                 self.pressure_gain = True
 
            # print('Check for pressure gain components')
 
-            if isinstance(node, (fixedFlow)):
+            if isinstance(node, (fixedFlow, FixedFlow)):
                 if self.fixed_flow_flag:
                     from pdb import set_trace
                     set_trace()
@@ -873,7 +873,7 @@ class FlowBranch(baseBranch):
                 node._set_flow(self._w)
                 # Update DS_target
 
-                if isinstance(node, fixedFlow):
+                if isinstance(node, (fixedFlow, FixedFlow)):
                     # It doesn't matter what the outlet state is
                     # because the flow is fixed
                     
@@ -936,7 +936,7 @@ class FlowBranch(baseBranch):
                 set_trace()
                 return
 
-            if isinstance(node, fixedFlow):
+            if isinstance(node, (fixedFlow, FixedFlow)):
                 if not self.stateful:
                     # This condition shouldnt occur I think?
                     DS_state = node._get_outlet_state(US_thermo, 1)
@@ -1054,7 +1054,7 @@ class FlowBranch(baseBranch):
 
                 if self.fixed_flow:
                     # Calculate penalty based on pressure
-                    if isinstance(self.fixed_flow_node, gt.fixedFlow):
+                    if isinstance(self.fixed_flow_node, gt.FixedFlow):
                         # Pressure ratio needs to be increased
                         self.penalty = (-DS_state['P']+10)*1e5
                     else:
@@ -1146,7 +1146,7 @@ class FlowBranch(baseBranch):
                 #set_trace()
 
 
-                if isinstance(node, fixedFlow):
+                if isinstance(node, FixedFlow):
                     # It doesn't matter what the outlet state is
                     # because the flow is fixed
                     if self.stateful:
@@ -1179,7 +1179,7 @@ class FlowBranch(baseBranch):
                 from pdb import set_trace
                 set_trace()
                 
-            if isinstance(node, fixedFlow):
+            if isinstance(node, FixedFlow):
                 if not self.stateful:
                     # This condition shouldnt occur I think?
                     DS_state = node.get_DS_state(US_thermo, 1)
@@ -1384,7 +1384,7 @@ class FlowBranch(baseBranch):
                 from pdb import set_trace
                 #set_trace()
 
-                if isinstance(node, fixedFlow):
+                if isinstance(node, FixedFlow):
                     # It doesn't matter what the outlet state is
                     # because the flow is fixed
                     if self.stateful:
@@ -1429,7 +1429,7 @@ class FlowBranch(baseBranch):
                 from pdb import set_trace
                 set_trace()
                 
-            if isinstance(node, fixedFlow):
+            if isinstance(node, FixedFlow):
                 if not self.stateful:
                     # This condition shouldnt occur I think?
                     DS_state = node.get_DS_state(US_thermo, 1)
@@ -1659,7 +1659,7 @@ class FlowBranch(baseBranch):
             from pdb import set_trace
             set_trace()
 
-            if isinstance(US_resistor, gt.fixedFlow):
+            if isinstance(US_resistor, gt.FixedFlow):
                 DS_state = US_resistor.get_outlet_state(US_thermo, PR_bounds[1])
             else:
                 DS_state = US_resistor.get_outlet_state(US_thermo, self._w)
@@ -1691,7 +1691,7 @@ class FlowBranch(baseBranch):
                 return
 
 
-        if isinstance(US_resistor, gt.fixedFlow):
+        if isinstance(US_resistor, gt.FixedFlow):
             DS_state = US_resistor.get_outlet_state(US_thermo, PR_bounds[1])
         else:
             DS_state = US_resistor.get_outlet_state(US_thermo, self._w)

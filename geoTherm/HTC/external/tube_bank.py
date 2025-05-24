@@ -1,4 +1,4 @@
-from .HTC import BaseHTC
+from ..HTC import BaseHTC
 
 
 class Zukauskas(BaseHTC):

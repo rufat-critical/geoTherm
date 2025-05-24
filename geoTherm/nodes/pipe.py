@@ -1,5 +1,5 @@
 from .node import Node
-from .geometry import GeometryProperties, GeometryGroup
+#from .geometry import GeometryProperties, GeometryGroup
 from .baseNodes.baseFlow import baseInertantFlow
 from ..units import inputParser, addQuantityProperty
 from ..utils import dP_pipe
@@ -12,6 +12,7 @@ from rich.table import Table
 from rich.box import SIMPLE
 from ..decorators import state_dict
 from geoTherm.geometry.internal import Cylinder
+from geoTherm.geometry.geometry import GeometryProperties, GeometryGroup
 
 
 @addQuantityProperty
@@ -113,14 +114,14 @@ class Pipe(baseInertantFlow, GeometryProperties):
         else:
             self.physics = ConstantPhysics(dP=value, node=self)
             logger.info(f"Setting dP for {self.name} to {value}")
-        
+
         if value is None:
             # Check if geometry is specified
             if self.geometry is None:
                 logger.warn("Can't set dP to none because geometry is not "
                             f"specified for {self.name} node")
                 return
-        
+
             self.physics = PipePhysics(node=self)
 
     @property

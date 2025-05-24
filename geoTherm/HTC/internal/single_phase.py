@@ -1,5 +1,5 @@
-from ..logger import logger
-from .HTC import BaseHTC
+from geoTherm.common import logger
+from ..HTC import BaseHTC
 
 
 class Dittus_Boelter(BaseHTC):

@@ -4,6 +4,7 @@ from ..logger import logger
 from .baseNodes.baseFlowResistor import baseFlowResistor
 from ..flow_funcs import FlowModel
 
+
 @addQuantityProperty
 class resistor(baseFlowResistor):
     """ Resistor where mass flow is calculated based on

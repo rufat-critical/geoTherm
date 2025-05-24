@@ -1,12 +1,12 @@
 #from .baseFlowResistor import baseFlowResistor
 from .baseNode import Node
-from ...logger import logger
-from ...units import addQuantityProperty, inputParser
+from geoTherm.common import addQuantityProperty, inputParser, logger
 import numpy as np
 from abc import ABC, abstractmethod
 #from ...nodes.heatsistor import Qdot
 from geoTherm.decorators import state_dict
 from ...units import units
+
 
 @addQuantityProperty
 class baseFlow(Node, ABC):
@@ -183,7 +183,6 @@ class baseFlow(Node, ABC):
         return Q
 
 
-
     def _get_dH(self, US, w):
         """Calculate outlet state given inlet conditions and flow rate.
 
@@ -263,7 +262,7 @@ class baseInertantFlow(baseFlow):
 
     @inputParser
     def __init__(self, name, US, DS, w:'MASSFLOW'=0,
-                 Z:'INERTANCE'=None):
+                 Z:'INERTANCE'=1):
         """Initialize inertant flow component.
 
         Args:
@@ -367,7 +366,9 @@ class FixedFlow(baseFlow):
     """
     A flow component with a fixed flow rate.
     """
-    def __init__(self, name, US, DS, w):
+
+    @inputParser
+    def __init__(self, name, US, DS, w:'MASSFLOW'):
         super().__init__(name, US, DS)
         self._w = w
 

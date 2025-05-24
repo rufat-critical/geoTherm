@@ -210,7 +210,6 @@ class TubeBank(Geometry):
               'surface_outer': 'AREA', 'surface_inner': 'AREA',
               'area_t': 'AREA', 'Dh': 'LENGTH', 'S_t': 'LENGTH',
               'S_l': 'LENGTH'}
-    
 
     def __init__(self, Di: 'LENGTH', L: 'LENGTH', S_t: 'LENGTH', S_l: 'LENGTH', N_L, N_T, th: 'LENGTH', N_L_passes=1):
         """
@@ -395,7 +394,7 @@ class TubeBank(Geometry):
 
 
 @addQuantityProperty
-class FinnedTubeBank(TubeBank):
+class FinnedTubeBank2(TubeBank):
     """
     A finned tube geometry.
     """

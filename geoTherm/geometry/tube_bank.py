@@ -71,16 +71,17 @@ class FinnedTubeBank(TubeBank):
               'area_t': 'AREA', 'Dh': 'LENGTH', 'S_t': 'LENGTH',
               'S_l': 'LENGTH'}
 
+    @inputParser
     def __init__(self, Di: 'LENGTH', L: 'LENGTH', 
                  S_t: 'LENGTH', S_l: 'LENGTH',
                  N_l, N_t,
-                 N_fin,
+                 N_fin:'1/LENGTH',
                  D_fin: 'LENGTH',
                  th_fin: 'LENGTH',
                  Do: 'LENGTH' = None,
                  th: 'LENGTH' = 0,
                  N_l_passes=1,
-                 roughness=1e-5):
+                 roughness:'LENGTH'=1e-5):
         """
         Initialize a tube bundle geometry.
 
@@ -91,7 +92,7 @@ class FinnedTubeBank(TubeBank):
             S_l: Longitudinal spacing between tubes (LENGTH)
             N_l: Number of tubes in the longitudinal direction
             N_t: Number of tubes in the transverse direction
-            N_fin: Number of fins
+            N_fin: Fin density (1/LENGTH)
             D_fin: Diameter of the fins (LENGTH)
             th_fin: Thickness of the fins (LENGTH)
             Do: Outer diameter of the tubes (LENGTH)
@@ -104,12 +105,13 @@ class FinnedTubeBank(TubeBank):
         else:
             th = (Do - Di) / 2
 
-
         # Multiple passes extend internal cylinder length
-        self.inner = InternalCylinder(D=Di, L=L*N_l_passes, roughness=roughness)
-        self.outer = ExternalCircularFinnedTubeBank(D=Do, L=L, S_t=S_t, S_l=S_l,
-                                                    N_l=N_l, N_t=N_t, N_fin=N_fin,
-                                                    D_fin=D_fin, th_fin=th_fin)
+        self.inner = InternalCylinder(D=(Di, 'm'), L=(L*N_l_passes, 'm'),
+                                      roughness=(roughness, 'm'))
+        self.outer = ExternalCircularFinnedTubeBank(D=(Do, 'm'), L=(L, 'm'),
+                                                    S_t=(S_t, 'm'), S_l=(S_l, 'm'),
+                                                    N_l=N_l, N_t=N_t, N_fin=(N_fin, '1/m'),
+                                                    D_fin=(D_fin, 'm'), th_fin=(th_fin, 'm'))
 
         self._L = L
         self.N_l_passes = N_l_passes

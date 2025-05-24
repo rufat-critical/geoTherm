@@ -5,6 +5,7 @@ from ...logger import logger
 from ...thermostate import thermo
 from abc import ABC, abstractmethod
 
+
 @addQuantityProperty
 class baseTurbo(baseFlow, ABC):
     """Base class for turbomachinery (pumps, turbines, etc.).
@@ -112,18 +113,6 @@ class fixedFlowTurbo(baseTurbo):
             self.eta = 1
         else:
             self.update_eta = False
-
-
-    def _set_flow(self, w):
-        self._w_setpoint = w
-
-    @property
-    def _w(self):
-        return self._w_setpoint
-
-    @_w.setter
-    def _w(self, w):
-        self._w_setpoint = w
 
 
 
