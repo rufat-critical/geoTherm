@@ -249,7 +249,7 @@ class baseFlow(Node, ABC):
             return -self.cool_node._Q/self._w
         else:
             return 0
-
+    
 
 @addQuantityProperty
 class baseInertantFlow(baseFlow):
@@ -361,3 +361,34 @@ class baseInertantFlow(baseFlow):
         self._w = w
 
         return False
+
+
+class FixedFlow(baseFlow):
+    """
+    A flow component with a fixed flow rate.
+    """
+    def __init__(self, name, US, DS, w):
+        super().__init__(name, US, DS)
+        self._w = w
+
+    def thermostates(self):
+        if self._w > 0:
+            return self.US_node.thermo, self.DS_node.thermo, 1
+        else:
+            return self.DS_node.thermo, self.US_node.thermo, -1
+
+    def get_outlet_state(self, US, PR):
+        """
+        Calculate the thermodynamic state at the outlet (downstream).
+
+        Returns:
+            dict: A dictionary containing the enthalpy ('H') and pressure ('P')
+                  at the downstream node.
+        """
+
+        # Get US, DS Thermo
+        #US = self.model.nodes[self.US].thermo
+        return {'H': US._H, 'P': US._P*PR}
+
+    def _set_flow(self, w):
+        self._w = w

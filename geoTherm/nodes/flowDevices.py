@@ -1,4 +1,4 @@
-from .baseNodes.baseFlow import baseFlow, baseInertantFlow
+from .baseNodes.baseFlow import baseFlow, baseInertantFlow, FixedFlow
 from ..units import inputParser, addQuantityProperty
 from .baseNodes.baseTurbo import baseTurbo
 from ..flow_funcs import _dH_isentropic
@@ -48,7 +48,7 @@ class PressureController(baseInertantFlow):
         self._wdot = pressure_error / self._Z
 
 @addQuantityProperty
-class fixedFlow(baseFlow):
+class fixedFlow(FixedFlow):
 
     _units = baseFlow._units | {
         'area': 'AREA'
@@ -61,9 +61,7 @@ class fixedFlow(baseFlow):
                  w:"MASSFLOW",
                  flow_func='isentropic'):
 
-        super().__init__(name, US, DS)
-
-        self._w = w
+        super().__init__(name, US, DS, w)
 
         self.flow_func_name = flow_func
         if flow_func == 'isentropic':
@@ -83,62 +81,10 @@ class fixedFlow(baseFlow):
         return {'w': (self._w, 'kg/s'),
                 'flow_func': self.flow_func_name}
 
-    def thermostates(self):
-        if self._w > 0:
-            return self.US_node.thermo, self.DS_node.thermo, 1
-        else:
-            return self.DS_node.thermo, self.US_node.thermo, -1
-
-    @property
-    def _dP(self):
-
-        US, DS, _ = self.thermostates()
-
-        return DS._P - US._P
-
-    def get_outlet_state(self, US, PR):
-        """
-        Calculate the thermodynamic state at the outlet (downstream).
-
-        Returns:
-            dict: A dictionary containing the enthalpy ('H') and pressure ('P')
-                  at the downstream node.
-        """
-
-        # Get US, DS Thermo
-        #US = self.model.nodes[self.US].thermo
-        return {'H': US._H, 'P': US._P*PR}
-
-    def _get_outlet_state(self, US, PR):
-        """Calculate outlet state including heat transfer effects.
-
-        This method extends the base outlet state calculation by adding the heat
-        transfer contribution (Q) from any connected heat nodes (hot/cool nodes).
-        The heat transfer is added to the outlet enthalpy.
-
-        Args:
-            US: Upstream thermodynamic state
-            w (float): Mass flow rate [kg/s]
-
-        Returns:
-            dict: Outlet state dictionary containing pressure and enthalpy,
-                  with heat transfer effects included in the enthalpy
-
-        Note:
-            The heat transfer Q is divided by mass flow rate to convert
-            from total heat transfer [W] to specific enthalpy change [J/kg]
-        """
-        # Get base outlet state first
-        outlet_state = self.get_outlet_state(US, PR)
-
-        # Add heat transfer contribution to enthalpy if flow rate is non-zero
-        if self._w != 0:  # Avoid division by zero
-            outlet_state['H'] += self._Q/ self._w
-
-        return outlet_state
-
 
     def _get_dP(self, US, PR):
+        from pdb import set_trace
+        set_trace()
         return US._P*PR
 
     def get_inlet_state(self, DS, PR):
@@ -146,8 +92,6 @@ class fixedFlow(baseFlow):
         return {'H': DS._H,
                 'P': DS._P}#/PR}
 
-    def _set_flow(self, w):
-        self._w = w
 
     @property
     def _area(self):
