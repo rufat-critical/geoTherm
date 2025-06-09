@@ -72,8 +72,8 @@ class Conditioner:
                 node._bounds[0] != -np.inf and
                 node._bounds[1] != np.inf):
             return 1 / (node._bounds[1] - node._bounds[0])
-        elif isinstance(node, gt.lumpedMass):
-            return np.array([1e-1])
+        #elif isinstance(node, gt.lumpedMass):
+        #    return np.array([1e-1])
         elif isinstance(node, gt.PStation):
             return np.array([1e-6])
         elif isinstance(node, gt.Station):
@@ -590,8 +590,9 @@ class Model(modelTable):
 
         if netSolver:
             # Initialize the network solver
+            #if not hasattr(self, 'network'):
             self.network = Network(self)
-
+            
             self.network.solve()
 
             if not self.converged:
@@ -625,7 +626,6 @@ class Model(modelTable):
             if not self.converged:
                 logger.warn("Could not converge")
                 return self.x, False
-
 
         else:
             logger.info('CONVERGED!')

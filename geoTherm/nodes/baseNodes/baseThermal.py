@@ -23,6 +23,19 @@ class baseThermal(Node):
         self.hot = hot
         self.cool = cool
 
+    def initialize(self, model):
+        super().initialize(model)
+
+        self.hot_node = None
+        self.cool_node = None
+
+        if self.hot is not None:
+            self.hot_node = model.nodes[self.hot]
+
+        if self.cool is not None:
+            self.cool_node = model.nodes[self.cool]
+
+
     @state_dict
     def _state_dict(self):
         """
@@ -36,7 +49,6 @@ class baseThermal(Node):
 
         return {'hot': self.hot,
                 'cool': self.cool}
-
 
     def _set_heat(self, Q):
         """

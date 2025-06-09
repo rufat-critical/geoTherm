@@ -192,18 +192,18 @@ class Briggs_Young(BaseHTC):
         if V_max is None:
             V_max = w/(self.geometry._area_flow_min * thermo._density)
 
-        Re = V_max * self.geometry._Do * thermo._density / thermo._viscosity
+        Re = V_max * self.geometry._Dh * thermo._density / thermo._viscosity
         Pr = thermo.prandtl
 
         Nu = self.Nu(Re, Pr)
 
-        h = Nu * thermo.conductivity / self.geometry._Do
+        h = Nu * thermo.conductivity / self.geometry._Dh
 
         return h
 
     def Nu(self, Re, Pr):
         return (0.134*Re**0.681*Pr**(1/3.)*
-                (self.geometry._dL_tube_exposed/self.geometry._h_fin)**0.2*
+                (self.geometry._dL_tube_exposed/self.geometry._h_fin)**0.2 *
                 (self.geometry._dL_tube_exposed/self.geometry._th_fin)**0.1134)
 
 

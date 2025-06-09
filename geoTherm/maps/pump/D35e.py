@@ -171,7 +171,10 @@ class PumpMap:
             else:
                 result = self.fallback_interpolator(rpm, q)
         
-        return float(result), is_extrapolating
+        # Ensure the result is positive
+        result = max(0.0, float(result))
+
+        return result#, is_extrapolating
     
     def get_data_range(self):
         """
@@ -238,7 +241,7 @@ class PumpMap:
         
         # Plot each RPM curve on the first subplot
         for i, rpm in enumerate(rpm_values):
-            pressures = [self.get_pressure(rpm, q) for q in q_values]
+            pressures = [self.get_dP(rpm, q) for q in q_values]  # Remove [0] since get_dP returns float directly
             color = cmap(norm(rpm))
             ax1.plot(q_values, pressures, color=color, label=f"{rpm:.0f} RPM")
         
@@ -290,7 +293,7 @@ class PumpMap:
                 # Unpack the point
                 if len(point) == 2:
                     rpm, q = point
-                    pressure = self.get_pressure(rpm, q)
+                    pressure = self.get_dP(rpm, q)  # Remove [0] since get_dP returns float directly
                 else:
                     rpm, q, pressure = point
                 
@@ -369,7 +372,7 @@ class PumpMap:
         
         while iterations < max_iterations:
             rpm = (left + right) / 2
-            current_pressure, _ = self.get_pressure(rpm, q)
+            current_pressure, _ = self.get_dP(rpm, q)
             
             # Check if we're close enough
             if abs(current_pressure - pressure) < tolerance:
@@ -407,7 +410,7 @@ if __name__ == "__main__":
     # Example interpolation
     test_rpm = 500
     test_q = 0.001
-    pressure = pump_map.get_pressure(test_rpm, test_q)
+    pressure = pump_map.get_dP(test_rpm, test_q)[0]
 
     print(f"Interpolated Pressure at RPM={test_rpm}, Q={test_q} m³/s: {pressure} bar")
     
@@ -415,7 +418,7 @@ if __name__ == "__main__":
     # Point 1: Specify RPM and Q, let the method calculate pressure
     point1 = (500, 0.001)
     # Point 2: Specify RPM, Q, and pressure
-    point2 = (700, 0.002, pump_map.get_pressure(700, 0.002))
+    point2 = (700, 0.002, pump_map.get_dP(700, 0.002)[0])
     
     # Create the combined plot view
     pump_map.plot(operating_points=[point1, point2])

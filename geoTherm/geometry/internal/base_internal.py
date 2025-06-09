@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from geoTherm.common import addQuantityProperty
+from ..geometry import Geometry
 
 
 @addQuantityProperty
-class InternalGeometry(ABC):
+class InternalGeometry(ABC, Geometry):
     """
     Abstract base class for internal flow geometries.
 

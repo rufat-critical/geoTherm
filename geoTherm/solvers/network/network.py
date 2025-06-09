@@ -779,7 +779,9 @@ class Network:
         self.update_energy = False
         self.constant_density = False
 
-        self.initialize_states()
+        if not hasattr(self, 'state'):
+            self.initialize_states()
+
 
         if len(self.x) == 0:
             return self.x
@@ -788,11 +790,11 @@ class Network:
 
         conditioned = conditioner.conditioner(self.evaluate)
 
-
         x_scaled = conditioner.scale_x(self.x)
         sol = root(conditioned, x_scaled, method='lm')#, options={'factor': np.min(abs(x_scaled/1.5))})
         
         x = conditioner.unscale_x(sol.x)
+
         
         self.evaluate(x)
 

@@ -1,6 +1,7 @@
 import pandas as pd
 import os.path
 from geoTherm.units import toSI
+import numpy as np
 
 
 def tube_reader(xls_path):
@@ -195,3 +196,107 @@ def fluid_property_reader(xls_path):
 
     except Exception as e:
         raise Exception(f"Error reading Excel file '{xls_path}': {str(e)}")
+
+
+def concepts_excel_reader(xlsx_path, output_csv_path=None):
+    """
+    Load and process data from Excel file.
+    
+    Args:
+        xlsx_path (str): Path to Excel file
+        output_csv_path (str, optional): Path to save processed data as CSV. If None, no CSV is saved.
+        
+    Returns:
+        pd.DataFrame: Processed DataFrame with all required parameters
+    """
+    # Load all sheets
+    xls = pd.read_excel(xlsx_path, sheet_name=None, header=None)
+    
+    # Parameters to extract and their actual labels
+    desired_params = {
+        'p0.in': 'p0.in',
+        'T0.in': 'T0.in',
+        'p.out': 'p.out',
+        'Power(Shaft)': 'Power(Shaft)',
+        'ETA_ts_ad': 'ETA_ts_ad',
+        'm.out': 'm.out'
+    }
+    
+    # List to hold all data rows
+    all_data = []
+    
+    # Process each sheet
+    for sheet_name, df in xls.items():
+        if not sheet_name.endswith("C Sweeps"):
+            continue
+        
+        try:
+            # Transpose and clean
+            df_t = df.transpose()
+            df_t.columns = df_t.iloc[1]  # Second row has actual headers
+            df_t_clean = df_t.drop([0, 1]).reset_index(drop=True)
+            
+            # Find matched columns
+            matched_params = {
+                k: v for k, v in desired_params.items() if v in df_t_clean.columns
+            }
+            
+            # Skip if nothing found
+            if not matched_params:
+                print(f"[{sheet_name}] Skipping — no matched parameters.")
+                continue
+            
+            # Process each row of data
+            for idx in range(len(df_t_clean)):
+                row_data = {}
+                valid_row = True
+                
+                # Check if all required parameters are present and valid
+                for param, label in matched_params.items():
+                    value = df_t_clean[label].iloc[idx]
+                    if pd.isna(value):
+                        valid_row = False
+                        break
+                    try:
+                        value = float(value)
+                        # Additional validation for efficiency and pressure
+                        if param == 'ETA_ts_ad' and (value < 0 or value > 1):
+                            valid_row = False
+                            break
+                        if param in ['p0.in', 'p.out'] and value <= 0:
+                            valid_row = False
+                            break
+                        # Convert pressure from bar to Pa
+                        if param in ['p0.in', 'p.out']:
+                            value = value * 1e5
+                        row_data[param] = value
+                    except (ValueError, TypeError):
+                        valid_row = False
+                        break
+                
+                # Only add complete rows
+                if valid_row and len(row_data) == len(matched_params):
+                    all_data.append(row_data)
+        
+        except Exception as e:
+            print(f"[{sheet_name}] Failed: {e}")
+
+    # Create final DataFrame preserving the order
+    final_df = pd.DataFrame(all_data)
+
+    # Calculate pressure ratio
+    final_df['PR_ts'] = final_df['p0.in'] / final_df['p.out']
+
+    # Calculate corrected mass flow
+    T_ref = 288.15  # K
+    p_ref = 101325  # Pa
+
+    # Calculate corrected mass flow from actual mass flow
+    final_df['m_c'] = final_df['m.out'] * np.sqrt(final_df['T0.in']/T_ref) * (p_ref/final_df['p0.in'])
+
+    # Save to CSV if output path is provided
+    if output_csv_path:
+        final_df.to_csv(output_csv_path, index=False)
+        print(f"Processed data saved to: {output_csv_path}")
+
+    return final_df

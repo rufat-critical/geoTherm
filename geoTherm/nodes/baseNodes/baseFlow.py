@@ -175,10 +175,10 @@ class baseFlow(Node, ABC):
     def _Q(self):
 
         Q =0
-        if self.hot_node is not None:
-            Q += self.hot_node._Q
-        if self.cool_node is not None:
-            Q -= self.cool_node._Q
+        for hot_node in self.model.node_map[self.name]['hot']:
+            Q += self.model.nodes[hot_node]._Q
+        for cool_node in self.model.node_map[self.name]['cool']:
+            Q -= self.model.nodes[cool_node]._Q
 
         return Q
 
@@ -242,12 +242,8 @@ class baseFlow(Node, ABC):
             float: Specific enthalpy change [J/kg]
         """
 
-        if self.hot_node:
-            return self.hot_node._Q/self._w
-        elif self.cool_node:
-            return -self.cool_node._Q/self._w
-        else:
-            return 0
+        US, DS, _ = self.thermostates()
+        return self._get_dH(US, self._w)
     
 
 @addQuantityProperty
@@ -362,6 +358,75 @@ class baseInertantFlow(baseFlow):
         return False
 
 
+class baseFlowResistor(baseFlow):
+    """Base class for a flow node that calculates flow in between stations."""
+
+    @property
+    def _dH(self):
+        """Flow resistors are isenthalpic by default.
+
+        Returns:
+            float: Always 0 for basic flow resistors
+        """
+        return 0
+
+    def _set_flow(self, w):
+        """
+        Set the flow rate and get outlet state.
+
+        Args:
+            w (float): Flow rate.
+
+        Returns:
+            tuple: Downstream node name and downstream state.
+        """
+
+        self._w = w
+
+        return False
+
+    def is_choked(self):
+        """Check if the flow is choked.
+
+        Returns:
+            bool: True if the flow is choked, False otherwise.
+        """
+
+        from pdb import set_trace
+        set_trace()
+        return False
+
+
+    def is_outlet_choked(self, US, DS, w):
+        """Check if the outlet flow is choked.
+
+        Returns:
+            bool: True if the outlet flow is choked, False otherwise.
+        """
+
+        w_max = self.flow._w_max(US)
+
+
+        from pdb import set_trace
+        set_trace()
+
+
+    def _w_max(self, US):
+        """Get the maximum mass flow rate for the flow resistor.
+
+        Args:
+            US (thermo): Upstream state.
+
+        Returns:
+            float: Maximum mass flow rate.
+        """
+
+        if US.phase in ['two-phase']:
+            from pdb import set_trace
+            set_trace()
+        return self.flow._w_max(US)
+
+
 class FixedFlow(baseFlow):
     """
     A flow component with a fixed flow rate.
@@ -393,3 +458,8 @@ class FixedFlow(baseFlow):
 
     def _set_flow(self, w):
         self._w = w
+
+    @state_dict
+    def _state_dict(self):
+        return {'w': (self.w, units.output_units['MASSFLOW'])}
+

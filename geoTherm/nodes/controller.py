@@ -89,7 +89,8 @@ class Balance(BaseController):
     _displayVars = ['knob', 'x', 'xdot']
 
     def __init__(self, name, knob, feedback, setpoint, gain=0.2,
-                 knob_min=-np.inf, knob_max=np.inf):
+                 knob_min=-np.inf, knob_max=np.inf,
+                 scaling=1):
 
         self.name = name
         self.knob = knob
@@ -99,6 +100,7 @@ class Balance(BaseController):
         self.knob_min = knob_min
         self.knob_max = knob_max
         self.penalty = False
+        self.scaling = scaling
 
     def initialize(self, model):
         """
@@ -144,7 +146,7 @@ class Balance(BaseController):
         Returns:
             The current state (current knob value).
         """
-        return np.array([self.knob_val])
+        return np.array([self.knob_val*self.scaling])
 
     def update_state(self, x):
         """
@@ -168,9 +170,9 @@ class Balance(BaseController):
     @property
     def xdot(self):
         if self.penalty is not False:
-            return np.array([self.penalty])
+            return np.array([self.penalty*self.scaling*self.gain])
 
-        return np.array([(self.setpoint - self.feedback_val)*self.gain])
+        return np.array([(self.setpoint - self.feedback_val)*self.gain*self.scaling])
 
 
 class ThermoBalance(Balance):
@@ -192,7 +194,7 @@ class ThermoBalance(Balance):
     """
 
     def __init__(self, name, knob, feedback, setpoint, constant_var,
-                 gain=0.2, knob_min=-np.inf, knob_max=np.inf):
+                 gain=0.2, knob_min=-np.inf, knob_max=np.inf, scaling=1):
 
         super().__init__(name=name,
                          knob=knob,
@@ -200,7 +202,8 @@ class ThermoBalance(Balance):
                          setpoint=setpoint,
                          gain=gain,
                          knob_min=knob_min,
-                         knob_max=knob_max)
+                         knob_max=knob_max,
+                         scaling=scaling)
 
         self.constant_var = constant_var
 
@@ -218,7 +221,7 @@ class ThermoBalance(Balance):
 
         # Ensure that the knob_node is a baseThermo
         if not isinstance(self.knob_node, baseThermo):
-            raise TypeError(
+            raise TypeError(''
                 f"Knob '{self.knob}' in ThermoBalance '{self.name}' "
                 "must be associated with a baseThermo."
             )

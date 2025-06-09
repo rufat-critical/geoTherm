@@ -270,6 +270,33 @@ class fixedFlowTurbine(baseTurbine, fixedFlow):
 
 from geoTherm.utils import TurbineInterpolator
 
+class TurbineMap(fixedFlowTurbine):
+
+    def __init__(self, name, US, DS, map, flow_func='isentropic'):
+
+        super().__init__(name, US, DS,w=0,eta=1, flow_func=flow_func)
+
+        self.map = map
+
+    def evaluate(self):
+        self._w = self.map.get_massflow(self.US_node.thermo._P,
+                                        self.US_node.thermo._T,
+                                        self.DS_node.thermo._P)
+        self.eta = self.map.get_eta_ts(self.US_node.thermo._P,
+                                       self.US_node.thermo._T,
+                                       self.DS_node.thermo._P)
+
+    def get_outlet_state(self, US, PR):
+        self._w = self.map.get_massflow(US._P,
+                                        US._T,
+                                        US._P*PR)
+        self.eta = self.map.get_eta_ts(US._P,
+                                       US._T,
+                                       US._P*PR)
+
+        return {'P': US._P*PR, 'H': US._H + self._dH}
+
+
 class fixedFlowTurbineMap(baseTurbine, fixedFlow):
 
     def __init__(self, name, US, DS, eta_map, w, flow_func='isentropic'):

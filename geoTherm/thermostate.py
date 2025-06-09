@@ -8,6 +8,7 @@ import re
 from .utils import R_ideal
 from .DEFAULTS import DEFAULTS
 from scipy.interpolate import interp1d
+from geoTherm.utilities.loaders import fluid_property_reader
 
 
 # Utility functions for thermostate
@@ -151,10 +152,19 @@ coolprop_phase_index = {
 }
 
 
+phase_index = {'liquid': 0,
+               'supercritical': 1,
+               'supercritical_gas': 2,
+               'supercritical_liquid': 3,
+               'critical': 4,
+               'gas': 5,
+               'two-phase': 6,
+               'unknown': 7}
+
 class CustomFluid:
     """Custom fluid state model"""
     
-    def __init__(self, properties, state=None, stateVars=None):
+    def __init__(self, property_file, state=None, stateVars=None):
         """
         Initialize the CustomFluid object.
         
@@ -163,15 +173,25 @@ class CustomFluid:
             state (dict): Dictionary containing thermodynamic state variables.
             stateVars (str): State variables to use for initialization.
         """
-        self.initialize(properties)
+
+        self.property_file = property_file
+
+        self.initialize()
 
         if state is not None:
             self.update_state(state, stateVars)
         else:
             self.update_state({'T': 300, 'P': 101325}, stateVars='TP')
     
+    @property
+    def _state(self):
 
-    def initialize(self, properties):
+        return {'property_file': self.property_file,
+                'state': {'T': (self._T, 'K'),
+                          'P': (self._P, 'Pa')},
+                'model': 'custom'}
+
+    def initialize(self):
         """Initialize interpolators for fluid properties.
         
         Args:
@@ -179,7 +199,7 @@ class CustomFluid:
                 for temperature and various properties like density, viscosity, etc.
         """
         # Store the original data
-        self.properties = properties
+        self.properties = fluid_property_reader(self.property_file)
         
         property_name_map = {'Temperature': 'T',
                             'Pressure': 'P',
@@ -189,11 +209,11 @@ class CustomFluid:
                             'Density': 'density'}
 
         # Get the temperature values which will be our x-axis for interpolation
-        temperatures = properties['Temperature'].values
+        temperatures = self.properties['Temperature'].values
         
         # Create interpolators for each property column except Temperature
         self.interpolators = {}
-        for column in properties.columns:
+        for column in self.properties.columns:
             if column != 'Temperature':
                 # Map the column name to standardized property name if it exists
                 property_name = property_name_map.get(column, column)
@@ -201,7 +221,7 @@ class CustomFluid:
                 # Create cubic interpolation function for this property
                 self.interpolators[property_name] = interp1d(
                     temperatures,
-                    properties[column].values,
+                    self.properties[column].values,
                     kind='cubic',
                     bounds_error=False,  # Allow extrapolation
                     fill_value='extrapolate'  # Extrapolate beyond bounds
@@ -209,10 +229,10 @@ class CustomFluid:
         
         # Handle viscosity calculation if needed
         if 'viscosity' not in self.interpolators:
-            if 'Kinematic Viscosity' in properties.columns and 'Density' in properties.columns:
+            if 'Kinematic Viscosity' in self.properties.columns and 'Density' in self.properties.columns:
                 # Create viscosity interpolator using kinematic viscosity * density
-                kinematic_viscosity = properties['Kinematic Viscosity'].values
-                density = properties['Density'].values
+                kinematic_viscosity = self.properties['Kinematic Viscosity'].values
+                density = self.properties['Density'].values
                 viscosity = kinematic_viscosity * density
                 
                 self.interpolators['viscosity'] = interp1d(
@@ -374,6 +394,8 @@ class Incompressible:
             return 9999
         elif property == 'S':
             return self._cp*np.log(self._T/273.15)
+        elif property == 'density':
+            return 1000
         else:
             from pdb import set_trace
             set_trace()
@@ -595,7 +617,7 @@ class coolprop_wrapper:
         if self.EoS in ['HEOS', 'REFPROP', 'BICUBIC&REFPROP', 'TTSE&REFPROP',
                         'BICUBIC&HEOS', 'TTSE&HEOS']:
             # Return vapor pressure if Helmholtz or Refprop EoS
-            vapor = cp.AbstractState(self.EoS, self.cpObj.name())
+            vapor = cp.AbstractState('HEOS', self.cpObj.name())
             vapor.update(cp.QT_INPUTS, 0.0, self.cpObj.T())
             return float(vapor.p())
         else:
@@ -819,6 +841,7 @@ class thermo:
                                        **kwargs)
         elif self.model == 'custom':
             try:
+
                 self.pObj = CustomFluid(state=state,
                                         stateVars=stateVars,
                                         **kwargs)
@@ -904,6 +927,9 @@ class thermo:
 
         return self.pObj.get_property(property)     
 
+    @property
+    def iphase(self):
+        return phase_index[self.phase]
 
     def get_property(self, property):
         """

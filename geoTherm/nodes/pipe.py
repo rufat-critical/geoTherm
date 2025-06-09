@@ -13,6 +13,8 @@ from rich.box import SIMPLE
 from ..decorators import state_dict
 from geoTherm.geometry.internal import Cylinder
 from geoTherm.geometry.geometry import GeometryProperties, GeometryGroup
+from geoTherm.geometry.internal.cylinder import InternalCylinder, InternalCylinderBend
+from geoTherm.pressure_drop.internal.pipe import StraightLoss as SL2
 
 
 @addQuantityProperty
@@ -43,9 +45,7 @@ class Pipe(baseInertantFlow, GeometryProperties):
 
 
         super().__init__(name, US, DS)
-        #self.name = name
-        #self.US = US
-        #self.DS = DS
+
         self._w = w
 
         if geometry is not None:
@@ -104,6 +104,7 @@ class Pipe(baseInertantFlow, GeometryProperties):
     def _dP(self):
         US, DS, _ = self.thermostates()
 
+
         return self.physics.evaluate(self._w, US, DS)['dP']
 
     @_dP.setter
@@ -140,7 +141,11 @@ class Pipe(baseInertantFlow, GeometryProperties):
     def get_outlet_state(self, US, w):
 
         # Evaluate loss
-        dProp = self.physics.evaluate(w, US, None)
+        try:
+            dProp = self.physics.evaluate(w, US, None)
+        except:
+            from pdb import set_trace
+            set_trace()
 
         return {'H': US._H + dProp['dH'],
                 'P': US._P + dProp['dP']}
@@ -200,9 +205,9 @@ class LumpedPipe(Pipe):
 
         self.loss = []
         for geometry in self.geometry.geometries:
-            if geometry._type == 'Cylinder':
+            if isinstance(geometry, InternalCylinder):
                 self.loss.append(PipeLoss(self, geometry, loss_type='straight'))
-            elif geometry._type == 'CylinderBend':
+            elif isinstance(geometry, InternalCylinderBend):
                 self.loss.append(PipeLoss(self, geometry, loss_type='bend'))
             else:
                 from pdb import set_trace

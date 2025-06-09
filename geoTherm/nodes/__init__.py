@@ -2,7 +2,7 @@ from .heatsistor import *
 from .boundary import *
 from .pipe import *
 from .volume import *
-from .lumpedMass import *
+from .lumpedMass import LumpedMass
 from .resistor import *
 from .pump import *
 from .turbine import *
@@ -14,3 +14,5 @@ from .cycleCloser import *
 from .flowDevices import *
 from .schedule import *
 from .tube_banks import *
+from .valve import *
+from .HEX import *

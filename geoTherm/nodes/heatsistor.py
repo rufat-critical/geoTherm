@@ -1,7 +1,7 @@
 from .baseNodes.baseThermal import baseThermal, baseHeatsistor
 from .baseNodes.baseThermo import baseThermo
 from .baseNodes.baseFlow import baseFlow
-from ..units import inputParser, addQuantityProperty, units
+from ..units import inputParser, addQuantityProperty, units, toSI
 from ..logger import logger
 import numpy as np
 from ..resistance_models.heat import HTC
@@ -220,28 +220,87 @@ class ConvectiveResistor(Heatsistor):
 
 @addQuantityProperty
 class Qdot(baseThermal):
+    """A thermal component that represents a heat transfer between two nodes.
+    
+    This class handles heat transfer (Q) between a hot and cold node. The heat transfer
+    can be specified either as a constant value or as a function that calculates the
+    heat transfer based on the states of the connected nodes.
+
+    Attributes:
+        _displayVars (list): Variables displayed in the table ['Q', 'hot', 'cool']
+        _units (dict): Units for the variables {'Q': 'POWER'}
+        name (str): Name of the component
+        hot (str): Name of the hot node
+        cool (str): Name of the cold node
+        _Q (float or callable): Heat transfer rate in watts or a function to
+        calculate it
+    """
 
     _displayVars = ['Q', 'hot', 'cool']
     _units = {'Q': 'POWER'}
 
-    @inputParser
-    def __init__(self, name, hot=None, cool=None,
-                 Q:'POWER'=0):
-        self.name = name
+    def __init__(self, name, hot=None, cool=None, Q=0):
+        """Initialize a Qdot component.
 
+        Args:
+            name (str): Name of the component
+            hot (str, optional): Name of the hot node. Defaults to None.
+            cool (str, optional): Name of the cold node. Defaults to None.
+            Q (float or callable, optional): Heat transfer rate in watts or a function
+                that calculates heat transfer. The function should accept hot_node and
+                cool_node as arguments. Defaults to 0.
+        """
+        self.name = name
         self.hot = hot
         self.cool = cool
-
+        self.hot_node = None
+        self.cool_node = None
         self._Q = Q
+
+    @property
+    def _Q(self):
+        """Get the current heat transfer rate.
+
+        If Q was initialized as a function, it will be called with the current
+        hot and cold node states to calculate the heat transfer.
+
+        Returns:
+            float: Heat transfer rate in watts
+        """
+        return self._Q_func(self.hot_node, self.cool_node)
+
+    @_Q.setter
+    def _Q(self, value):
+        """Set the heat transfer rate or function.
+
+        Args:
+            value (float or callable): Either a constant heat transfer rate in watts
+                or a function that calculates heat transfer. The function should accept
+                hot_node and cool_node as arguments.
+
+        Raises:
+            TypeError: If value is neither a numeric value nor a callable
+        """
+        if callable(value):
+            self._Q_func = value
+        elif isinstance(value, (int, float)):
+            def Q_func(hot_node, cool_node, Q=value):
+                return Q
+            self._Q_func = Q_func
+        elif isinstance(value, (tuple, list)):
+            value = toSI(value, 'POWER')
+            def Q_func(hot_node, cool_node, Q=value):
+                return Q
+            self._Q_func = Q_func
+        else:
+            raise TypeError("Q must be either a callable or a numeric value")
 
     @state_dict
     def _state_dict(self):
-        """
-        Get the state dictionary containing the node's current state information.
+        """Get the state dictionary containing the node's current state information.
 
-        This property extends the parent class's state dictionary by adding the
-        current state vector 'x' to it. The state vector typically contains
-        enthalpy and pressure values for the node.
+        Returns:
+            dict: A dictionary containing the current state with units:
+                {'Q': (heat_transfer_rate, 'POWER')}
         """
-
         return {'Q': (self.Q, units.output_units['POWER'])}

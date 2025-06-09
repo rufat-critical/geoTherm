@@ -1,6 +1,6 @@
 from .baseNodes.baseTurbo import Turbo, pumpParameters, fixedFlowTurbo, baseTurbo, fixedPressureRatioTurbo, turboParameters
 from .baseNodes.baseFlow import baseInertantFlow, FixedFlow
-from .flowDevices import fixedFlow
+#from .flowDevices import fixedFlow
 from ..units import addQuantityProperty
 from ..utils import pump_eta
 from ..flow_funcs import _dH_isentropic
@@ -55,12 +55,15 @@ class basePump(baseTurbo, turboParameters):
         except:
             return 0
 
+
 class baseRotorPump(basePump):
     pass
+
 
 @addQuantityProperty
 class baseInertantPump(basePump, baseInertantFlow):
     pass
+
 
 @addQuantityProperty
 class Pump(baseInertantPump):
@@ -77,7 +80,7 @@ class Pump(baseInertantPump):
 
         US, DS, _ = self.thermostates()
         N = self.rotor_node.N
-        dP, error = self.PumpMap.get_dP(N, self._Q_in)
+        dP = self.PumpMap.get_dP(N, self._Q_in)
 
         self._wdot = ((US._P + dP)- DS._P)/self._Z
 
@@ -92,15 +95,15 @@ class Pump(baseInertantPump):
 
         Q = w/US._density
         N = self.rotor_node.N
-        dP, error = self.PumpMap.get_dP(N, Q)
+        dP = self.PumpMap.get_dP(N, Q)
 
-
+        
         dH_is = _dH_isentropic(US, US._P + dP)
 
-        if error:
-            return {'P': 1e9, 'H': US._H}
-        else:
-            return {'P': US._P + dP, 'H': US._H + dH_is/self.eta}
+        #if error:
+        #    return {'P': 1e9, 'H': US._H}
+        #else:
+        return {'P': US._P + dP, 'H': US._H + dH_is/self.eta}
 
     def _get_dP(self, US, w):
         from pdb import set_trace
@@ -333,7 +336,7 @@ class Pump2(Turbo, pumpParameters):
         self._w = w
 
 
-class fixedFlowPump2(basePump, fixedFlow):
+class fixedFlowPump2(basePump, FixedFlow):
     """Pump class with fixed mass flow.
 
     Args:

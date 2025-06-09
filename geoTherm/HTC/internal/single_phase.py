@@ -10,6 +10,7 @@ class Dittus_Boelter(BaseHTC):
         return Nu*thermo._conductivity/self.geometry._Dh
 
     def Nu(self, thermo, w, heating=True):
+
         Re = self.Re(thermo, w)
         Pr = thermo.prandtl
 

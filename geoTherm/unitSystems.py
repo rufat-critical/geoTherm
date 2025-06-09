@@ -83,7 +83,8 @@ class SI:
         'INERTANCE': 'm**-3',
         'GASCONSTANT': 'J/kmol/K',
         'RPM': 'rpm',
-        'ANGLE': 'deg'
+        'ANGLE': 'deg',
+        'FLOWCOEFFICIENT': 'm**3/s/Pa**(0.5)',
     }
 
 
@@ -131,6 +132,7 @@ class ENGLISH:
         'GASCONSTANT': 'ft*lbf/lb/degR',
         'RPM': 'rpm',
         'ANGLE': 'deg',
+        'FLOWCOEFFICIENT': 'gal/min/psi**(0.5)',
     }
 
 @dataclass
@@ -177,6 +179,7 @@ class ENGLISHFT:
         'GASCONSTANT': 'ft*lbf/lb/degR',
         'RPM': 'rpm',
         'ANGLE': 'deg',
+        'FLOWCOEFFICIENT': 'gal/min/psi**(0.5)',
     }
 
 
@@ -223,5 +226,6 @@ class MIXED:
         'INERTANCE': 'm**-3',
         'GASCONSTANT': 'J/kmol/K',
         'RPM': 'rpm',
-        'ANGLE': 'deg'
+        'ANGLE': 'deg',
+        'FLOWCOEFFICIENT': 'gal/min/psi**(0.5)',
     }

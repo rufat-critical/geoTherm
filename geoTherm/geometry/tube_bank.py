@@ -45,6 +45,7 @@ class TubeBank(Geometry):
         self.outer = ExternalTubeBank(D=Do, L=L, S_t=S_t, S_l=S_l, N_L=N_L, N_T=N_T)
 
         self._L = L
+        self._th = th
         self.N_l = N_L
         self.N_t = N_T
         self.N_l_passes = N_L_passes
@@ -56,6 +57,15 @@ class TubeBank(Geometry):
     @property
     def _area_inner(self):
         return self.inner.area*self.N_l*self.N_t/self.N_l_passes
+    
+    @property
+    def _L(self):
+        return self.inner._L/self.N_l_passes
+    
+    @_L.setter
+    def _L(self, value):
+        self.inner._L = value
+        self.outer._L = value
 
 
 @register_geometry
@@ -107,6 +117,7 @@ class FinnedTubeBank(TubeBank):
 
         # Multiple passes extend internal cylinder length
         self.inner = InternalCylinder(D=(Di, 'm'), L=(L*N_l_passes, 'm'),
+                                      n_streams=N_l*N_t,
                                       roughness=(roughness, 'm'))
         self.outer = ExternalCircularFinnedTubeBank(D=(Do, 'm'), L=(L, 'm'),
                                                     S_t=(S_t, 'm'), S_l=(S_l, 'm'),
@@ -114,6 +125,7 @@ class FinnedTubeBank(TubeBank):
                                                     D_fin=(D_fin, 'm'), th_fin=(th_fin, 'm'))
 
         self._L = L
+        self._th = th
         self.N_l_passes = N_l_passes
         self.N_l = N_l
         self.N_t = N_t

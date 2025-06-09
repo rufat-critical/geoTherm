@@ -4,6 +4,7 @@ import numpy as np
 from .thermostate import thermo
 from scipy.optimize import root_scalar
 from .logger import logger
+from geoTherm.common import addQuantityProperty, inputParser
 
 
 def _hunt_static_PR_M(PR, M, total, static):
@@ -1125,6 +1126,10 @@ class IncompressibleFlow(baseFlow):
         return flow_sign * np.sqrt(2 * US._density * dP)
 
     @classmethod
+    def _w_flux_max(cls, total, w_flux, static=None):
+        return 1e9
+
+    @classmethod
     def _dH(cls, total, Pout):
         """
         Calculate isentropic enthalpy change assuming incompressible flow
@@ -1549,11 +1554,10 @@ class IsentropicFlow(baseFlow):
 
             return None, error
 
-
     @classmethod
     def _cdA(cls, total, static, w):
         """Calculate discharge coefficient * area.
-        
+
         Args:
             total (thermo): Total state
             static (thermo): Static state
@@ -1562,11 +1566,8 @@ class IsentropicFlow(baseFlow):
         Returns:
             float: Discharge coefficient * area [m²]
         """
-        
+
         return w/cls._w_flux(total, static)
-    
-
-
 
     @classmethod
     def _dP(cls, total, w_flux, static=None):
@@ -1663,6 +1664,298 @@ class IsentropicFlow(baseFlow):
         return M - velocity/static.sound
 
 
+@addQuantityProperty
+class CvFlow:
+    """
+    Class for calculating flow through valves using the Cv (flow coefficient) method.
+
+    This class implements flow calculations for both liquids and gases based on the
+    Swagelok Valve Sizing Technical Bulletin, with all units converted to SI.
+    It supports calculation of mass flow, volumetric flow, pressure drop, and
+    choked flow conditions for a given valve Cv.
+
+    https://www.swagelok.com/downloads/webcatalogs/EN/MS-06-84.pdf
+
+
+    """
+
+    _units = {'Cv': 'FLOWCOEFFICIENT', 'w': 'MASSFLOW', 'Q': 'VOLUMETRICFLOW'}
+
+    def __init__(self, Cv):
+        """
+        Initialize CvFlow with a flow coefficient.
+
+        Args:
+            Cv (float): Flow coefficient
+        """
+        self.thermo = None
+        # Initialize SI Variables
+        self._Cv = None
+        # Update variables
+        self.Cv = Cv
+
+    def update_Cv(self, US, DS, w=None, Q=None, Q_std=None):
+        """
+        Update the flow coefficient based on actual flow conditions.
+
+        Args:
+            US: Upstream thermodynamic state.
+            DS: Downstream thermodynamic state.
+            w (float): Actual mass flow rate [kg/s].
+            Q (float): Actual volumetric flow rate [m³/s].
+            Q_std (float): Actual standard volumetric flow rate [m³/s].
+        """
+
+        if w is not None:
+            self._Cv = w*self._Cv/(self._w(US, DS))
+        elif Q is not None:
+            self._Cv = Q*self._Cv/(self._Q(US, DS))
+        elif Q_std is not None:
+            self._Cv = Q_std*self._Cv/(self._Q_std(US, DS))
+
+    def _Q_liquid(self, US, DS_P):
+        """
+        Calculate volumetric flow rate for liquid flow.
+
+        Args:
+            US: Upstream thermodynamic state.
+            DS_P (float): Downstream pressure [Pa].
+
+        Returns:
+            float: Volumetric flow rate [m³/s].
+        """
+        SG = US._density / 999.0 # specific gravity
+
+        if (US._P - DS_P) < 0:
+            return 0
+        elif DS_P <= US._Pvap:
+            DS_P = US._Pvap
+
+        return self._Cv * np.sqrt((US._P - DS_P) / SG)
+
+    def _Q_liquid_max(self, US):
+        """
+        Calculate maximum volumetric flow rate for liquid flow.
+
+        Args:
+            US: Upstream thermodynamic state.
+        """
+        return self._Q_liquid(US, US._Pvap)
+
+    def _Q_gas(self, US, DS_P):
+        """
+        Calculate volumetric flow rate for gas flow.
+
+        Args:
+            US: Upstream thermodynamic state.
+            DS_P (float): Downstream pressure [Pa].
+
+        Returns:
+            float: Volumetric flow rate [m³/s].
+        """
+        Q_gas_std = self._Q_gas_std(US, DS_P)
+        # Adjust for non-standard conditions
+        return Q_gas_std*(101325/US._P) * (US._T/288.71)
+
+    def _Q_gas_std(self, US, DS_P):
+        """
+        Calculate standard volumetric flow rate for gas flow.
+
+        Args:
+            US: Upstream thermodynamic state.
+            DS_P (float): Downstream pressure [Pa].
+
+        Returns:
+            float: Standard volumetric flow rate [m³/s].
+        """
+        dP = US._P - DS_P
+        SG = self.SG_gas(US)
+        # Converting Swagelok choked flow equation from english inputs to SI
+        SI_from_dumb_english_factor = 1.5222534115559487
+
+        if DS_P/US._P <= self.PR_crit(US):
+            return self._Q_gas_max_std(US)
+        else:
+            return (SI_from_dumb_english_factor * self._Cv * US._P
+                    * (1 - 2 / 3 * dP/US._P) * np.sqrt(dP/(US._P * SG * US._T)))
+
+    def _Q_gas_max_std(self, US):
+        """
+        Calculate maximum standard volumetric flow rate for gas flow.
+
+        Args:
+            US: Upstream thermodynamic state.
+
+        Returns:
+            float: Maximum standard volumetric flow rate [m³/s].
+        """
+        P_crit_ratio = (2 / (US.gamma + 1)) ** (US.gamma / (US.gamma - 1))
+        if self.thermo is None:
+            self.thermo = thermo.from_state(US.state)
+        self.thermo._SP = US._S, P_crit_ratio * US._P
+        SG = self.SG_gas(US)
+        # Converting Swagelok choked flow equation from english inputs to SI
+        SI_from_dumb_english_factor = 0.7169813568428518
+        return SI_from_dumb_english_factor*self._Cv*US._P*np.sqrt(1/(SG*US._T))
+
+    def _Q_gas_max(self, US):
+        """
+        Calculate maximum volumetric flow rate for gas flow.
+
+        Args:
+            US: Upstream thermodynamic state.
+        """
+        return self._Q_gas_max_std(US) * (101325/US._P) * (US._T/288.71)
+
+    def _Q(self, US, DS):
+        """
+        Calculate volumetric flow rate based on fluid phase.
+
+        Args:
+            US: Upstream thermodynamic state.
+            DS: Downstream thermodynamic state.
+
+        Returns:
+            float: Volumetric flow rate [m³/s].
+        """
+        if US.phase in ['liquid', 'supercritical_liquid']:
+            return self._Q_liquid(US, DS._P)
+        else:
+            return self._Q_gas(US, DS._P)
+
+    def _Q_max(self, US):
+        """
+        Calculate maximum volumetric flow rate.
+
+        Args:
+            US: Upstream thermodynamic state.
+        """
+        if US.phase in ['liquid', 'supercritical_liquid']:
+            return self._Q_liquid_max(US)
+        elif US.phase in ['gas', 'supercritical_gas']:
+            return self._Q_gas_max(US)
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    def _w(self, US, DS):
+        """
+        Calculate mass flow rat.
+
+        Args:
+            US: Upstream thermodynamic state.
+            DS: Downstream thermodynamic state.
+
+        Returns:
+            float: Mass flow rate [kg/s].
+        """
+
+        return self._Q(US, DS) * US._density
+
+    def _w_max(self, US):
+        """
+        Calculate maximum mass flow rate.
+
+        Args:
+            US: Upstream thermodynamic state.
+        """
+        return self._Q_max(US) * US._density
+
+    def _dP_liquid(self, US, w):
+        """
+        Calculate pressure drop for liquid flow.
+
+        Args:
+            US: Upstream thermodynamic state.
+            w (float): Mass flow rate [kg/s].
+
+        Returns:
+            float: Pressure drop [Pa].
+        """
+        SG = US._density / 999.0 # specific gravity
+        return -(w / US._density / self._Cv)**2 * SG
+
+    def _dP_gas(self, US, w):
+        """
+        Calculate pressure drop for gas flow.
+
+        Args:
+            US: Upstream thermodynamic state.
+            w (float): Mass flow rate [kg/s].
+
+        Returns:
+            float: Pressure drop [Pa].
+        """
+        PR_crit = self.PR_crit(US)
+        def find_dP(PR):
+            return self._w_gas(US, PR*US._P) - w
+        try:
+            PR = root_scalar(find_dP, bracket=[PR_crit, 1]).root
+        except:
+            if w > self._w_gas_max(US):
+                # Set outlet to high dP to tell
+                # solver to reduce mass flow
+                return -1e9
+            else:
+                from pdb import set_trace
+                set_trace()
+        # Downstream Pressure - Upstream Pressure
+        return US._P*(PR-1)
+
+    def PR_crit(self, US):
+        """
+        Calculate critical pressure ratio based on fluid phase.
+
+        Args:
+            US: Upstream thermodynamic state.
+
+        Returns:
+            float: Critical pressure ratio.
+        """
+        if US.phase in ['liquid', 'supercritical_liquid']:
+            return US._Pvap/US._P
+        elif US.phase in ['gas', 'supercritical_gas']:
+            return (2. / (US.gamma + 1.)) ** (US.gamma / (US.gamma - 1.))
+        elif US.phase in ['two-phase']:
+            return 1
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    def _dP(self, US, w):
+        """
+        Calculate pressure drop based on fluid phase.
+
+        Args:
+            US: Upstream thermodynamic state.
+            w (float): Mass flow rate [kg/s].
+
+        Returns:
+            float: Pressure drop [Pa].
+        """
+        if US.phase in ['liquid', 'supercritical_liquid', 'two-phase']:
+            return self._dP_liquid(US, w)
+        else:
+            return self._dP_gas(US, w)
+
+    def SG_gas(self, US):
+        """
+        Calculate specific gravity of gas at standard conditions.
+
+        Args:
+            US: Upstream thermodynamic state.
+
+        Returns:
+            float: Specific gravity relative to air.
+        """
+        if self.thermo is None:
+            self.thermo = thermo.from_state(US.state)
+        self.thermo._TP = 288.71, 101325
+        return self.thermo._density / 1.225
+
+
+
+
 class FlowModel:
     """Model for calculating flow properties using different flow functions.
 
@@ -1698,13 +1991,14 @@ class FlowModel:
         Raises:
             ValueError: If flow_func is not one of the supported types
         """
+
         self._cdA = cdA
 
         # Map string to flow function class
         flow_map = {
             'isen': IsentropicFlow,
             'incomp': IncompressibleFlow,
-            'comp': PerfectGasFlow
+            'comp': PerfectGasFlow,
         }
 
         if flow_func not in flow_map:

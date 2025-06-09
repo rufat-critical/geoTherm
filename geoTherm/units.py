@@ -156,6 +156,7 @@ class UnitHandler:
         Returns:
             float: The converted value in the desired units.
         """
+
         return self.Q_(value, input_unit).to(output_unit).magnitude
 
     def parse_units(self, input_value, quantity):

@@ -17,6 +17,10 @@ class ExternalCylinder(ExternalGeometry):
         return np.pi * self._D**2 / 4
 
     @property
+    def _Dh(self):
+        return self._D
+
+    @property
     def _perimeter(self):
         return np.pi * self._D
 

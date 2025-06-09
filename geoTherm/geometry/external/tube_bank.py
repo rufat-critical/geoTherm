@@ -83,6 +83,10 @@ class ExternalTubeBank(ExternalGeometry):
     def _area_flow(self):
         """Flow area across the tube bank."""
         return (self._S_t - self._D) * self.N_t * self._L
+    
+    @property
+    def _Dh(self):
+        return self._D
 
 
 @addQuantityProperty
