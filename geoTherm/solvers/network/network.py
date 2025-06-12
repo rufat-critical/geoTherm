@@ -792,11 +792,11 @@ class Network:
 
         x_scaled = conditioner.scale_x(self.x)
         sol = root(conditioned, x_scaled, method='lm')#, options={'factor': np.min(abs(x_scaled/1.5))})
-        
+
         x = conditioner.unscale_x(sol.x)
 
-        
         self.evaluate(x)
+
 
 
 

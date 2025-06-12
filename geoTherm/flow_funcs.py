@@ -1934,9 +1934,9 @@ class CvFlow:
             float: Pressure drop [Pa].
         """
         if US.phase in ['liquid', 'supercritical_liquid', 'two-phase']:
-            return self._dP_liquid(US, w)
+            return self._dP_liquid(US, w), False
         else:
-            return self._dP_gas(US, w)
+            return self._dP_gas(US, w), False
 
     def SG_gas(self, US):
         """

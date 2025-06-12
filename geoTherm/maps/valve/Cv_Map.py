@@ -13,9 +13,7 @@ cv_2in = {
 }
 
 
-
-
-class CvMap:
+class Cv_Map:
     def __init__(self, cv_curve=(cv_2in, 'gal/min/psi**(0.5)')):
         """
         Initialize CvMap with a hardcoded or provided Cv curve dictionary.

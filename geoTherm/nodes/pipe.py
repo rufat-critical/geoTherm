@@ -21,7 +21,7 @@ from geoTherm.pressure_drop.internal.pipe import StraightLoss as SL2
 class Pipe(baseInertantFlow, GeometryProperties):
     _displayVars = ['w', 'dP', 'dH', 'geometry']
     _units = {**GeometryProperties._units, **{
-        'w': 'MASSFLOW', 'U': 'VELOCITY'
+        'w': 'MASSFLOW', 'U': 'VELOCITY', 'dP_head': 'PRESSURE'
     }
     }
     #_units = {'D': 'LENGTH', 'L': 'LENGTH', 'w': 'MASSFLOW',
@@ -124,6 +124,15 @@ class Pipe(baseInertantFlow, GeometryProperties):
                 return
 
             self.physics = PipePhysics(node=self)
+
+    @property
+    def _dP_head(self):
+        US, DS, _ = self.thermostates()
+        dP_head = 0
+        for geometry in self.geometry.geometries:
+            dP_head -= geometry._dz*9.81*US._density
+        
+        return dP_head
 
     @property
     def _U(self):

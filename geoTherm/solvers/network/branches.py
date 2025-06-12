@@ -994,7 +994,7 @@ class FlowBranch(baseBranch):
                         if self._w > w_max:#*(2-CHOKED_TOL):
                             logger.info(f"Flow in Branch {self.name} is higher than max flow for"
                                         f" {node.name} of {w_max} by with a flow of {self._w}")
-                            self.penalty = (w_max*(1+CHOKED_TOL) - self._w)*1e5
+                            self.penalty = (w_max*(2-CHOKED_TOL) - self._w)*1e5
                             return
                         elif self._w > w_max*CHOKED_TOL:
                             logger.info(f"Choking detected in {node.name} for branch {self.name}")

@@ -2,6 +2,7 @@ from ..units import inputParser, addQuantityProperty
 import numpy as np
 from ..logger import logger
 from .baseNodes.baseFlowResistor import baseFlowResistor
+from .baseNodes.baseFlow import FixedFlow
 from ..flow_funcs import FlowModel
 
 
@@ -19,30 +20,15 @@ class resistor(baseFlowResistor):
         super().__init__(name, US, DS)
 
         self.flow_func = flow_func
-        self._area = area
-        self.flow = FlowModel(flow_func, self._area)
+        self.flow = FlowModel(flow_func, cdA=area)
 
-    def initialize(self, model):
-        super().initialize(model)
+    @property
+    def _area(self):
+        return self.flow._cdA
 
-
-    def evaluate(self):
-
-        # Get US, DS Thermo
-        US, DS, flow_sign = self.thermostates()
-        self._w = self.flow._w(US, DS)*flow_sign
-
-    def get_outlet_state(self, US, w):
-
-        dP, error = self.flow._dP(US, np.abs(w))
-
-
-        if dP is None:
-            # Set outlet to high dP to tell
-            # solver to reduce mass flow
-            dP = -1e9
-
-        return {'H': US._H, 'P': US._P + dP}
+    @_area.setter
+    def _area(self, value):
+        self.flow._cdA = value
 
 
     def get_inlet_state(self, DS, w):
@@ -62,3 +48,25 @@ class resistor(baseFlowResistor):
 
 class orifice(resistor):
     pass
+
+class Resistor(resistor):
+    pass
+
+@addQuantityProperty
+class FixedFlowResistor(FixedFlow):
+
+    _units = FixedFlow._units | {'area': 'AREA'}
+
+    _displayVars =  ['w', 'area', 'dP', 'PR', 'flow_func']
+
+    def __init__(self, name, US, DS, w, flow_func='isen'):  # noqa
+
+        super().__init__(name, US, DS, w)
+
+        self.flow_func = flow_func
+        self.flow = FlowModel(flow_func, 1)
+
+    @property
+    def _area(self):
+        return self._w/self.flow._w(self.US_node.thermo,
+                                    self.DS_node.thermo)

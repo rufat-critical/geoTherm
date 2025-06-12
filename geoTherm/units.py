@@ -192,19 +192,24 @@ class UnitHandler:
             if len(input_value) == 1:
                 return self.parse_units(input_value[0], quantity)
 
-            if len(input_value) == 2:
+            elif isinstance(input_value[1], str):
                 value, unit = input_value
                 is_valid = (isinstance(value, numeric_types) and
                             isinstance(unit, str))
+                
                 if is_valid:
                     return self.convert(
                         value, unit, unitSystems['SI'].units[quantity])
+                elif isinstance(value, (list, tuple, np.ndarray)):
+                    return np.array([self.parse_units((v, unit), quantity)
+                                     for v in value])
                 logger.critical(
                     "Two-element sequence must be (numeric_value, unit_string)"
                     )
-
-            logger.critical("Sequence must have either 1 or 2 elements")
-
+            else:
+                return np.array([self.parse_units(v, quantity)
+                                     for v in input_value])
+        
         # If none of the above cases match, return as-is
         return input_value
 

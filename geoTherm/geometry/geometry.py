@@ -47,7 +47,7 @@ class GeometryGroup:
 
     _units = {'L': 'LENGTH', 'area_avg': 'AREA', 'surface_inner': 'AREA',
               'surface_outer': 'AREA', 'Do': 'LENGTH', 'Di': 'LENGTH',
-              'Ain': 'AREA', 'Aout': 'AREA'}
+              'Ain': 'AREA', 'Aout': 'AREA', 'dz': 'LENGTH'}
 
     def __init__(self, geometries=None):
         """Initialize a GeometryGroup.
@@ -162,6 +162,9 @@ class GeometryGroup:
     def _Aout(self):
         return np.average([geometry._Aout for geometry in self.geometries])
 
+    @property
+    def _dz(self):
+        return np.sum([geometry._dz for geometry in self.geometries])
 
 class Geometry:
     """Base class for different geometries with a formatted string output."""

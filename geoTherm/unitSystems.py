@@ -117,6 +117,7 @@ class ENGLISH:
         'TEMPERATURE': 'degR',             # Rankine
         'VELOCITY': 'ft/s',                # Feet per second
         'VISCOSITY': 'lb/in/s',            # Pound per inch per second
+        'KINEMATICVISCOSITY': 'ft**2/s',    # Square feet per second
         'CONDUCTIVITY': 'Btu/hr/ft/F',     # BTU per hour per foot per
                                            # Fahrenheit
         'VOLUME': 'in**3',                 # Cubic inch
@@ -164,6 +165,7 @@ class ENGLISHFT:
         'TEMPERATURE': 'degR',             # Rankine
         'VELOCITY': 'ft/s',                # Feet per second
         'VISCOSITY': 'lb/in/s',            # Pound per inch per second
+        'KINEMATICVISCOSITY': 'ft**2/s',    # Square feet per second
         'CONDUCTIVITY': 'Btu/hr/ft/F',     # BTU per hour per foot per
                                            # Fahrenheit
         'VOLUME': 'ft**3',                 # Cubic inch
@@ -214,6 +216,7 @@ class MIXED:
         'TEMPERATURE': 'degC',             # Celsius
         'VELOCITY': 'm/s',                 # Meter per second
         'VISCOSITY': 'Pa*s',               # Pascal-second
+        'KINEMATICVISCOSITY': 'm**2/s',    # Square meter per second
         'CONDUCTIVITY': 'W/m/K',           # Watt per meter-Kelvin
         'VOLUME': 'in**3',                 # Cubic inch
         'THERMALRESISTANCE': 'degK/W',     # Kelvin per Watt

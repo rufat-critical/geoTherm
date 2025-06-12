@@ -15,7 +15,7 @@ class BaseHTC(ABC):
         pass
 
     def Re(self, thermo, w):
-        return Re_(thermo, self.geometry._Dh, w)
+        return w*self.geometry._Dh/(thermo._viscosity*self.geometry._area)
 
 
 class Bringer_Smith(BaseHTC):

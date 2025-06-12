@@ -426,6 +426,24 @@ class baseFlowResistor(baseFlow):
             set_trace()
         return self.flow._w_max(US)
 
+    def evaluate(self):
+
+        # Get US, DS Thermo
+        US, DS, flow_sign = self.thermostates()
+        self._w = self.flow._w(US, DS)*flow_sign
+
+    def get_outlet_state(self, US, w):
+
+        dP, error = self.flow._dP(US, np.abs(w))
+
+
+        if dP is None:
+            # Set outlet to high dP to tell
+            # solver to reduce mass flow
+            dP = -1e9
+
+        return {'H': US._H, 'P': US._P + dP}
+
 
 class FixedFlow(baseFlow):
     """
