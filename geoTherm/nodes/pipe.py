@@ -5,20 +5,98 @@ from ..units import inputParser, addQuantityProperty
 from ..utils import dP_pipe
 from ..logger import logger
 import numpy as np
-from ..resistance_models.flow import PipeLoss#, PipeLossModel, BendLoss
-from ..resistance_models.flow import ConstantPhysics, CustomPhysics, PipePhysics, load_physics
-from rich.console import Console
-from rich.table import Table
-from rich.box import SIMPLE
 from ..decorators import state_dict
 from geoTherm.geometry.internal import Cylinder
 from geoTherm.geometry.geometry import GeometryProperties, GeometryGroup
 from geoTherm.geometry.internal.cylinder import InternalCylinder, InternalCylinderBend
 from geoTherm.pressure_drop.internal.pipe import StraightLoss as SL2
+from geoTherm.pressure_drop.internal.pipe import PipeLoss
+from geoTherm.pressure_drop.pressure_drop import PressureDrop
 
 
 @addQuantityProperty
-class Pipe(baseInertantFlow, GeometryProperties):
+class BasePipe(baseInertantFlow, GeometryProperties):
+
+    _displayVars = ['w', 'dP', 'dH']
+    _units = {**GeometryProperties._units, **{
+        'w': 'MASSFLOW', 'U': 'VELOCITY'}}
+    _bounds = [-1e5, 1e5]
+
+    @inputParser
+    def __init__(self, name, US, DS, Z:'INERTANCE'=1, w:'MASSFLOW'=0, geometry=None):
+        super().__init__(name, US, DS)
+        self._w = w
+        self._Z = Z
+        self.geometry = geometry
+
+    @property
+    def _dP(self):
+        US, _, _ = self.thermostates()
+
+        return self.loss.evaluate(US, self._w)
+
+    @property
+    def _U(self):
+        US, _, _ = self.thermostates()
+
+        return self._w/(US._density*self.geometry._area)
+
+
+    def get_outlet_state(self, US, w):
+
+        dP = self.loss.evaluate(US, w)
+        return {'H': US._H,
+                'P': US._P + dP}
+
+
+class FixedDP(BasePipe):
+    """
+    A pipe component with a fixed pressure drop.
+
+    This class represents a pipe in a fluid system where the pressure drop
+    is either constant or calculated based on a predefined function.
+    """
+
+    _units = {'dP': 'PRESSURE'}
+
+    @inputParser
+    def __init__(self, name, US, DS, dP:'PRESSURE', Z=1, w=0,):
+        """
+        Initialize the FixedDP object.
+
+        Args:
+            name: Name of the pipe
+            US: Upstream connection
+            DS: Downstream connection
+            dP: Pressure drop (constant or callable)
+            Z: Number of parallel pipes (default: 1)
+        """
+        super().__init__(name, US, DS, Z=Z, w=w)
+        self.loss = PressureDrop(dP=dP)
+
+    @property
+    def _dP(self):
+        """
+        Calculate the pressure drop across the pipe.
+
+        Returns:
+            float: The pressure drop value
+        """
+        US, _, _ = self.thermostates()
+        return self.loss.evaluate(US, self._w)
+
+    @_dP.setter
+    def _dP(self, value):
+        """
+        Set a new pressure drop value.
+
+        Args:
+            value: New pressure drop value
+        """
+        self.loss.dP = value
+
+
+class Pipe(BasePipe):
     _displayVars = ['w', 'dP', 'dH', 'geometry']
     _units = {**GeometryProperties._units, **{
         'w': 'MASSFLOW', 'U': 'VELOCITY', 'dP_head': 'PRESSURE'
@@ -38,45 +116,22 @@ class Pipe(baseInertantFlow, GeometryProperties):
                  dz=0,
                  roughness=1e-4,
                  geometry=None,
-                 physics=None,
                  w:'MASSFLOW'=0,
-                 dP:'PRESSURE'=None,
                  Z:'INERTANCE'=None):
 
 
-        super().__init__(name, US, DS)
+        super().__init__(name, US, DS, Z=Z, w=w, geometry=geometry)
 
-        self._w = w
+        if geometry is None:
+            if L is None or D is None:
+                logger.critical("Either geometry or L and D must be provided")
 
-        if geometry is not None:
-            self.geometry = geometry
+            self.geometry = InternalCylinder(D=D, L=L, dz=dz, roughness=roughness)
+
+        if Z is None:
             self._Z = self.geometry._L/self.geometry._area**2
-        else:
-            # Initialize Geometry
-            if L is not None and D is not None:
-                self.geometry = Cylinder(D=D, L=L, dz=dz, roughness=roughness)
-                if Z is None:
-                    self._Z = self.geometry._L/self.geometry._area**2
-                else:
-                    self._Z = Z
-            else:
-                self.geometry = None
-                if Z is None:
-                    self._Z = 1
-                else:
-                    self._Z = Z
 
-        if physics is not None:
-            self.physics = load_physics(physics)
-        else:
-            if dP is not None:
-                if isinstance(dP, (float, int)):
-                    self.physics = ConstantPhysics(dP=dP, node=self)
-            elif self.geometry is not None:
-                self.physics = PipePhysics(node=self)
-            else:
-                from pdb import set_trace
-                set_trace()
+        self.loss = PipeLoss(self.geometry)
 
     @state_dict
     def _state_dict(self):
@@ -94,86 +149,13 @@ class Pipe(baseInertantFlow, GeometryProperties):
         else:
             geometry_state = self.geometry._state
 
-        physics_state = self.physics._state
-
         # Add the current state vector to the dictionary
-        return {'geometry': geometry_state,
-                'physics': physics_state}
+        return {'geometry': geometry_state}
 
     @property
-    def _dP(self):
-        US, DS, _ = self.thermostates()
-
-
-        return self.physics.evaluate(self._w, US, DS)['dP']
-
-    @_dP.setter
-    def _dP(self, value):
-
-        if callable(value):
-            self.physics = CustomPhysics(dP_func=value)
-        else:
-            self.physics = ConstantPhysics(dP=value, node=self)
-            logger.info(f"Setting dP for {self.name} to {value}")
-
-        if value is None:
-            # Check if geometry is specified
-            if self.geometry is None:
-                logger.warn("Can't set dP to none because geometry is not "
-                            f"specified for {self.name} node")
-                return
-
-            self.physics = PipePhysics(node=self)
-
-    @property
-    def _dP_head(self):
-        US, DS, _ = self.thermostates()
-        dP_head = 0
-        for geometry in self.geometry.geometries:
-            dP_head -= geometry._dz*9.81*US._density
-        
-        return dP_head
-
-    @property
-    def _U(self):
-        # Incompressible velocity
+    def _dP_z(self):
         US, _, _ = self.thermostates()
-        return self._w/(US._density*self.geometry._area)
-
-    @property
-    def _cdA(self):
-        # Incompressible cdA
-        US, DS, _ = self.thermostates()
-        dP = np.abs(US.thermo._P - DS.thermo._P)
-        return self._w/np.sqrt(2*US._density*dP)
-
-    def get_outlet_state(self, US, w):
-
-        # Evaluate loss
-        try:
-            dProp = self.physics.evaluate(w, US, None)
-        except:
-            from pdb import set_trace
-            set_trace()
-
-        return {'H': US._H + dProp['dH'],
-                'P': US._P + dProp['dP']}
-
-
-    @property
-    def xdot2(self):
-        if self.penalty is not False:
-            return np.array([self.penalty])
-
-        #if self._w >= 0:
-        #    US, DS = self.US_node.thermo, self.DS_node.thermo
-        #else:
-        #    US, DS = self.DS_node.thermo, self.US_node.thermo
-        US, DS, _ = self.thermostates()
-
-        DS_target = self.get_outlet_state(US, self._w)
-
-        return np.array([DS_target['P'] - DS._P])*np.sign(self._w)        
+        return self.loss._dP_z(US)
 
 
 @addQuantityProperty
@@ -190,7 +172,6 @@ class LumpedPipe(Pipe):
                  Z:'INERTANCE'=None,
                  dP:'PRESSURE'=None):
 
-        
         self.name = name
         self.US = US
         self.DS = DS
@@ -201,8 +182,6 @@ class LumpedPipe(Pipe):
             self.geometry = geometry
         else:
             self.geometry = GeometryGroup(geometry)
-
-        #self.loss = PipeLossModel(self, self.geometry)
         
         if Z is None:
             self._Z = self.geometry._L / self.geometry._area_avg**2
@@ -214,51 +193,38 @@ class LumpedPipe(Pipe):
 
         self.loss = []
         for geometry in self.geometry.geometries:
-            if isinstance(geometry, InternalCylinder):
-                self.loss.append(PipeLoss(self, geometry, loss_type='straight'))
-            elif isinstance(geometry, InternalCylinderBend):
-                self.loss.append(PipeLoss(self, geometry, loss_type='bend'))
-            else:
-                from pdb import set_trace
-                set_trace()
-
-    @property
-    def _dP(self):
-        US, _, _ = self.thermostates()
-        return self.evaluate_losses(self._w, US)
+            self.loss.append(PipeLoss(geometry))
 
     @property
     def _dP_split(self):
         US, _, _ = self.thermostates()
-        return [loss.evaluate(self._w, US) for loss in self.loss]
-    
+        return [loss.evaluate(US, self._w) for loss in self.loss]
+
     @property
     def dP_sections(self):
         geometry = [geometry for geometry in self.geometry.geometries]
         dP_split = self.dP_split
         dP_total = sum(dP_split)
-        
+
         # Create dictionary with total dP and individual section values
         result = {'dP': dP_total}
-        
+
         # Add individual section values
         for geom, dp in zip(geometry, dP_split):
             result[geom._type] = dp
-            
+
         return result
 
-    def evaluate_losses(self, w, US):
+    def evaluate_losses(self, US, w):
         dP = 0
         for loss in self.loss:
-            dP += loss.evaluate(w, US)
+            dP += loss.evaluate(US, w)
         return dP
 
-
     def get_outlet_state(self, US, w):
-        dP = self.evaluate_losses(np.abs(w), US)
-        H = US._H + self._dH
+        dP = self.evaluate_losses(US, w)
 
-        return {'H': H,
+        return {'H': US._H,
                 'P': US._P + dP}
 
 

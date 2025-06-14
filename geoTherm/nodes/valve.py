@@ -31,9 +31,9 @@ class Valve(baseFlowResistor):
 class PositionValve(Valve):
 
     @inputParser
-    def __init__(self, name, US, DS, position, Cv_curve):
+    def __init__(self, name, US, DS, position, Cv_map):
         super().__init__(name, US, DS, 1)
-        self.Cv_map = Cv_Map(Cv_curve)
+        self.Cv_map = Cv_Map(Cv_map)
         self.position = position
 
     @property

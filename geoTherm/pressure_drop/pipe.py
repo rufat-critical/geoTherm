@@ -1,10 +1,8 @@
 from ..utils import Re_, eps
 from ..logger import logger
-from .data.K_factors import K_bend
 import numpy as np
 from scipy.optimize import root_scalar
-from maps.Pipe.Bend.Interpolators import KBend
-
+from .base_loss import baseLossModel
 
 def friction_factor(Re, rel_roughness):
     """ Calculate the friction factor based on Reynolds number and 
@@ -61,11 +59,44 @@ def pipe_K(thermo, L, Dh, w, roughness=2.5e-6):
     return f * L / Dh
 
 
-class baseLoss:
-    pass
+class PipeLoss(baseLossModel):
+    """Pressure loss calculations for a pipe."""
+    def __init__(self, geometry):
+        self.geometry = geometry
+
+        # Initialize K and dP
+        self.K = None
+        self.Re = None
+        self.f = None
+        self._dP = None
 
 
-class PipeLoss(baseLoss):
+
+    def evaluate(self, thermo, w):
+        """Compute loss coefficient and pressure drop."""
+
+        # Get K Factor
+        self.K = pipe_K(thermo, self.geometry._L,
+                        self.geometry._Dh,
+                        w,
+                        self.geometry._roughness)
+
+        self.Re = Re_(thermo, self.geometry._Dh, w)
+        self.f = friction_factor(self.Re,
+                                    self.geometry._roughness / self.geometry._Dh)
+
+        self._dP = -self.K*((w/self.geometry._area)**2
+                            / (2 * thermo._density))
+
+        return self._dP
+
+
+
+
+
+
+
+class StraightLoss(baseLossModel):
     """Pressure loss calculations for a pipe."""
     def __init__(self, node, geometry, dP=None):
         self.node = node  # Associate with pipe node
@@ -102,46 +133,9 @@ class PipeLoss(baseLoss):
 
             return self._dP
 
-class StraightLoss(baseLoss):
-    """Pressure loss calculations for a pipe."""
-    def __init__(self, node, geometry, dP=None):
-        self.node = node  # Associate with pipe node
-        self.geometry = geometry
-
-        self.fixed_dP = dP
-
-        # Initialize K and dP
-        self.K = None
-        self._dP = None
-
-        if self.fixed_dP is not None:
-            logger.info(f"Setting Loss for {self.node.name} to {dP}")
-            self._dP = self.fixed_dP
-
-    def evaluate(self, w, thermo):
-        """Compute loss coefficient and pressure drop dynamically."""
-        if self.fixed_dP is not None:
-            return self.fixed_dP  # If dP is set, return it directly
-        else:
-
-            # Get K Factor
-            self.K = pipe_K(thermo, self.geometry._L,
-                            self.geometry._D,
-                            w,
-                            self.geometry._roughness)
-            
-            self.Re = Re_(thermo, self.geometry._D, w)
-            self.f = friction_factor(self.Re,
-                                     self.geometry._roughness / self.geometry._D)
-
-            self._dP = -self.K*((w/self.geometry._area)**2
-                                / (2 * thermo._density))
-
-            return self._dP
 
 
-
-class BendLoss(baseLoss):
+class BendLoss(baseLossModel):
 
     def __init__(self, node, geometry):
         self.node = node

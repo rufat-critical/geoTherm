@@ -1,7 +1,11 @@
+from .baseNodes.baseNode import Node
 
+
+class LumpedMass(Node):
+    pass
 
 # Material Properties
-class SS316:
+class SS316(LumpedMass):
 
     @property
     def _density(self):

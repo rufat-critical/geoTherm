@@ -43,23 +43,24 @@ def tube_reader(xls_path):
     # Forward fill the categorical columns
     df[['Fluid Node', 'Part Number', 'Flow Component']] = df[['Fluid Node', 'Part Number', 'Flow Component']].ffill()
 
+
     # Select relevant columns
     df_relevant = df[[
         'Fluid Node',
         'Part Number',
         'Flow Component',
-        'Vertical Height Change (Delta Z)',
+        'Vertical Height Change (Delta Z) (mm)',
         'Diameter (in)',
         'Bend Angle',
-        'Length (m)'
+        'Length (mm)'
     ]].copy()
 
     # Drop rows where all measurement columns are NA
     df_relevant = df_relevant.dropna(subset=[
-        'Vertical Height Change (Delta Z)',
+        'Vertical Height Change (Delta Z) (mm)',
         'Diameter (in)',
         'Bend Angle',
-        'Length (m)'
+        'Length (mm)'
     ], how='all')
 
     # Build the tube data dictionary
@@ -87,14 +88,14 @@ def tube_reader(xls_path):
         }
 
         # Add data if it exists, otherwise keep the zero default
-        if pd.notna(row['Vertical Height Change (Delta Z)']):
-            dimension['Z'] = toSI((row['Vertical Height Change (Delta Z)'], UNITS['Z']), 'LENGTH')
+        if pd.notna(row['Vertical Height Change (Delta Z) (mm)']):
+            dimension['Z'] = toSI((row['Vertical Height Change (Delta Z) (mm)'], UNITS['Z']), 'LENGTH')
         if pd.notna(row['Diameter (in)']):
             dimension['D'] = toSI((row['Diameter (in)'], UNITS['Diameter']), 'LENGTH')
         if pd.notna(row['Bend Angle']):
             dimension['Angle'] = toSI((row['Bend Angle'], UNITS['Angle']), 'ANGLE')
-        if pd.notna(row['Length (m)']):
-            dimension['L'] = toSI((row['Length (m)'], UNITS['Length']), 'LENGTH')
+        if pd.notna(row['Length (mm)']):
+            dimension['L'] = toSI((row['Length (mm)'], UNITS['Length']), 'LENGTH')
 
         tube_data[fluid_node][part][component].append(dimension)
 

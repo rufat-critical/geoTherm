@@ -2,8 +2,9 @@ from ..flow import PipeLoss2
 from scipy.optimize import root_scalar
 import numpy as np
 from geoTherm.utils import eps
-from ..base_loss import baseLoss
-
+from ..base_loss import baseLossModel
+from geoTherm.geometry.internal.cylinder import InternalCylinder, InternalCylinderBend
+from maps.Pipe.Bend.Interpolators import KBend
 
 def Re_(Dh, area, w, viscosity):
     """ Calculate the Reynolds number.
@@ -74,7 +75,7 @@ def pipe_K(thermo, L, Dh, area, w, roughness=2.5e-6):
     return f * L / Dh
 
 
-class StraightLoss(baseLoss):
+class StraightLoss(baseLossModel):
     """Pressure loss calculations for a pipe."""
 
     def evaluate(self, thermo, w):
@@ -99,3 +100,53 @@ class StraightLoss(baseLoss):
                             / (2 * thermo._density))
 
         return self._dP
+
+class BendLoss(baseLossModel):
+    """Pressure loss calculations for a pipe bend."""
+
+    def evaluate(self, thermo, w):
+        """Compute loss coefficient and pressure drop."""
+        self.Re = Re_(self.geometry._Dh,
+                     self.geometry._area,
+                     w,
+                     thermo._viscosity)
+
+        self.Kbend = KBend.evaluate(self.Re, self.geometry.RD, self.geometry.angle)
+
+        self.Kpipe = pipe_K(thermo, self.geometry._L,
+                            self.geometry._D,
+                            w,
+                            self.geometry._roughness)
+
+        self.K = self.Kpipe + self.Kbend
+
+        self._dP = -self.K*((w/self.geometry._area)**2
+                            / (2 * thermo._density))
+
+        return self._dP
+
+
+class PipeLoss(baseLossModel):
+    """Pressure loss calculations for a pipe."""
+
+    def __init__(self, geometry):
+        super().__init__(geometry)
+        self.initialize()
+
+    def initialize(self):
+
+        if isinstance(self.geometry, InternalCylinderBend):
+            self.loss = BendLoss(self.geometry)       
+        elif isinstance(self.geometry, InternalCylinder):
+            self.loss = StraightLoss(self.geometry)
+
+        else:
+            from pdb import set_trace
+            set_trace()
+
+    def evaluate(self, thermo, w):
+        """Compute loss coefficient and pressure drop."""
+        return self.loss.evaluate(thermo, w) + self._dP_z(thermo)
+
+    def _dP_z(self, thermo):
+        return -self.geometry._dz*9.81*thermo._density

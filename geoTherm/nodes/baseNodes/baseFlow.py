@@ -357,6 +357,14 @@ class baseInertantFlow(baseFlow):
 
         return False
 
+    @property
+    def _cdA(self):
+        # Incompressible cdA
+        US, DS, _ = self.thermostates()
+        dP = np.abs(US._P - DS._P)
+        return self._w/np.sqrt(2*US._density*dP)
+
+
 
 class baseFlowResistor(baseFlow):
     """Base class for a flow node that calculates flow in between stations."""

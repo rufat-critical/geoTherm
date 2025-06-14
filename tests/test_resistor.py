@@ -90,12 +90,14 @@ def parallel_network(flow_func):
 # Function to build the series-parallel network
 def series_parallel_network(flow_func):
     model = gt.Model([])
+    
+    fluid = 'water'
 
     # Define boundaries
-    model += gt.Boundary('Inlet', fluid='water', T=(200, 'degC'), P=(10, 'bar'))
-    model += gt.Station('V1', fluid='water')
-    model += gt.Station('V2', fluid='water')
-    model += gt.Station('V3', fluid='water')
+    model += gt.Boundary('Inlet', fluid=fluid, T=(200, 'degC'), P=(10, 'bar'))
+    model += gt.Station('V1', fluid=fluid)
+    model += gt.Station('V2', fluid=fluid)
+    model += gt.Station('V3', fluid=fluid)
 
     # Define resistors in series and parallel
     model += gt.resistor('R1', US='Inlet', DS='V1', area=0.1, flow_func=flow_func)
@@ -108,6 +110,12 @@ def series_parallel_network(flow_func):
     model += gt.Boundary('Outlet', fluid='water', T=(200, 'degC'), P=(1, 'bar'))
 
     return model
+
+#model = series_parallel_network('incomp')
+#model.solve_steady(netSolver=False)
+
+#from pdb import set_trace
+#set_trace()
 
 # Test to check if the model converges for each network and flow_func
 @pytest.mark.parametrize("flow_func", ["incomp", "isen", "comp"])
