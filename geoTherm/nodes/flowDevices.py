@@ -55,7 +55,7 @@ class fixedFlow(FixedFlow):
         'area': 'AREA'
     }
     _bounds = [1e-5, 1]
-    _displayVars = ['w', 'area', 'flow_func_name', 'PR']
+    _displayVars = ['w', 'flow_func_name', 'PR']
 
     @inputParser
     def __init__(self, name, US, DS,
