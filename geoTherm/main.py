@@ -16,6 +16,9 @@ from .nodes.baseNodes.baseThermal import baseThermal
 from .solvers.network.network import Network
 from .solvers.network.junctions import FlowJunction
 from .utils import yaml_loader, yaml_writer, parse_dimension
+from .units import fromSI, units
+import copy
+
 
 class GlobalLimits:
     P = [1, 1e8]
@@ -520,8 +523,12 @@ class Model(modelTable):
 
         if process_lines:
             for name in plot.state_points:
-                DS_flow = self.node_map[name]['DS'][0]
-                DS_node = self.node_map[DS_flow]['DS'][0]
+                try:
+                    DS_flow = self.node_map[name]['DS'][0]
+                    DS_node = self.node_map[DS_flow]['DS'][0]
+                except:
+                    from pdb import set_trace
+                    set_trace()
                 if isinstance(self.nodes[DS_flow], gt.Turbo):
                     process_type = 'S'
                 else:
@@ -544,7 +551,7 @@ class Model(modelTable):
         # Generate Solution Object        
         sol = Solution(self, extras=['t'])
         # Save current time
-        sol.save([t_span[0]])
+        sol.append(self, {'t': t_span[0]})
         if solver == 'CVODE':
             # Need to move this to solvers folder
             from solvers.cvode import CVode_solver
@@ -552,7 +559,7 @@ class Model(modelTable):
             t, x = CVode_solver(self.evaluate, x0, t_span)
             for i, _ in enumerate(t):
                 self.evaluate(t[i], x[i])
-                sol.save([t[i], self.xdot[0], self.xdot[1], self.x[0]])
+                sol.append(self, {'t': t[i]})
         else:
             # Create BDF integrator
             integrator = BDF(self.evaluate, t_span[0],
@@ -562,7 +569,7 @@ class Model(modelTable):
 
             while integrator.t < t_span[1]:
                 integrator.step()
-                sol.save([integrator.t])
+                sol.append(self, {'t': integrator.t})
 
         return sol
 
@@ -879,6 +886,41 @@ class Model(modelTable):
         # Calculate Carnot Efficiency
         pass
 
+    def dataframe(self, variables=None):
+        # Output model as a pandas dataframe
+
+        if variables is not None:
+            from pdb import set_trace
+            set_trace()
+
+        data = {}
+        units = {}
+        quantity = {}
+        for name, node in self.nodes.items():
+            for attr in node._displayVars:
+                data[f'{name}.{attr}'] = getattr(node, attr)
+                if attr in node._units:
+                    quantity[f'{name}.{attr}'] = node._units[attr]
+                    units[f'{name}.{attr}'] = gt.units.output_units[node._units[attr]]
+                else:
+                    quantity[f'{name}.{attr}'] = ''
+                    units[f'{name}.{attr}'] = ''
+
+        data['converged'] = self.converged
+        data['Wnet'] = self.performance[0]
+        units['Wnet'] = gt.units.output_units['POWER']
+        units['converged'] = ''
+
+        df = pd.DataFrame([quantity, units, data])
+        df.index = ['quantity', 'units', 'value']
+
+        return df
+        
+
+
+
+
+
 def load(yaml_path):
     config = yaml_loader(yaml_path)
     geometry = initialize_geometry_groups(config['GeometryGroups'])
@@ -903,6 +945,265 @@ def initialize_geometry_groups(geometry_groups):
 
 
 class Solution:
+    """
+    A class for collecting, storing, and managing simulation results from
+    geoTherm models.
+
+    This class provides functionality to:
+    - Initialize data storage for model variables and performance metrics
+    - Append simulation results at each time step or iteration
+    - Convert data between SI and display units
+    - Export results to pandas DataFrames and CSV files
+
+    Attributes:
+        extras (dict): Dictionary to store additional custom variables
+        functions (dict): Dictionary of functions to compute derived quantities
+        _data (dict): Internal storage for all collected data
+        units (dict): Mapping of variable names to their unit types
+        quantity (dict): Mapping of variable names to their physical quantities
+    """
+
+    def __init__(self, model, extras=None, functions=None):
+        """
+        Initialize the Solution object for collecting simulation results.
+
+        Args:
+            model: The geoTherm model object containing nodes and their
+                   properties
+            extras (dict, optional): Dictionary of additional variables to
+                                     track. Keys are variable names, values
+                                     are lists to store data.
+            functions (dict, optional): Dictionary of functions to compute
+                                      derived quantities. Keys are function
+                                      names, values are callable functions
+                                      that take the model as input.
+        """
+        # Initialize extras dictionary for additional custom variables
+        if extras is None:
+            self.extras = {}
+        else:
+            # Create empty lists for each extra variable
+            self.extras = {extra: [] for extra in extras}
+
+        # Initialize functions dictionary for computed quantities
+        if functions is None:
+            self.functions = {}
+        else:
+            self.functions = functions
+
+        # Initialize internal data storage
+        self._data = {}
+        self.units = {}
+        self.quantity = {}
+
+        # Set up data structure based on model
+        self.initialize(model)
+
+    def initialize(self, model):
+        """
+        Initialize the data structure based on the model's nodes and their
+        display variables.
+
+        This method:
+        - Creates data storage for each node's display variables
+        - Maps variables to their unit types and physical quantities
+        - Sets up storage for performance metrics and convergence status
+        - Prepares storage for extra variables and computed functions
+
+        Args:
+            model: The geoTherm model containing nodes to track
+        """
+        # Iterate through all nodes in the model
+        for name, node in model.nodes.items():
+            # For each display variable in the node
+            for attr in node._displayVars:
+                # Create storage list for this variable
+                self._data[f'{name}.{attr}'] = []
+
+                # Map the variable to its unit type if available
+                if attr in node._units:
+                    self.quantity[f'{name}.{attr}'] = node._units[attr]
+                else:
+                    self.quantity[f'{name}.{attr}'] = ''
+
+        # Set up storage for performance metrics
+        self._data['Net Power'] = []
+        self.quantity['Net Power'] = 'POWER'
+
+        # Set up storage for convergence status
+        self._data['converged'] = []
+        self.quantity['converged'] = ''
+
+        # Set up storage for extra variables
+        for extra in self.extras:
+            self._data[extra] = []
+            self.quantity[extra] = ''
+
+        # Set up storage for computed functions
+        for function in self.functions:
+            self._data[function] = []
+            self.quantity[function] = ''
+
+        # Set up storage for the state of the model
+        for name, node in model.nodes.items():
+            if hasattr(node, 'x'):
+                x = {f'{name}.x.{i}': [] for i, _ in enumerate(node.x)}
+                xdot = {f'{name}.xdot.{i}': [] for i, _ in enumerate(node.xdot)}
+
+                # Create quantity dictionaries with empty strings as values
+                x_quantity = {f'{name}.x.{i}': '' for i, _ in enumerate(node.x)}
+                xdot_quantity = {f'{name}.xdot.{i}': '' for i, _ in enumerate(node.xdot)}
+
+                self._data.update(x)
+                self._data.update(xdot)
+
+                self.quantity.update(x_quantity)
+                self.quantity.update(xdot_quantity)
+
+
+    def append(self, model, extras=None):
+        """
+        Append current simulation state to the data storage.
+
+        This method collects the current values of all tracked variables and
+        stores them in the internal data structure. It handles both regular
+        node attributes and thermodynamic properties that are stored in
+        special thermo objects.
+
+        Args:
+            model: The geoTherm model containing current state
+            extras (dict, optional): Additional values to append for extra
+            variables
+        """
+        # Iterate through all nodes in the model
+        for name, node in model.nodes.items():
+            # For each display variable in the node
+            for attr in node._displayVars:
+
+                obj = node
+                # Special handling for thermodynamic nodes
+                if isinstance(node, baseThermo):
+                    # Check if this is a thermodynamic property
+                    if attr in ['P', 'T', 'H', 'U', 'S', 'Q', 'density']:
+                        # Thermodynamic properties are stored in the
+                        # node.thermo object
+                        obj = node.thermo
+
+                # Append the value to the appropriate storage list
+                if self.quantity[f'{name}.{attr}'] != '':
+                    # Use the internal attribute (with underscore) for
+                    # quantities with units
+                    self._data[f'{name}.{attr}'].append(getattr(obj, f'_{attr}'))
+                else:
+                    # Use the regular attribute for quantities without units
+                    self._data[f'{name}.{attr}'].append(getattr(obj, attr))
+
+            # Append the state of the model
+            if hasattr(node, 'x'):
+                for i, _ in enumerate(node.x):
+                    self._data[f'{name}.x.{i}'].append(node.x[i])
+                    self._data[f'{name}.xdot.{i}'].append(node.xdot[i])
+
+        # Append performance metrics
+        self._data['Net Power'].append(model.performance[0])
+        self._data['converged'].append(model.converged)
+
+        # Append extra variables if provided
+        for extra in self.extras:
+            self._data[extra].append(extras[extra])
+
+        # Append computed function values
+        for function in self.functions:
+            self._data[function].append(self.functions[function](model))
+
+    def convert_data(self):
+        """
+        Convert all data from SI units to display units.
+
+        Returns:
+            dict: A copy of the internal data with all values converted to display units
+        """
+        # Create a deep copy to avoid modifying the original data
+        data = copy.deepcopy(self._data)
+
+        # Convert each variable that has a defined quantity type
+        for key, value in data.items():
+            if self.quantity[key] != '':
+                data[key] = fromSI(value, self.quantity[key])
+
+        return data
+
+    @property
+    def dataframe(self):
+        """
+        Create a pandas DataFrame from the collected data with unit information.
+
+        Returns:
+            pandas.DataFrame: DataFrame containing all collected data with unit metadata
+        """
+        # Convert data to display units
+        data = self.convert_data()
+
+        # Create DataFrame
+        df = pd.DataFrame(data)
+
+        # Add metadata about units and quantities
+        df.attrs['units'] = self.get_units()
+        df.attrs['quantity'] = self.quantity
+
+        return df
+
+    def get_units(self):
+        """
+        Get the display units for all tracked variables.
+
+        Returns:
+            dict: Mapping of variable names to their display units
+        """
+        # Create dictionary mapping variables to their display units
+        display_units = {
+            variable: units._output_units_for_display.get(
+                self.quantity.get(variable, ''), ''
+            )
+            for variable in self.quantity.keys()
+        }
+        return display_units
+
+    def save_csv(self, file_path='output.csv'):
+        """
+        Save the collected data to a CSV file with header information.
+
+        The CSV file includes:
+        - Row 1: Variable names
+        - Row 2: Physical quantities (e.g., 'TEMPERATURE', 'PRESSURE')
+        - Row 3: Display units (e.g., '°C', 'bar')
+        - Row 4+: Data values
+
+        Args:
+            file_path (str): Path where the CSV file should be saved
+        """
+
+        df_data = self.dataframe
+
+        # Create header rows with variable information
+        variable_names = df_data.columns.tolist()
+        quantity_row = [self.quantity.get(col, '') for col in variable_names]
+        units_row = [self.get_units()[col] for col in variable_names]
+
+        # Stack header rows + data
+        header_df = pd.DataFrame([variable_names, quantity_row, units_row])
+        data_df = df_data.T.reset_index(drop=True).T  # Ensure proper alignment
+
+        # Combine header and data into one DataFrame
+        full_df = pd.concat([header_df, data_df], ignore_index=True)
+
+        # Save to CSV with UTF-8 BOM encoding for Excel compatibility
+        full_df.to_csv(file_path, index=False, header=False,
+                       encoding='utf-8-sig')
+
+
+
+class Solution2:
 
     """
     Solution class for storing geoTherm Model data in a pandas DataFrame.

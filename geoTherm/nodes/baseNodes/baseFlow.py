@@ -244,7 +244,14 @@ class baseFlow(Node, ABC):
 
         US, DS, _ = self.thermostates()
         return self._get_dH(US, self._w)
-    
+
+    @property
+    def _cdA(self):
+        # Incompressible cdA
+        US, DS, _ = self.thermostates()
+        dP = np.abs(US._P - DS._P)
+        return self._w/np.sqrt(2*US._density*dP)
+
 
 @addQuantityProperty
 class baseInertantFlow(baseFlow):
@@ -319,6 +326,7 @@ class baseInertantFlow(baseFlow):
         # Negative when target pressure < actual pressure (flow decreases)
         self._wdot = (DS_target['P'] - DS._P) / self._Z
 
+
     @property
     def xdot(self):
         """Calculate state derivative."""
@@ -356,14 +364,6 @@ class baseInertantFlow(baseFlow):
         self._w = w
 
         return False
-
-    @property
-    def _cdA(self):
-        # Incompressible cdA
-        US, DS, _ = self.thermostates()
-        dP = np.abs(US._P - DS._P)
-        return self._w/np.sqrt(2*US._density*dP)
-
 
 
 class baseFlowResistor(baseFlow):
@@ -481,6 +481,14 @@ class FixedFlow(baseFlow):
         # Get US, DS Thermo
         #US = self.model.nodes[self.US].thermo
         return {'H': US._H, 'P': US._P*PR}
+
+    def _get_outlet_state(self, US, PR):
+
+        outlet_state = self.get_outlet_state(US, PR)
+
+        # Add heat transfer contribution to enthalpy
+        return super()._get_outlet_state(US, self._w)
+
 
     def _set_flow(self, w):
         self._w = w

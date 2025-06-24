@@ -4,6 +4,7 @@ from geoTherm.units import inputParser, addQuantityProperty
 from geoTherm.thermostate import thermo, addThermoAttributes
 from geoTherm.decorators import state_dict
 
+
 @addThermoAttributes
 @addQuantityProperty
 class baseThermo(Node):
@@ -15,7 +16,7 @@ class baseThermo(Node):
     """
 
     _displayVars = ['P', 'T', 'H', 'phase']
-    _units = {'w': 'MASSFLOW'}
+    _units = thermo._units
 
     @inputParser
     def __init__(self, name, fluid,
@@ -49,7 +50,10 @@ class baseThermo(Node):
             if state is not None:
                 self.thermo._update_state(state)
         elif isinstance(fluid, dict):
-            self.thermo = thermo.from_state(fluid)
+            if 'fluid' in fluid:
+                self.thermo = thermo.from_state(fluid)
+            else:
+                self.thermo = thermo(fluid, state=state)
 
     @state_dict
     def _state_dict(self):

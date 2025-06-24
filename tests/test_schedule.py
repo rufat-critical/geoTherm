@@ -15,4 +15,4 @@ def test_tanks():
     
     sol = foo.sim(t_span=[0, 2e-2])
     
-    assert(math.isclose(sol['Flow3.area'].tail(1), 3e-5, abs_tol=1e-3))
+    assert(math.isclose(sol.dataframe['Flow3.area'].tail(1), 3e-5, abs_tol=1e-3))
