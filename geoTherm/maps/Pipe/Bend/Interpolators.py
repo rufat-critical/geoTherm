@@ -1,13 +1,19 @@
 import pandas as pd
 from scipy.interpolate import interp1d
+from importlib.resources import files
 import numpy as np
-import os
 
-# Get the directory where this script is located
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class KInterpolator:
     def __init__(self, data_file, x_name, y_name, interp_type='log'):
+        # Try loading the file as a package resource
+        if not data_file.endswith('.csv'):
+            raise ValueError("Expected a CSV file")
+
+        if not '/' in data_file and not '\\' in data_file:
+            # Only filename provided, use default package location
+            data_file = files("geoTherm.maps.Pipe.Bend").joinpath(data_file)
+
         self.data = pd.read_csv(data_file)
         self.dnames = []
         self.x_name = x_name
@@ -71,7 +77,6 @@ class BendCorrectionInterpolator(KInterpolator):
                  interp_type = 'cubic'):
         
         # Convert relative path to absolute path
-        data_file = os.path.join(CURRENT_DIR, data_file)
         super().__init__(data_file, x_name, y_name, interp_type)
 
     def evaluate(self, theta):
@@ -82,7 +87,6 @@ class Bend90Interpolator(KInterpolator):
                  x_name='Re',
                  y_name='K', interp_type='cubic'):
         # Convert relative path to absolute path
-        data_file = os.path.join(CURRENT_DIR, data_file)
         super().__init__(data_file, x_name, y_name, interp_type)
 
 
@@ -123,9 +127,6 @@ class Bend90Interpolator(KInterpolator):
 class KBendInterpolator(KInterpolator):
     def __init__(self, BendData='90Bend.csv',
                  BendCorrectionData='BendCorrection.csv', interp_type='cubic'):
-        # Convert relative paths to absolute paths
-        BendData = os.path.join(CURRENT_DIR, BendData)
-        BendCorrectionData = os.path.join(CURRENT_DIR, BendCorrectionData)
         self.BendData = pd.read_csv(BendData)
         self.BendCorrectionData = pd.read_csv(BendCorrectionData)
 
