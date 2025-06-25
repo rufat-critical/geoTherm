@@ -1,70 +1,95 @@
 import geoTherm as gt
 from matplotlib import pyplot as plt
-from scipy.optimize import fsolve
-from pdb import set_trace
-import numpy as np
-import pandas as pd
-from geoTherm import units
+from gt.utilities.display import print_model_tables
 
-
+# Working Fluid
 fluid = 'acetone'
+# Oil
+oil = gt.thermo(model='custom', property_file='PG-1.xlsx')
+
 
 acetone = gt.thermo()
 acetone.TPY = 303, 101325, fluid
 PR_turb = 5
-Pin = 4.8
+Pin = 3.8
 w = 1.4
+w_H2O = 6
 
-w_H2O = 5.2
-            
-ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(Pin, 'bar'), T=319.8),
-                #gt.Station(name='PumpIn', fluid=fluid),
-                gt.Rotor('ORC_Rotor', N =40000),
-                gt.Rotor('Pump_Rotor', N =14009.97841),
-              gt.fixedFlowPump(name='Pump', rotor= 'Pump_Rotor', eta=0.7, PR=5, w=w, US='PumpIn', DS='PumpOut'),
-              gt.Station(name='PumpOut', fluid=fluid),
-              #gt.Qdot(name='ORC_Qdot', hot='WaterHEX'),
-              gt.Pipe(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, dP=(1,'bar'), D=(2, 'in'), L=3),
-              gt.Qdot(name='ORC_Heat', cool='ORC_HEX', Q=(3.2e6, 'BTU/hr')),
-              #gt.staticHEX(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, Q=(1000, 'kW'), dP=(1,'bar'), D=(2, 'in'), L=3),
-              #gt.staticHEX(name='ORC_HEX', US='PumpOut', DS='TurbIn',w=50, dP=(1,'bar')),
-              #gt.TBoundary(name='TurbIn', fluid=fluid, T=(160, 'degC'), P =101325),
-              #gt.Boundary(name='TurbIn', fluid=fluid, P=(24 ,'bar'), T=470),
-              gt.Station(name='TurbIn', fluid=fluid),#, T=Thot-5, P =101325),
-              #gt.Turbine_sizer(name='Turb', rotor = 'ORC_Rotor', phi= .1, psi=1.2, PR=PR_turb, w=w, US='TurbIn', DS='TurbOut'),
-              gt.Turbine(name='Turb', rotor='ORC_Rotor',US='TurbIn', DS='TurbOut', D= .057225646*2, eta=0.8, PR=5),
-              gt.Station(name='TurbOut', fluid=fluid),
-              #gt.resistor(name='out', US='TurbIn', DS='TurbOut', area=.1),
-              gt.simpleHEX(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(1,'bar'))])
+def heat_rejection_acetone(hot, cool, model):
+    # How much heat we need to reject to close cycle
+    w = model['Pump']._w
+    PumpIn_H = model['PumpIn'].thermo._H
+    TurbOut_H = model['TurbOut'].thermo._H
+    
+    return w*(TurbOut_H - PumpIn_H)
+    
+def heat_rejection_water(hot, cool, model):
+    # How much heat we need to reject to close cycle
+    w = model['Water_Pump']._w
+    WaterTank_H = model['WaterTank'].thermo._H
+    COLD_HEX_OUT_H = model['COLD_HEX_Out'].thermo._H
+    
+    return w*(COLD_HEX_OUT_H - WaterTank_H)
 
-WaterFlow = gt.flowController('WaterFlow', 5.2)
-Cool = gt.Model([gt.Boundary(name='Water_PumpInlet', fluid='Water', P=(1, 'bar'), T=310),
-                gt.Station(name='Water_PumpOutlet', fluid='Water'),
-                gt.fixedFlowPump(name='Water_Pump',rotor='DummyRotor', eta=.7,PR=7,w=WaterFlow,
-                                 US='Water_PumpInlet',DS='Water_PumpOutlet'),
-                gt.Rotor('DummyRotor', N =15000),
-                gt.Qdot('HEAT', cool='Water_HotHEX',Q=(3.2e6, 'BTU/hr')),
-                #gt.Heatsistor('HEAT', hot='CoolHex', cool='Water_HotHEX', Q=(851968.5280509379,'W')),
-                gt.fixedFlow(name='Water_HotHEX', US='Water_PumpOutlet', DS='Water_HEX_Outlet', dP =(-50, 'psi'),w=WaterFlow),
-                gt.PBoundary(name='Water_HEX_Outlet', fluid='Water'),
-                gt.simpleHEX(name='Water_CoolHex', US='Water_HEX_Outlet', DS='Water_PumpInlet', w=w_H2O, dP=(-50, 'psi'))])
+def combustion(hot, cool, model):
+    # How much burner needs to burn
+    w = model['OilPump']._w
+    H_hot = model['HOT_HEX_IN'].thermo._H
+    H_cold = model['BurnerInlet'].thermo._H
+    
+    return w*(H_hot-H_cold)
+    
+ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(3.8, 'bar'), T=(45, 'degC')),
+                gt.fixedFlowPump(name='Pump', eta=0.7, w=w, US='PumpIn', DS='PumpOut'),
+                gt.Station(name='PumpOut', fluid=fluid),
+                gt.FixedDP(name='HOT_HEX-COOL', US = 'PumpOut', DS = 'TurbIn', w=w, dP=(-1,'bar')),
+                gt.Qdot(name='HOT', cool='HOT_HEX-COOL', Q=(3.2e6, 'BTU/hr')),
+                gt.Station(name='TurbIn', fluid=fluid),
+                gt.FixedPRTurbine(name='Turb', US='TurbIn', DS='TurbOut', PR=5, w=w, eta=0.85),
+                gt.Station(name='TurbOut', fluid=fluid),
+                gt.FixedDP(name='COLD_HEX-HOT', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(-1,'bar')),
+                gt.Qdot(name='Chill', hot='COLD_HEX-HOT', Q=heat_rejection_acetone)])
 
+HOT = gt.Model([gt.Boundary(name='HOT_HEX_IN', fluid=oil, T=(220, 'degC'), P=(10, 'bar')),
+                gt.FixedDP(name='HOT_HEX-HOT', US='HOT_HEX_IN', DS='HotOut', dP=(-2, 'bar')),
+                gt.Station(name='HotOut', fluid=oil.copy()),
+                gt.fixedFlowPump(name='OilPump', eta=0.7, w=4, US='HotOut', DS='BurnerInlet'),
+                gt.Station(name='BurnerInlet', fluid = oil.copy()),
+                gt.FixedDP(name='Burner', US='BurnerInlet', DS='BurnerOutlet', dP=(-2,'bar')),
+                gt.Station(name='BurnerOutlet', fluid=oil.copy()),
+                gt.FixedDP(name='HOTPiping', US='BurnerOutlet', DS='HOT_HEX_IN', dP=(-2, 'bar')),
+                gt.Qdot(name='COMBUSTION!', cool='Burner', Q=combustion)])
 
-Cool += gt.Balance('mass_balance', knob='WaterFlow._w', feedback='Water_HEX_Outlet.T', setpoint=353.15, knob_min=0, knob_max=10)
-Cool += ORC
-Cool.solve_steady()
-from pdb import set_trace
-set_trace()
+Cool = gt.Model([gt.Boundary(name='WaterTank', fluid='Water', P=(1, 'bar'), T=(20, 'degC')),
+                gt.fixedFlowPump(name='Water_Pump', eta=.7,w=w_H2O,
+                                 US='WaterTank',DS='WaterPumpOut'),
+                gt.Station(name='WaterPumpOut', fluid='Water'),
+                gt.FixedDP(name='COLD_HEX-COLD', US='WaterPumpOut', DS='COLD_HEX_Out', dP=(-1, 'bar')),
+                gt.Station(name='COLD_HEX_Out', fluid='Water'),
+                gt.FixedDP(name='AirChiller', US='COLD_HEX_Out', DS='WaterTank', dP=(-50, 'psi')),
+                gt.Qdot(name='ToAir', hot='AirChiller', Q=heat_rejection_water)])
+                
+Air = gt.Model([gt.Boundary(name='AirInlet', fluid='air', P=(1,'bar'), T=(20, 'degC')),
+                gt.FixedDP(name='TubeBank', US='AirInlet', DS='FanInlet', dP=(-100, 'Pa')),
+                gt.Station(name='FanInlet', fluid='air'),
+                gt.fixedFlowPump(name='AirFlow', US='FanInlet', DS='AirOutlet',eta=0.5, w=500),
+                gt.PBoundary(name='AirOutlet', fluid='air', T=300, P=(1,'bar'))])
+# Add Models
+ORC += Cool
+ORC += HOT
+ORC += Air
+# Update Chill Qdot
+ORC['Chill'].cool = 'COLD_HEX-COLD'
+ORC['HOT'].hot = 'HOT_HEX-HOT'
+ORC['ToAir'].cool= 'FanInlet'
 
-#ORC += gt.Balance('mass_balance', knob='Pump.w', feedback='TurbIn.T', setpoint=473, knob_min=0.5, knob_max=1.5)
-#ORC += gt.ThermoBalance('mass_balance', knob='PumpIn.T', constant_var='P', feedback='TurbIn.T', setpoint=473, knob_min=300, knob_max=350, gain=-1)
-
+gt.logger.set_level('silent')
 ORC.solve_steady()
-#ORC.draw()           
-gt.units.output='mixed'           
-print(ORC)
-#ORC.thermo_plot(plot_type='PT', isolines='P')
-#ORC.thermo_plot(plot_type='TS', isolines='P')
-set_trace()
 
+gt.units.output='mixed'
+print_model_tables(ORC)
 
+Solution = gt.Solution(ORC)
+Solution.append(ORC)
+
+ORC.draw()

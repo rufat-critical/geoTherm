@@ -112,7 +112,7 @@ class Pump(baseInertantPump):
 
 
 @addQuantityProperty
-class fixedFlowPump(basePump, FixedFlow):
+class FixedFlowPump(basePump, FixedFlow):
     """Pump with a fixed mass flow rate.
 
     A pump that maintains a constant mass flow rate.
@@ -149,7 +149,7 @@ class fixedFlowPump(basePump, FixedFlow):
 
 
 @addQuantityProperty
-class fixedPressureRatioPump(basePump, fixedPressureRatioTurbo):
+class FixedPressureRatioPump(basePump, fixedPressureRatioTurbo):
     """Pump with a fixed pressure ratio.
 
     A pump that maintains a constant ratio between outlet and inlet pressure.

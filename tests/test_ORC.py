@@ -14,12 +14,12 @@ def test_simple_ORC():
 
             
     ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(3.8, 'bar'), T=319.8),
-                    gt.fixedFlowPump(name='Pump', eta=0.7, w=w, US='PumpIn', DS='PumpOut'),
+                    gt.FixedFlowPump(name='Pump', eta=0.7, w=w, US='PumpIn', DS='PumpOut'),
                     gt.Station(name='PumpOut', fluid=fluid),
                     gt.FixedDP(name='ORC_HEX', US = 'PumpOut', DS = 'TurbIn', w=w, dP=(-1,'bar')),
                     gt.Qdot(name='Heat', cool='TurbIn', Q=(3.2e6, 'BTU/hr')),
                     gt.Station(name='TurbIn', fluid=fluid),#, T=Thot-5, P =101325),
-                    gt.fixedPRTurbine(name='Turb', US='TurbIn', DS='TurbOut', eta=0.8, PR=5, w=w),
+                    gt.FixedPRTurbine(name='Turb', US='TurbIn', DS='TurbOut', eta=0.8, PR=5, w=w),
                     gt.Station(name='TurbOut', fluid=fluid),
                     gt.FixedDP(name='CoolHex', US = 'TurbOut', DS = 'PumpIn', w=w, dP=(-1,'bar'))])
 
@@ -55,13 +55,13 @@ def test_stechmann():
     mdot_H2O = (45, 'kg/s')
 
     ORC = gt.Model([gt.Boundary(name='LowT', fluid=ORC_fluid, P=ORC_Pin, T=ORC_Tin),
-                    gt.fixedFlowPump(name='Pump', eta=0.7, w=mdot_ORC, US='LowT', DS='PumpOut'),
+                    gt.FixedFlowPump(name='Pump', eta=0.7, w=mdot_ORC, US='LowT', DS='PumpOut'),
                     gt.Station(name='PumpOut', fluid=ORC_fluid),
                     gt.FixedDP(name='ORC_HEX', US='PumpOut', DS='TurbIn', dP =(0, 'bar'),w=50.232),#, Q=(20, 'MW')),
                     #gt.Qdot(name='ORC_Heat', cool='ORC_HEX', Q=(20 , 'MW')),
                     gt.Qdot('ORC_Heat', hot='WaterHEXOut', cool='TurbIn', Q=(31374557.96)),
                     gt.Station(name='TurbIn', fluid=ORC_fluid),
-                    gt.fixedPRTurbine(name='Turb', eta=.9, PR=ORC_Turb_PR, w=mdot_ORC, US='TurbIn', DS='TurbOut'),
+                    gt.FixedPRTurbine(name='Turb', eta=.9, PR=ORC_Turb_PR, w=mdot_ORC, US='TurbIn', DS='TurbOut'),
                     gt.Station(name='TurbOut', fluid=ORC_fluid),
                     gt.FixedDP(name='CoolHex', US = 'TurbOut', DS = 'LowT', w=mdot_ORC, dP=(0,'bar'))])
 
@@ -69,7 +69,7 @@ def test_stechmann():
     HOT = gt.Model([gt.Boundary(name='Well', fluid=HOT_fluid, P=HOT_P, T=HOT_T),
                     gt.FixedDP(name='WaterHEX', US='Well', DS='WaterHEXOut', dP=(-38, 'bar'), w=mdot_H2O),
                     gt.Volume(name='WaterHEXOut', fluid=HOT_fluid),
-                    gt.fixedFlowPump(name='WaterPump', eta=.7, w=mdot_H2O, US='WaterHEXOut',DS='Outlet'),     
+                    gt.FixedFlowPump(name='WaterPump', eta=.7, w=mdot_H2O, US='WaterHEXOut',DS='Outlet'),     
                     gt.Rotor('DummyRotor', N =15000),
                     #gt.Qdot('ORC_Heat', hot='WaterHEXOut', Q=(31374557.96)),
                     gt.POutlet(name='Outlet', fluid=HOT_fluid, P=(140, 'bar'), T=HOT_T)])

@@ -272,6 +272,9 @@ class CustomFluid:
             return np.array([1])
         elif property_name == 'phase':
             return 'liquid'
+        elif property_name == 'S':
+            # Assume cp is 1.67
+            return 1.5*np.log(self._T/273.15)
         else:
             from pdb import set_trace
             set_trace()
@@ -856,8 +859,6 @@ class thermo:
                                         stateVars=stateVars,
                                         **kwargs)
             except Exception as e:
-                from pdb import set_trace
-                set_trace()
                 logger.critical(f'Error initializing custom fluid: {e}')
                 raise e
         else:

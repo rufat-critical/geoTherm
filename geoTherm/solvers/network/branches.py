@@ -776,7 +776,7 @@ class FlowBranch(baseBranch):
                 else:
                     DS_state = node._get_outlet_state(US_thermo, self.x[0])
 
-                if isinstance(node, gt.fixedFlowPump):
+                if isinstance(node, gt.FixedFlowPump):
                     PR_bounds = np.array(
                         [1, np.max([100, 2*DS_junction.node.thermo._P/US_thermo._P])]
                     )

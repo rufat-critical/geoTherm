@@ -222,7 +222,7 @@ class chokedTurbine(baseTurbo):
         return {'P': US._P*PR, 'H': self.static._H}
 
 
-class fixedFlowTurbine(baseTurbine, fixedFlow):
+class FixedFlowTurbine(baseTurbine, fixedFlow):
     """
     Turbine class where mass flow is fixed to initialization value.
     """
@@ -270,7 +270,7 @@ class fixedFlowTurbine(baseTurbine, fixedFlow):
 
 from geoTherm.utils import TurbineInterpolator
 
-class TurbineMap(fixedFlowTurbine):
+class TurbineMap(FixedFlowTurbine):
 
     def __init__(self, name, US, DS, map, flow_func='isentropic'):
 
@@ -297,7 +297,7 @@ class TurbineMap(fixedFlowTurbine):
         return {'P': US._P*PR, 'H': US._H + self._dH}
 
 
-class fixedFlowTurbineMap(baseTurbine, fixedFlow):
+class FixedFlowTurbineMap(baseTurbine, fixedFlow):
 
     def __init__(self, name, US, DS, eta_map, w, flow_func='isentropic'):
         super().__init__(name, US, DS, w, flow_func=flow_func)
@@ -324,7 +324,7 @@ class fixedFlowTurbineMap(baseTurbine, fixedFlow):
     def _state_dict(self):
         return {'eta_map': self.eta_map.csv_file}
 
-class fixedPRTurbine(baseInertantFlow, baseTurbine):
+class FixedPRTurbine(baseInertantFlow, baseTurbine):
 
     _bounds = [0, 1e5]
 

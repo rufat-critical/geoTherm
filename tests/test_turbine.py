@@ -6,7 +6,7 @@ def test_fixed_flow():
 
     fluid = 'Water'
     foo = gt.Model([gt.Boundary(name='Inlet', fluid=fluid, P=(1000, 'psi'), T=(600, 'degK')),
-                    gt.fixedFlowTurbine(name='Turb', eta=1, w=50, US='Inlet', DS='Outlet'),
+                    gt.FixedFlowTurbine(name='Turb', eta=1, w=50, US='Inlet', DS='Outlet'),
                     gt.POutlet(name='Outlet', fluid=fluid, P=(14.7, 'psi'), T=(300, 'degK'))])
                     
     PR = foo.nodes['Turb'].PR
@@ -20,7 +20,7 @@ def test_fixed_PR():
 
     fluid = 'Water'
     foo = gt.Model([gt.Boundary(name='Inlet', fluid=fluid, P=(1000, 'psi'), T=(600, 'degK')),
-                    gt.fixedPRTurbine(name='Turb', eta=1, PR=20, US='Inlet', DS='Vol', w=5),
+                    gt.FixedPRTurbine(name='Turb', eta=1, PR=20, US='Inlet', DS='Vol', w=5),
                     gt.Station(name='Vol', fluid=fluid),
                     gt.Pipe(name='P1', US='Vol', DS='Outlet', L=1, D=.01),
                     gt.POutlet(name='Outlet', fluid=fluid, P=(14.7, 'psi'), T=(300, 'degK'))])
