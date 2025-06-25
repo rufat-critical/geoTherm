@@ -1,6 +1,6 @@
 import geoTherm as gt
 from matplotlib import pyplot as plt
-from gt.utilities.display import print_model_tables
+from geoTherm.utilities.display import print_model_tables
 
 # Working Fluid
 fluid = 'acetone'
@@ -40,7 +40,7 @@ def combustion(hot, cool, model):
     return w*(H_hot-H_cold)
     
 ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(3.8, 'bar'), T=(45, 'degC')),
-                gt.fixedFlowPump(name='Pump', eta=0.7, w=w, US='PumpIn', DS='PumpOut'),
+                gt.FixedFlowPump(name='Pump', eta=0.7, w=w, US='PumpIn', DS='PumpOut'),
                 gt.Station(name='PumpOut', fluid=fluid),
                 gt.FixedDP(name='HOT_HEX-COOL', US = 'PumpOut', DS = 'TurbIn', w=w, dP=(-1,'bar')),
                 gt.Qdot(name='HOT', cool='HOT_HEX-COOL', Q=(3.2e6, 'BTU/hr')),
@@ -53,7 +53,7 @@ ORC = gt.Model([gt.Boundary(name='PumpIn', fluid=fluid, P=(3.8, 'bar'), T=(45, '
 HOT = gt.Model([gt.Boundary(name='HOT_HEX_IN', fluid=oil, T=(220, 'degC'), P=(10, 'bar')),
                 gt.FixedDP(name='HOT_HEX-HOT', US='HOT_HEX_IN', DS='HotOut', dP=(-2, 'bar')),
                 gt.Station(name='HotOut', fluid=oil.copy()),
-                gt.fixedFlowPump(name='OilPump', eta=0.7, w=4, US='HotOut', DS='BurnerInlet'),
+                gt.FixedFlowPump(name='OilPump', eta=0.7, w=4, US='HotOut', DS='BurnerInlet'),
                 gt.Station(name='BurnerInlet', fluid = oil.copy()),
                 gt.FixedDP(name='Burner', US='BurnerInlet', DS='BurnerOutlet', dP=(-2,'bar')),
                 gt.Station(name='BurnerOutlet', fluid=oil.copy()),
@@ -61,7 +61,7 @@ HOT = gt.Model([gt.Boundary(name='HOT_HEX_IN', fluid=oil, T=(220, 'degC'), P=(10
                 gt.Qdot(name='COMBUSTION!', cool='Burner', Q=combustion)])
 
 Cool = gt.Model([gt.Boundary(name='WaterTank', fluid='Water', P=(1, 'bar'), T=(20, 'degC')),
-                gt.fixedFlowPump(name='Water_Pump', eta=.7,w=w_H2O,
+                gt.FixedFlowPump(name='Water_Pump', eta=.7,w=w_H2O,
                                  US='WaterTank',DS='WaterPumpOut'),
                 gt.Station(name='WaterPumpOut', fluid='Water'),
                 gt.FixedDP(name='COLD_HEX-COLD', US='WaterPumpOut', DS='COLD_HEX_Out', dP=(-1, 'bar')),
@@ -72,7 +72,7 @@ Cool = gt.Model([gt.Boundary(name='WaterTank', fluid='Water', P=(1, 'bar'), T=(2
 Air = gt.Model([gt.Boundary(name='AirInlet', fluid='air', P=(1,'bar'), T=(20, 'degC')),
                 gt.FixedDP(name='TubeBank', US='AirInlet', DS='FanInlet', dP=(-100, 'Pa')),
                 gt.Station(name='FanInlet', fluid='air'),
-                gt.fixedFlowPump(name='AirFlow', US='FanInlet', DS='AirOutlet',eta=0.5, w=500),
+                gt.FixedFlowPump(name='AirFlow', US='FanInlet', DS='AirOutlet',eta=0.5, w=500),
                 gt.PBoundary(name='AirOutlet', fluid='air', T=300, P=(1,'bar'))])
 # Add Models
 ORC += Cool
@@ -91,5 +91,6 @@ print_model_tables(ORC)
 
 Solution = gt.Solution(ORC)
 Solution.append(ORC)
+Solution.save_csv('testbed_example.csv')
 
 ORC.draw()
