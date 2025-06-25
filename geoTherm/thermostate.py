@@ -421,7 +421,7 @@ class coolprop_wrapper:
     """ Wrapper for CoolProp, makes it easy to interface with thermo state """
 
     def __init__(self, cDict=None, state=None, stateVars=None, cType='Y',
-                 EoS='REFPROP', **kwargs):
+                 EoS='HEOS', **kwargs):
         """
         Initialize coolprop object.
 
