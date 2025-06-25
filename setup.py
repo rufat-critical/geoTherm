@@ -18,7 +18,7 @@ def create_git_hook():
     python_executable = sys.executable
 
     hook_content = f"""#!/bin/bash
-"{python_executable}" -m pytest
+"{python_executable}" -m pytest tests
 if [ $? -ne 0 ]; then
   echo "Tests failed. Aborting commit."
   exit 1
@@ -60,5 +60,6 @@ setup(
         'pyyed',
         'plantuml',
         'pandas==2.2.2',
+        'pyyaml',
     ],
 )
