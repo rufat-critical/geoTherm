@@ -267,7 +267,7 @@ class Qdot(baseThermal):
         Returns:
             float: Heat transfer rate in watts
         """
-        return self._Q_func(self.hot_node, self.cool_node)
+        return self._Q_func(self.hot_node, self.cool_node, self.model)
 
     @_Q.setter
     def _Q(self, value):
@@ -284,12 +284,12 @@ class Qdot(baseThermal):
         if callable(value):
             self._Q_func = value
         elif isinstance(value, (int, float)):
-            def Q_func(hot_node, cool_node, Q=value):
+            def Q_func(hot_node, cool_node, model, Q=value):
                 return Q
             self._Q_func = Q_func
         elif isinstance(value, (tuple, list)):
             value = toSI(value, 'POWER')
-            def Q_func(hot_node, cool_node, Q=value):
+            def Q_func(hot_node, cool_node, model, Q=value):
                 return Q
             self._Q_func = Q_func
         else:

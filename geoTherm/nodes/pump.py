@@ -17,7 +17,8 @@ class basePump(baseTurbo, turboParameters):
     isentropic enthalpy calculations.
     """
 
-    _units = turboParameters._units | {'NPSP': 'PRESSURE'}
+    _units = baseTurbo._units | turboParameters._units | {'NPSP': 'PRESSURE'}
+
 
     _displayVars = baseTurbo._displayVars + ['Q_in', 'Q_out']
 

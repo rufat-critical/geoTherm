@@ -318,13 +318,13 @@ class baseInertantFlow(baseFlow):
         - If DS._P = 90 bar and DS_target['P'] = 100 bar:
           Flow sees less resistance, so wdot > 0 to increase flow
         """
-        US, DS, _ = self.thermostates()
+        US, DS, flow_sign = self.thermostates()
         DS_target = self.get_outlet_state(US, self._w)
 
         # Pressure difference driving the flow acceleration
         # Positive when target pressure > actual pressure (flow increases)
         # Negative when target pressure < actual pressure (flow decreases)
-        self._wdot = (DS_target['P'] - DS._P) / self._Z
+        self._wdot = (DS_target['P'] - DS._P) / self._Z * flow_sign
 
 
     @property

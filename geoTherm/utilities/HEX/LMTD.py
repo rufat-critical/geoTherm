@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import fsolve, root_scalar
+from geoTherm.common import logger
 
 # Crossflow correction coefficients from Roetzel & Nicole
 # a_crossflow[(N_rows, N_passes)]
@@ -65,7 +66,7 @@ def LMTD(Thi, Tho, Tci, Tco, config='counter', **kwargs):
     elif config == 'crossflow':
         return LMTD_crossflow(Thi, Tho, Tci, Tco, **kwargs)
     else:
-        raise ValueError("Invalid configuration. Use 'counter' or 'parallel'.")
+        logger.critical("Invalid configuration. Use 'counter' or 'parallel'.")
 
     # Avoid log(1) error if dT1 == dT2
     if abs(dT1 - dT2) < 1e-6:

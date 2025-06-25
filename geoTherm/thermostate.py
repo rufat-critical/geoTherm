@@ -164,7 +164,7 @@ phase_index = {'liquid': 0,
 class CustomFluid:
     """Custom fluid state model"""
     
-    def __init__(self, property_file, state=None, stateVars=None):
+    def __init__(self, property_file, state=None, stateVars=None, **kwargs):
         """
         Initialize the CustomFluid object.
         
@@ -186,10 +186,9 @@ class CustomFluid:
     @property
     def _state(self):
 
-        return {'property_file': self.property_file,
-                'state': {'T': (self._T, 'K'),
+        return {'state': {'T': (self._T, 'K'),
                           'P': (self._P, 'Pa')},
-                'model': 'custom'}
+                'thermo': {'model': 'custom', 'property_file': self.property_file}}
 
     def initialize(self):
         """Initialize interpolators for fluid properties.
@@ -271,6 +270,8 @@ class CustomFluid:
             return np.array(["CUSTOM"])
         elif property_name == 'Y':
             return np.array([1])
+        elif property_name == 'phase':
+            return 'liquid'
         else:
             from pdb import set_trace
             set_trace()
@@ -316,7 +317,7 @@ class CustomFluid:
 class Incompressible:
 
     def __init__(self, cDict=None, state=None, stateVars=None, cType='Y',
-                 cp=4184):
+                 cp=4184, **kwargs):
         
 
         # Temperature is calculated using this specific heat
@@ -337,8 +338,7 @@ class Incompressible:
         return {'fluid': self._cDict,
                 'state': {'T': (self.get_property('T'), 'K'),
                           'P': (self.get_property('P'), 'Pa')},
-                'model': 'incompressible',
-                'cp': self._cp}
+                'thermo': {'model': 'incompressible', 'cp': self._cp}}
 
     def update_state(self, state, stateVars):
 
@@ -391,7 +391,17 @@ class Incompressible:
         elif property == 'Q':
             return -1
         elif property == 'Pvap':
-            return 9999
+            return np.inf
+        elif property == 'Tvap':
+            return np.inf
+        elif property == 'P_crit':
+            return np.inf
+        elif property == 'T_crit':
+            return np.inf
+        elif property == 'viscosity':
+            return 0
+        elif property == 'conductivity':
+            return np.inf
         elif property == 'S':
             return self._cp*np.log(self._T/273.15)
         elif property == 'density':
@@ -408,7 +418,7 @@ class coolprop_wrapper:
     """ Wrapper for CoolProp, makes it easy to interface with thermo state """
 
     def __init__(self, cDict=None, state=None, stateVars=None, cType='Y',
-                 EoS='REFPROP'):#'HEOS'):
+                 EoS='REFPROP', **kwargs):
         """
         Initialize coolprop object.
 
@@ -476,8 +486,7 @@ class coolprop_wrapper:
 
         return {'fluid': {name: self.Y[i] for i, name in enumerate(self.species_names)},
                 'state': state,
-                'EoS': self.EoS,
-                'model': 'coolprop'}
+                'thermo': {'EoS': self.EoS, 'model': 'coolprop'}}
 
     def updateComposition(self, cDict, cType):
         """
@@ -662,7 +671,7 @@ class coolprop_wrapper:
 
 def addThermoAttributes(cls):
     """Decorator to add thermodynamic attributes to a class."""
-    propertyList = ['T', 'P', 'Q', 'H', 'phase', 'density']
+    propertyList = ['T', 'P', 'Q', 'H', 'phase', 'density', 'Ydict']
     for name in propertyList:
         def getter(self, name=name):
             return getattr(self.thermo, name)
@@ -833,8 +842,9 @@ class thermo:
 
         if self.model == 'coolprop':
             self.pObj = coolprop_wrapper(cDict=cDict, state=state,
-                                         stateVars=stateVars,
-                                         EoS=EoS, **kwargs)
+                                            stateVars=stateVars,
+                                            EoS=EoS, **kwargs)
+
         elif self.model == 'incompressible':
             self.pObj = Incompressible(cDict=cDict, state=state,
                                        stateVars=stateVars,
@@ -983,23 +993,23 @@ class thermo:
     def from_state(state):
         """
         Generate a thermo class from the state dictionary.
-        
+
         Args:
             state (dict): State dictionary.
-        
+
         Returns:
             thermo: Thermo object.
         """
-        return thermo(**state)
+        return thermo(**state, **state['thermo'])
 
     def __makeTable(self):
         """
         Create a formatted table representation of the thermostate using rich.
-        
+
         Returns:
             str: The formatted string representation of the UnitSystem.
         """
-        
+
         table = Table(title='Thermo Object')
         # Add columns for the quantity, input units, and output units
         table.add_column("Property", style="bold")
@@ -1010,14 +1020,16 @@ class thermo:
                       units.output_units['TEMPERATURE'])
         table.add_row('PRESSURE', f'{self.P:0.5g}',
                       units.output_units['PRESSURE'])
-        
-        if (self.phase in ['supercritical_gas', 'supercritical_liquid',
-                           'supercritical']):
+
+        if (self.phase in ['supercritical']):
             table.add_row('VAPOR P', 'supercritical')
+            table.add_row('VAPOR T', 'supercritical')
         else:
             table.add_row('VAPOR P', f'{self.Pvap:0.5g}',
                           units.output_units['PRESSURE'])
-                               
+            table.add_row('VAPOR T', f'{self.Tvap:0.5g}',
+                          units.output_units['TEMPERATURE'])
+
         table.add_row('Tcrit', f'{self.T_crit:0.5g}',
                       units.output_units['TEMPERATURE'])
         table.add_row('Pcrit', f'{self.P_crit:0.5g}',
@@ -1037,10 +1049,10 @@ class thermo:
         with console.capture() as capture:
             console.print(table)
         return capture.get()
-    
+
     def __repr__(self):
         return self.__makeTable()
-    
+
     def __str__(self):
         return self.__makeTable()
 
@@ -1055,7 +1067,8 @@ class thermo:
         """
         species_names = self.pObj.get_property('species_names')
         Y = self.pObj.get_property('Y')
-        return {name: Y[i] for i, name in enumerate(species_names)}
+        return {name: np.round(Y[i], 10) for i, name
+                in enumerate(species_names)}
 
     @property 
     def gamma(self):
@@ -1067,7 +1080,7 @@ class thermo:
 
     @property
     def prandtl(self):
-        
+
         # Return gas Prandtl for 2 phase
         if 0 < self.Q < 1:
             # Get OG State

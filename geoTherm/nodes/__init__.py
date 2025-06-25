@@ -12,7 +12,6 @@ from .flowDevices import *
 from .fan import *
 from .cycleCloser import *
 from .flowDevices import *
-from .schedule import *
 from .tube_banks import *
 from .valve import *
 from .HEX import *

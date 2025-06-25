@@ -67,9 +67,6 @@ def generate_dot_code(model):
                 f"W: {node.W:.1f} {u['POWER']}\nPR: {node.PR:.2f}"
             )
         elif isinstance(node, baseFlow):
-            if node.name == 'Turb':
-                from pdb import set_trace
-                set_trace()
             shape = 'rectangle'
             color = 'black'
             label = f"{name}\nw: {node.w:.2f} {u['MASSFLOW']}\n"

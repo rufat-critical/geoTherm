@@ -3,6 +3,7 @@ import numpy as np
 from scipy.optimize import root_scalar
 from geoTherm.units import inputParser, fromSI, units
 import matplotlib.pyplot as plt
+import copy
 
 
 class HEXProfile:
@@ -14,7 +15,8 @@ class HEXProfile:
                  cold_outlet=None,
                  dP_hot=0,
                  dP_cold=0,
-                 config='counterflow',):
+                 config='counterflow',
+                 **kwargs):
 
         if hot_inlet is not None:
             self.hot_inlet = hot_inlet.from_state(hot_inlet.state)
@@ -45,7 +47,6 @@ class HEXProfile:
            or (self.cold_inlet is None and self.cold_outlet is None)):
             raise ValueError("Must specify either inlet or outlet state for "
                              "both hot and cold fluids")
-
 
         # Get Inlets and Outlet
         hot_inlet = self.hot_inlet
@@ -118,11 +119,14 @@ class HEXProfile:
             set_trace()
 
     @staticmethod
-    def plot_results(results, figsize=(12, 8)):
+    def plot_results(input_results, figsize=(12, 8)):
         """Static method to plot HEX results from any results dictionary"""
-        if results is None:
+        if input_results is None:
             from pdb import set_trace
             set_trace()
+
+        # Deep copy the input results to avoid modifying the original
+        results = copy.deepcopy(input_results)
 
         # Converts units from SI
         results['T_hot'] = fromSI(results['T_hot'], 'TEMPERATURE')
@@ -150,7 +154,7 @@ class HEXProfile:
         min_temp_diff = min(temp_diff)
         
         # Find points that are within 0.1K of the minimum temperature difference
-        pinch_indices = np.where(np.abs(temp_diff - min_temp_diff) < 0.1)[0]
+        pinch_indices = np.where(np.abs(temp_diff - min_temp_diff) < 0.01)[0]
         
         # If only one pinch point, find the second smallest temperature difference point
         if len(pinch_indices) == 1:
@@ -204,13 +208,13 @@ class HEXProfile:
         for i, (pinch_idx, pinch_position) in enumerate(zip(pinch_indices, pinch_positions)):
             label = "Pinch point" if i == 0 else "Second closest approach" if len(pinch_indices) > 1 else ""
             pinch_text += (f"\n{'Pinch Point' if i == 0 else 'Second Closest Point'} {i+1}:\n"
-                         f"Position: {pinch_position:.1f}% Q\n"
-                         f"Hot T: {T_hot[pinch_idx]:.1f}{T_unit}\n"
-                         f"Cold T: {T_cold[pinch_idx]:.1f}{T_unit}\n"
-                         f"ΔT: {temp_diff[pinch_idx]:.1f}{T_unit}\n"
+                         f"Position: {pinch_position:.2f}% Q\n"
+                         f"Hot T: {T_hot[pinch_idx]:.2f}{T_unit}\n"
+                         f"Cold T: {T_cold[pinch_idx]:.2f}{T_unit}\n"
+                         f"ΔT: {temp_diff[pinch_idx]:.2f}{T_unit}\n"
                          f"Q at point: {(Q_tot * pinch_position/100):.1f} {Q_unit}")
 
-        ax1.text(1.02, 0.7, pinch_text,
+        ax1.text(1.02, 0.5, pinch_text,
                 transform=ax1.transAxes,
                 bbox=dict(facecolor='white', edgecolor='black', alpha=0.7),
                 fontsize=9,
@@ -284,7 +288,7 @@ class HEXProfile:
         ax3.grid(True)
 
         # Update the layout to make room for the legend and text box
-        plt.subplots_adjust(right=0.85)
+        plt.subplots_adjust(right=0.8)
 
         plt.show()
 
@@ -293,7 +297,6 @@ class HEXProfile:
         if not hasattr(self, 'results'):
             raise ValueError("No results available. Run evaluate() first.")
         return self.plot_results(self.results, figsize=figsize)
-    
 
 
 def T_dQ_counter_flow(Q, w_hot, w_cold,
@@ -366,38 +369,37 @@ def T_dQ_counter_flow(Q, w_hot, w_cold,
             
             # Create saturation state
             sat_state = thermo.from_state(cold_state.state)
+            sat_hot_state = thermo.from_state(hot_state.state)
             
             # Phase change detected - insert saturation point at i-1
             if prev_phase == 'liquid' and cold_state.phase == 'two-phase':
                 # Calculate state at saturation point
                 sat_state._PQ = current_P_cold, 0  # saturated liquid
+                dQ_sat = w_cold * (cold_state._H - sat_state._H)
+                sat_hot_state._HP = hot_inlet._H - (Q-current_Q+dQ_sat)/w_hot, current_P_hot
                 i_pos = j
 
             elif prev_phase == 'two-phase' and cold_state.phase in ['gas', 'supercritical_gas']:
                 # Found transition to vapor, calculate Q at saturation point
                 sat_state._PQ = current_P_cold, 1  # saturated vapor
-                i_pos = j+1
-
-            elif prev_phase == 'supercritical_liquid' and cold_state.phase == 'supercritical':
-                sat_state._TP = sat_state._T, current_P_cold
+                dQ_sat = w_cold * (cold_state._H - sat_state._H)
+                sat_hot_state._HP = hot_inlet._H - (Q-current_Q+dQ_sat)/w_hot, current_P_hot
                 i_pos = j
             else:
-                from pdb import set_trace
-                #set_trace()
+                continue
 
             q_sat = w_cold * (cold_state._H - sat_state._H)
             hot_state._HP = hot_inlet._H - (Q-current_Q-q_sat)/w_hot, current_P_hot
             # Insert saturation point at i-1
             Q_array = np.insert(Q_array, i_pos, current_Q-q_sat)
-            T_hot = np.insert(T_hot, i_pos, hot_state._T)
+            T_hot = np.insert(T_hot, i_pos, sat_hot_state._T)
             P_hot = np.insert(P_hot, i_pos, current_P_hot)
             T_cold = np.insert(T_cold, i_pos, sat_state._T)
             P_cold = np.insert(P_cold, i_pos, current_P_cold)
             Quality = np.insert(Quality, i_pos, sat_state.Q)
-            H_hot = np.insert(H_hot, i_pos, hot_state._H)
+            H_hot = np.insert(H_hot, i_pos, sat_hot_state._H)
             H_cold = np.insert(H_cold, i_pos, sat_state._H)
             j += 1
-            #n_points += 1
             continue
 
 

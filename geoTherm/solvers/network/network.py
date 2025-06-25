@@ -797,7 +797,8 @@ class Network:
 
         self.evaluate(x)
 
-
+        from pdb import set_trace
+        #set_trace()
 
 
     def solve(self):

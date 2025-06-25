@@ -23,10 +23,8 @@ class BasePipe(baseInertantFlow, GeometryProperties):
     _bounds = [-1e5, 1e5]
 
     @inputParser
-    def __init__(self, name, US, DS, Z:'INERTANCE'=1, w:'MASSFLOW'=0, geometry=None):
-        super().__init__(name, US, DS)
-        self._w = w
-        self._Z = Z
+    def __init__(self, name, US, DS, w, Z, geometry=None):
+        super().__init__(name, US, DS, w, Z)
         self.geometry = geometry
 
     @property
@@ -57,10 +55,11 @@ class FixedDP(BasePipe):
     is either constant or calculated based on a predefined function.
     """
 
-    _units = {'dP': 'PRESSURE'}
+    _units = BasePipe._units | {'dP': 'PRESSURE'}
+
 
     @inputParser
-    def __init__(self, name, US, DS, dP:'PRESSURE', Z=1, w=0,):
+    def __init__(self, name, US, DS, dP:'PRESSURE', Z=1, w=0):
         """
         Initialize the FixedDP object.
 
@@ -73,6 +72,10 @@ class FixedDP(BasePipe):
         """
         super().__init__(name, US, DS, Z=Z, w=w)
         self.loss = PressureDrop(dP=dP)
+
+    @state_dict
+    def _state_dict(self):
+        return {'dP': self.loss._dP}
 
     @property
     def _dP(self):
@@ -93,7 +96,7 @@ class FixedDP(BasePipe):
         Args:
             value: New pressure drop value
         """
-        self.loss.dP = value
+        self.loss._dP = value
 
 
 class Pipe(BasePipe):
@@ -116,9 +119,8 @@ class Pipe(BasePipe):
                  dz=0,
                  roughness=1e-4,
                  geometry=None,
-                 w:'MASSFLOW'=0,
-                 Z:'INERTANCE'=None):
-
+                 w=0,
+                 Z=None):
 
         super().__init__(name, US, DS, Z=Z, w=w, geometry=geometry)
 

@@ -5,6 +5,7 @@ from geoTherm.units import units, unit_converter
 from geoTherm.utilities.thermo_plotter import thermoPlotter
 from geoTherm.utilities.flowcalc import flowCalc
 from geoTherm.utilities.display import print_model_tables
+from geoTherm.utilities import HEX
 #from geoTherm.nodes.volume import *
 #from geoTherm.nodes.boundary import *
 #from geoTherm.nodes.rotor import *

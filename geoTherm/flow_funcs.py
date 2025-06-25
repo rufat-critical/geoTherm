@@ -2074,6 +2074,9 @@ class FlowModel:
         if self.ref_thermo is None:
             self.initialize_thermo(total)
 
+        if w == 0:
+            return 0, None
+
         dP, error = self.flow_func._dP(total, w/self._cdA, self.ref_thermo)
 
         if error is None:

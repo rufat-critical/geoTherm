@@ -821,12 +821,13 @@ class FlowBranch(baseBranch):
                         
                         if choked:
                             from pdb import set_trace
-                            set_trace()
+                            #set_trace()
                         
                         from pdb import set_trace
                         set_trace()
                         
-                        self.evaluate_choked(inode, US_thermo)
+                        self.evaluate_choked(US_thermo, DS_junction, nodes[inode:])
+                        #self.evaluate_choked(inode, US_thermo)
                         thermoNode = nodes[-2]
                         flowNode = nodes[-1]    
                         self.DS_target = flowNode._get_outlet_state(thermoNode.thermo, self._w)
@@ -1039,8 +1040,6 @@ class FlowBranch(baseBranch):
 
 
         nodes[1].update_thermo(DS_state)
-
-
 
     def update_choked_thermo(self, US, DS, res, PR):
         # Update the thermo for the choked node
