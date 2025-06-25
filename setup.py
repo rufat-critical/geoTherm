@@ -62,5 +62,6 @@ setup(
         'pandas==2.2.2',
         'pyyaml',
         'tabulate',
+        'openpyxl',
     ],
 )
