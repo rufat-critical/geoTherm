@@ -13,8 +13,11 @@ class KInterpolator:
         if not '/' in data_file and not '\\' in data_file:
             # Only filename provided, use default package location
             data_file = files("geoTherm.maps.Pipe.Bend").joinpath(data_file)
+            with data_file.open("r") as f:
+                self.data = pd.read_csv(f)
+        else:
+            self.data = pd.read_csv(data_file)
 
-        self.data = pd.read_csv(data_file)
         self.dnames = []
         self.x_name = x_name
         self.y_name = y_name
