@@ -807,20 +807,17 @@ class FlowBranch(baseBranch):
                 BLEND_TOL = 0.99
 
                 if self._w > w_max*BLEND_TOL:
-                    if self._w > w_max:#*(2-CHOKED_TOL):
+                    if self._w > w_max*(2-CHOKED_TOL):
                         logger.info(f"Flow in Branch {self.name} is higher than max flow for"
                                     f" {node.name} of {w_max} by with a flow of {self._w}")
                         self.penalty = (w_max*(2-CHOKED_TOL) - self._w)*1e5
                         return
                     elif self._w > w_max*CHOKED_TOL:
                         logger.info(f"Choking detected in {node.name} for branch {self.name}")
-                        
+
                         if choked:
                             from pdb import set_trace
                             #set_trace()
-                        
-                        from pdb import set_trace
-                        set_trace()
                         
                         self.evaluate_choked(US_thermo, DS_junction, nodes[inode:])
                         #self.evaluate_choked(inode, US_thermo)
@@ -849,7 +846,6 @@ class FlowBranch(baseBranch):
             else:
                 DS_state = node._get_outlet_state(US_thermo, self._w)
         
-
             if DS_state is None:
                 # If this is none then there was an error
                 # with setting the flow, so lets apply penalty
@@ -869,8 +865,6 @@ class FlowBranch(baseBranch):
                         from pdb import set_trace
                         set_trace()
                 return
-
-
 
             if DS_state['P'] < 0:
                 # Pressure drop is too high because massflow too high,
@@ -957,7 +951,6 @@ class FlowBranch(baseBranch):
                 from pdb import set_trace
                 set_trace()
 
-
     def get_nodes_junctions(self, inode=0):
 
         if self._w < 0:
@@ -986,9 +979,12 @@ class FlowBranch(baseBranch):
             elif PR > PR_hi:
                 return PR_hi - PR - 1
             
+            if isinstance(nodes[0], gt.FixedFlow):
+                DS_state = nodes[0].get_outlet_state(US_thermo, PR)
+            else:
+                DS_state = nodes[0].get_outlet_state(US_thermo, nodes[0]._w_max(US_thermo))
+                DS_state['P'] = US_thermo._P * PR
 
-            DS_state = nodes[0].get_outlet_state(US_thermo, PR)
-            US._HP = DS_state['H'], US_thermo._P * PR
 
             if nodes[1].name in self.thermal_junctions:
                 Q = self.thermal_junctions[nodes[1].name].Q_flux/(abs(self._w) + eps)
@@ -1003,6 +999,8 @@ class FlowBranch(baseBranch):
             self.evaluate_forward(nodes[1], DS_junction, nodes[2:], choked=True, debug=False)
 
             if self.penalty:
+                from pdb import set_trace
+                set_trace()
                 return self.penalty
             else:
                 return DS_junction.node.thermo._P - self.DS_target['P']
@@ -1016,10 +1014,12 @@ class FlowBranch(baseBranch):
             PR_min = PR_bounds[0]
 
         self.penalty = False
+
         # Figure out PR downstream of choked node
         sol = root_scalar(find_PR, bracket=[PR_min, PR_hi], method='brentq')
 
         PR = sol.root
+
 
         if isinstance(nodes[0], gt.FixedFlow):
             DS_state = nodes[0].get_outlet_state(US_thermo, PR)
@@ -1032,60 +1032,6 @@ class FlowBranch(baseBranch):
 
 
         nodes[1].update_thermo(DS_state)
-
-    def update_choked_thermo(self, US, DS, res, PR):
-        # Update the thermo for the choked node
-        # US Resistor
-
-
-        # Get choked node
-        DS_state = {'P': US._P*PR, 'H': US._H}
-
-        error = DS.update_thermo(DS_state)
-
-        if error:
-            from pdb import set_trace
-            set_trace()
-
-        res.evaluate()
-        DS_state = {'P': US._P*PR, 'H':US._H + res._dH}
-        error = DS.update_thermo(DS_state)
-
-        if error:
-            from pdb import set_trace
-            set_trace()
-
-
-    def solve_steady(self):
-
-        def evaluate(w):
-
-            self.update_state(w)
-            self.evaluate()
-            return self.xdot
-
-        
-        self.debug = True
-
-        evaluate(np.array([-246]))
-
-
-        xdot = []
-        w_vec = np.arange(-500,-50 ,.5)
-        for w in w_vec:
-            xdot.append(evaluate(np.array([w]))[0])
-        
-        from matplotlib import pyplot as plt
-        #plt.plot(w_vec,xdot)
-
-        sol = fsolve(evaluate, self._w, full_output=True)
-
-
-
-
-
-        from pdb import set_trace
-        set_trace()
 
 
 @addQuantityProperty
