@@ -694,10 +694,6 @@ class FlowBranch(baseBranch):
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
 
-            if debug:
-                from pdb import set_trace
-                set_trace()
-
             if inode == len(nodes) - 1:
                 # Set node flow to branch mass flow
                 node._set_flow(self._w)
@@ -875,6 +871,7 @@ class FlowBranch(baseBranch):
                 return
 
 
+
             if DS_state['P'] < 0:
                 # Pressure drop is too high because massflow too high,
                 # lets decrease mass flow by applying penalty
@@ -927,6 +924,7 @@ class FlowBranch(baseBranch):
             if isinstance(node, (baseFlow, baseFlowResistor)):
                 # Update thermo for dsNode
                 error = DS_node.update_thermo(DS_state)
+
                 if error:
                     logger.warn("Failed to update thermostate in Branch '{self.name}'"
                                 f" evaluate call for '{DS_node.name}' to state: "
@@ -1001,12 +999,11 @@ class FlowBranch(baseBranch):
                 from pdb import set_trace
                 set_trace() 
 
-
+            self.penalty = False
             self.evaluate_forward(nodes[1], DS_junction, nodes[2:], choked=True, debug=False)
 
-
             if self.penalty:
-                return -self.penalty
+                return self.penalty
             else:
                 return DS_junction.node.thermo._P - self.DS_target['P']
 
@@ -1020,12 +1017,7 @@ class FlowBranch(baseBranch):
 
         self.penalty = False
         # Figure out PR downstream of choked node
-        try:
-            sol = root_scalar(find_PR, bracket=[PR_min, PR_hi], method='brentq')
-        except:
-            from pdb import set_trace
-            set_trace()
-        #sol = fsolve(find_PR, PR_min, full_output=True)
+        sol = root_scalar(find_PR, bracket=[PR_min, PR_hi], method='brentq')
 
         PR = sol.root
 
