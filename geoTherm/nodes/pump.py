@@ -142,7 +142,7 @@ class FixedFlowPump(basePump, FixedFlow):
         """
         return {'eta': self.eta}
 
-    def get_outlet_state(self, US, PR):
+    def get_outlet_state(self, US, *, w=None, PR=None):
         dH_is = _dH_isentropic(US, US._P*PR)/self.eta
 
         return {'P': US._P*PR, 'H': US._H + dH_is}
@@ -175,7 +175,7 @@ class FixedPressureRatioPump(basePump, fixedPressureRatioTurbo):
     # Bounds on flow rate
     _bounds = [0, 1e5]
 
-    def get_outlet_state(self, US, w):
+    def get_outlet_state(self, US, *, w=None, PR=None):
 
         if self.PR_setpoint == 1:
             # No pressure change, so no enthalpy change

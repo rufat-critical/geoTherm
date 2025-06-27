@@ -30,20 +30,6 @@ class resistor(baseFlowResistor):
         self.flow._cdA = value
 
 
-    def get_inlet_state(self, DS, w):
-
-        dP = self.flow2._dP_reverse(DS, w/self._area, US_thermo=None)
-
-        return {'H': DS._H, 'P': DS._P + dP}
-
-    def _get_outlet_state_PR(self, US, PR):
-
-
-        return {'P': US._P*PR, 'H': US._H}
-
-    def _get_dP(self, US, w):
-        from pdb import set_trace
-        set_trace()
 
 class orifice(resistor):
     pass

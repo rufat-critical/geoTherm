@@ -40,9 +40,19 @@ class BasePipe(baseInertantFlow, GeometryProperties):
         return self._w/(US._density*self.geometry._area)
 
 
-    def get_outlet_state(self, US, w):
+    def get_outlet_state(self, US, *, w=None, PR=None):
 
-        dP = self.loss.evaluate(US, w)
+        if w is not None:
+            dP = self.loss.evaluate(US, w)
+        elif PR is not None:
+            from pdb import set_trace
+            set_trace()
+            dP = -US._P * (1 - PR)
+        else:
+            logger.critical(
+                "Either 'w' (mass flow rate) or 'PR' (pressure ratio) "
+                "must be provided"
+            )
         return {'H': US._H,
                 'P': US._P + dP}
 

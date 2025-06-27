@@ -129,7 +129,7 @@ class chokedTurbine(baseTurbo):
         from pdb import set_trace
         set_trace()
 
-    def get_outlet_state(self, US, w):
+    def get_outlet_state(self, US, *, w=None, PR=None):
         dP, error = self.flow._dP(US, w)
         if error is not None:
             # Too much mass flow, output negative pressure
@@ -256,7 +256,7 @@ class FixedFlowTurbine(baseTurbine, fixedFlow):
 
         return {'eta': self.eta}
 
-    def get_outlet_state(self, US, PR):
+    def get_outlet_state(self, US, *, w=None, PR=None):
 
         dH_is = _dH_isentropic(US, US._P*PR)
         dH = dH_is*self.eta
@@ -351,7 +351,7 @@ class FixedPRTurbine(baseInertantFlow, baseTurbine):
         self.PR_setpoint = PR
         self.eta = eta
 
-    def get_outlet_state(self, US, w):
+    def get_outlet_state(self, US, *, w=None, PR=None):
         """Calculate outlet state based on pressure ratio."""
         dH_is = _dH_isentropic(US, US._P / self.PR_setpoint)
 
@@ -372,7 +372,7 @@ class FixedPRTurbine(baseInertantFlow, baseTurbine):
     def evaluate(self):
         """Adjust flow to achieve target pressure ratio."""
         US, DS = self.US_node.thermo, self.DS_node.thermo
-        DS_target = self.get_outlet_state(US, self._w)
+        DS_target = self.get_outlet_state(US, w=self._w)
 
         # Flow acceleration based on pressure error
         pressure_error = DS_target['P'] - DS._P

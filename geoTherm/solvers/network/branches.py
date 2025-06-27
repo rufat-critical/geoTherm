@@ -667,7 +667,7 @@ class FlowBranch(baseBranch):
         # Update mass flow if this is a fixed flow branch
         if self.fixed_flow and len(self.nodes) > 1:
             if isinstance(nodes[0], FixedFlow):
-                nodes[0].get_outlet_state(US_thermo, self.x[0])
+                nodes[0].get_outlet_state(US_thermo, PR=self.x[0])
                 self._w = self.fixed_flow_node._w
             else:
                 from pdb import set_trace
@@ -723,7 +723,7 @@ class FlowBranch(baseBranch):
                     return
 
 
-                self.DS_target = node._get_outlet_state(US_thermo, self._w)
+                self.DS_target = node._get_outlet_state(US_thermo, w=self._w)
                 if not self.stateful:
                     # Evaluate node
                     node.evaluate()
@@ -770,7 +770,7 @@ class FlowBranch(baseBranch):
                         from pdb import set_trace
                         #set_trace()
                 else:
-                    DS_state = node._get_outlet_state(US_thermo, self.x[0])
+                    DS_state = node._get_outlet_state(US_thermo, PR=self.x[0])
 
                 if isinstance(node, gt.FixedFlowPump):
                     PR_bounds = np.array(
@@ -819,32 +819,34 @@ class FlowBranch(baseBranch):
                             from pdb import set_trace
                             #set_trace()
                         
-                        self.evaluate_choked(US_thermo, DS_junction, nodes[inode:])
+                        self.evaluate_choked(US_thermo, DS_junction,
+                                             nodes[inode:])
                         #self.evaluate_choked(inode, US_thermo)
                         thermoNode = nodes[-2]
                         flowNode = nodes[-1]    
-                        self.DS_target = flowNode._get_outlet_state(thermoNode.thermo, self._w)
+                        self.DS_target = flowNode._get_outlet_state(
+                            thermoNode.thermo, w=self._w)
                         return
                         # Choked state
                         # Get choked state
                     
                     PR_crit = node.flow.PR_crit(US_thermo)
 
-                    DS_state = node._get_outlet_state(US_thermo, self._w)
+                    DS_state = node._get_outlet_state(US_thermo, w=self._w)
 
                     blend_factor = (self._w/w_max - BLEND_TOL)/(CHOKED_TOL - BLEND_TOL)
 
                     DS_state['P'] = (1-blend_factor)*DS_state['P'] + blend_factor*PR_crit*US_thermo._P
 
 
-                DS_state = node._get_outlet_state(US_thermo, self._w)
+                DS_state = node._get_outlet_state(US_thermo, w=self._w)
                 # 2 paths
                 # Get max mass flow rate
                 # If above max then penalty to reduce
 
                 # If equal then evaluate choked
             else:
-                DS_state = node._get_outlet_state(US_thermo, self._w)
+                DS_state = node._get_outlet_state(US_thermo, w=self._w)
         
             if DS_state is None:
                 # If this is none then there was an error
@@ -978,19 +980,15 @@ class FlowBranch(baseBranch):
                 return PR_min - PR + 1
             elif PR > PR_hi:
                 return PR_hi - PR - 1
-            
-            if isinstance(nodes[0], gt.FixedFlow):
-                DS_state = nodes[0].get_outlet_state(US_thermo, PR)
-            else:
-                DS_state = nodes[0].get_outlet_state(US_thermo, nodes[0]._w_max(US_thermo))
-                DS_state['P'] = US_thermo._P * PR
 
+            DS_state = nodes[0].get_outlet_state(US_thermo, PR=PR)
 
             if nodes[1].name in self.thermal_junctions:
                 Q = self.thermal_junctions[nodes[1].name].Q_flux/(abs(self._w) + eps)
                 DS_state['H'] += Q
 
             error = nodes[1].update_thermo(DS_state)
+
             if error:
                 from pdb import set_trace
                 set_trace() 
@@ -1024,11 +1022,8 @@ class FlowBranch(baseBranch):
 
         PR = sol.root
 
+        DS_state = nodes[0].get_outlet_state(US_thermo, PR=PR)
 
-        if isinstance(nodes[0], gt.FixedFlow):
-            DS_state = nodes[0].get_outlet_state(US_thermo, PR)
-        else:
-            DS_state = {'P': US_thermo._P * PR, 'H': US_thermo._H}
 
         if nodes[1].name in self.thermal_junctions:
             Q = self.thermal_junctions[nodes[1].name].Q_flux

@@ -124,7 +124,7 @@ class baseFlow(Node, ABC):
         return US, DS, flow_sign
 
     @abstractmethod
-    def get_outlet_state(self, US, w):
+    def get_outlet_state(self, US, *, w=None, PR=None):
         """Calculate outlet state given inlet conditions and flow rate.
 
         Must be implemented by derived classes.
@@ -136,14 +136,9 @@ class baseFlow(Node, ABC):
         Returns:
             dict: Outlet state with pressure and enthalpy
         """
+        pass
 
-        dP = self._get_dP(US, w)
-        dH = self._get_dH(US, w)
-
-        return {'H': US._H + dH,
-                'P': US._P + dP}
-
-    def _get_outlet_state(self, US, w):
+    def _get_outlet_state(self, US, *, w=None, PR=None):
         """Calculate outlet state including heat transfer effects.
 
         This method extends the base outlet state calculation by adding the heat
@@ -163,7 +158,10 @@ class baseFlow(Node, ABC):
             from total heat transfer [W] to specific enthalpy change [J/kg]
         """
         # Get base outlet state first
-        outlet_state = self.get_outlet_state(US, w)
+        outlet_state = self.get_outlet_state(US, w=w, PR=PR)
+
+        if PR is not None:
+            w = self._w
 
         # Add heat transfer contribution to enthalpy if flow rate is non-zero
         if w != 0:  # Avoid division by zero
@@ -174,7 +172,7 @@ class baseFlow(Node, ABC):
     @property
     def _Q(self):
 
-        Q =0
+        Q = 0
         for hot_node in self.model.node_map[self.name]['hot']:
             Q += self.model.nodes[hot_node]._Q
         for cool_node in self.model.node_map[self.name]['cool']:
@@ -319,7 +317,7 @@ class baseInertantFlow(baseFlow):
           Flow sees less resistance, so wdot > 0 to increase flow
         """
         US, DS, flow_sign = self.thermostates()
-        DS_target = self.get_outlet_state(US, self._w)
+        DS_target = self.get_outlet_state(US, w=self._w)
 
         # Pressure difference driving the flow acceleration
         # Positive when target pressure > actual pressure (flow increases)
@@ -440,14 +438,50 @@ class baseFlowResistor(baseFlow):
         US, DS, flow_sign = self.thermostates()
         self._w = self.flow._w(US, DS)*flow_sign
 
-    def get_outlet_state(self, US, w):
+    def get_outlet_state(self, US, *, w=None, PR=None):
+        """Calculate outlet thermodynamic state for a flow resistor.
 
-        dP, error = self.flow._dP(US, np.abs(w))
+        This method calculates the downstream pressure based on either the mass
+        flow rate or pressure ratio, while maintaining isenthalpic flow (no
+        enthalpy change).
 
+        Args:
+            US: Upstream thermodynamic state object
+            w (float, optional): Mass flow rate [kg/s]. If provided, calculates
+                               pressure drop using the flow model's pressure
+                               drop correlation.
+            PR (float, optional): Pressure ratio (downstream/upstream). If
+                                provided, calculates pressure drop directly
+                                from the ratio.
 
+        Returns:
+            dict: Outlet state dictionary containing:
+                - 'H': Enthalpy [J/kg] (same as upstream, isenthalpic flow)
+                - 'P': Pressure [Pa] (upstream pressure + pressure drop)
+
+        Note:
+            - Either 'w' or 'PR' must be provided, but not both
+            - If pressure drop calculation fails (returns None), a large
+              negative pressure drop (-1e9 Pa) is used to signal the solver to
+              reduce mass flow
+            - This method assumes isenthalpic flow (no enthalpy change across
+              the resistor)
+        """
+        # Calculate pressure drop based on input parameters
+        if w is not None:
+            dP, error = self.flow._dP(US, np.abs(w))
+        elif PR is not None:
+            dP = -US._P * (1 - PR)
+        else:
+            logger.critical(
+                "Either 'w' (mass flow rate) or 'PR' (pressure ratio) "
+                "must be provided"
+            )
+
+        # Handle failed pressure drop calculation
         if dP is None:
-            # Set outlet to high dP to tell
-            # solver to reduce mass flow
+            # Set large negative pressure drop to signal solver to reduce
+            # mass flow
             dP = -1e9
 
         return {'H': US._H, 'P': US._P + dP}
@@ -469,7 +503,7 @@ class FixedFlow(baseFlow):
         else:
             return self.DS_node.thermo, self.US_node.thermo, -1
 
-    def get_outlet_state(self, US, PR):
+    def get_outlet_state(self, US, *, w=None, PR=None):
         """
         Calculate the thermodynamic state at the outlet (downstream).
 
@@ -482,18 +516,7 @@ class FixedFlow(baseFlow):
         #US = self.model.nodes[self.US].thermo
         return {'H': US._H, 'P': US._P*PR}
 
-    def _get_outlet_state(self, US, PR):
-
-        outlet_state = self.get_outlet_state(US, PR)
-
-        # Add heat transfer contribution to enthalpy
-        return super()._get_outlet_state(US, self._w)
-
-
-    def _set_flow(self, w):
-        self._w = w
 
     @state_dict
     def _state_dict(self):
         return {'w': (self.w, units.output_units['MASSFLOW'])}
-
