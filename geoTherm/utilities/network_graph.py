@@ -2,8 +2,8 @@ from ..nodes.baseNodes.baseThermo import baseThermo
 from ..nodes.baseNodes.baseFlow import baseFlow
 from ..nodes.pipe import Pipe
 from ..nodes.rotor import Rotor
-from ..nodes.turbine import Turbine
-from ..nodes.pump import Pump
+from ..nodes.turbine import baseTurbine
+from ..nodes.pump import basePump
 from ..nodes.baseNodes.baseThermal import baseThermal
 from ..units import units
 from ..logger import logger
@@ -52,19 +52,19 @@ def generate_dot_code(model):
                 f"{name}\nT: {node.T:.1f} {u['TEMPERATURE']}\n"
                 f"P: {node.P:.1f} {u['PRESSURE']}"
             )
-        elif isinstance(node, Turbine):
+        elif isinstance(node, baseTurbine):
             shape = 'trapezium'
             color = 'black'
             label = (
                 f"{name}\nw: {node.w:.2f} {u['MASSFLOW']}\n"
-                f"W: {node.W:.1f} {u['POWER']}\nPR: {node.PR:.2f}"
+                f"W: {node.W:.3f} {u['POWER']}\nPR: {node.PR:.2f}"
             )
-        elif isinstance(node, Pump):
+        elif isinstance(node, basePump):
             shape = 'invtrapezium'
             color = 'black'
             label = (
                 f"{name}\nw: {node.w:.2f} {u['MASSFLOW']}\n"
-                f"W: {node.W:.1f} {u['POWER']}\nPR: {node.PR:.2f}"
+                f"W: {node.W:.3f} {u['POWER']}\nPR: {node.PR:.2f}"
             )
         elif isinstance(node, baseFlow):
             shape = 'rectangle'
@@ -78,7 +78,7 @@ def generate_dot_code(model):
             shape = 'circle'
             color = 'red'
             label = (
-                f"{name}\nQ: {node.Q:.1f} {u['POWER']}\n"
+                f"{name}\nQ: {node.Q:.3f} {u['POWER']}\n"
             )
         else:
             color = 'orange'
@@ -202,7 +202,7 @@ def make_graphml_diagram(model, file_path):
             label += (
                 f"Q: {node.Q:.2f} {u['POWER']}"
             )
-        elif isinstance(node, Turbine):
+        elif isinstance(node, baseTurbine):
             shape = 'trapezoid2'
             border_color = '#000000'  # Black
             fill_color = '#FFFFFF'  # White
@@ -211,7 +211,7 @@ def make_graphml_diagram(model, file_path):
                 f"W: {node.W:.1f} {u['POWER']}\nPR: {node.PR:.2f}\n"
                 f"\u03B7: {node.eta:.1f}"
             )
-        elif isinstance(node, Pump):
+        elif isinstance(node, basePump):
             shape = 'trapezoid'
             border_color = '#000000'  # Black
             fill_color = '#FFFFFF'  # White

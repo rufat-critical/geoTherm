@@ -1016,7 +1016,11 @@ class FlowBranch(baseBranch):
         self.penalty = False
 
         # Figure out PR downstream of choked node
-        sol = root_scalar(find_PR, bracket=[PR_min, PR_hi], method='brentq')
+        try:
+            sol = root_scalar(find_PR, bracket=[PR_min*.99, PR_hi], method='brentq')
+        except:
+            from pdb import set_trace
+            set_trace()
 
         PR = sol.root
 
