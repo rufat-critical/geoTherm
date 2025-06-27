@@ -180,10 +180,6 @@ class baseBranch:
                 logger.warn(f"Flow Branch {self.name} has a flow value of "
                                 f" {x[0]} which is above the upper bound of "
                                 f"{self._bounds[1]}")
-        
-    def solve(self):
-        from pdb import set_trace
-        set_trace()
 
     def evaluate(self):
 
@@ -1014,11 +1010,7 @@ class FlowBranch(baseBranch):
         self.penalty = False
 
         # Figure out PR downstream of choked node
-        try:
-            sol = root_scalar(find_PR, bracket=[PR_min*.99, PR_hi], method='brentq')
-        except:
-            from pdb import set_trace
-            set_trace()
+        sol = root_scalar(find_PR, bracket=[PR_min*.99, PR_hi], method='brentq')
 
         PR = sol.root
 
