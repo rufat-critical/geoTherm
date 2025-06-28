@@ -4,8 +4,8 @@ from .baseNodes.baseFlow import baseFlow
 from ..units import inputParser, addQuantityProperty, units, toSI
 from ..logger import logger
 import numpy as np
-from ..resistance_models.heat import HTC
 from ..decorators import state_dict
+from geoTherm.HTC.HTC import HTC
 
 
 @addQuantityProperty

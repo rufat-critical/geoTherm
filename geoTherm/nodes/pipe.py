@@ -233,7 +233,7 @@ class LumpedPipe(Pipe):
             dP += loss.evaluate(US, w)
         return dP
 
-    def get_outlet_state(self, US, w):
+    def get_outlet_state(self, US, *, w=None, PR=None):
         dP = self.evaluate_losses(US, w)
 
         return {'H': US._H,

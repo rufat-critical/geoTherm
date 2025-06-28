@@ -92,7 +92,7 @@ class Pump(baseInertantPump):
         self.rotor_node = self.model.nodes[self.rotor]
 
 
-    def get_outlet_state(self, US, w):
+    def get_outlet_state(self, US, *, w=None, PR=None):
 
         Q = w/US._density
         N = self.rotor_node.N

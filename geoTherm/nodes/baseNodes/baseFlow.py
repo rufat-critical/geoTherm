@@ -23,7 +23,7 @@ class baseFlow(Node, ABC):
         _unidirectional (bool): If True, only allows forward flow
     """
     _displayVars = ['w', 'dP', 'dH']
-    _units = {'w': 'MASSFLOW', 'dP': 'PRESSURE', 'dH': 'SPECIFICENERGY'}
+    _units = {'w': 'MASSFLOW', 'dP': 'PRESSURE', 'dH': 'SPECIFICENERGY', 'Ue': 'VELOCITY'}
     _bounds = [1e-5, 1e5]
 
     def __init__(self, name, US, DS, unidirectional=False):
@@ -168,6 +168,33 @@ class baseFlow(Node, ABC):
             outlet_state['H'] += self._Q/ w
 
         return outlet_state
+
+    @property
+    def _Ue(self):
+        # FLow Speed at the exit
+        US, DS, _ = self.thermostates()
+
+        outlet_state = self.get_outlet_state(US, w=self._w)
+
+        outlet = US.from_state(US.state)
+        outlet.update_state(outlet_state)
+
+        return self._w/(outlet._density*self._area)
+
+    @property
+    def Mach_exit(self):
+
+        US, DS, _ = self.thermostates()
+
+        outlet_state = self.get_outlet_state(US, w=self._w)
+
+        outlet = US.from_state(US.state)
+        outlet.update_state(outlet_state)
+
+        Ue = self._w/(outlet._density*self._area)
+
+        return Ue/outlet._sound
+
 
     @property
     def _Q(self):

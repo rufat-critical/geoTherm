@@ -656,7 +656,6 @@ class FlowBranch(baseBranch):
         reverses order for backflow, and computes errors if constraints
         are violated.
         """
-        
 
         US_thermo = US_node.thermo
 
@@ -679,20 +678,12 @@ class FlowBranch(baseBranch):
         Qin = 0
 
 
-        #US_j, DS_j, flow, thermo, nodes2 = self.get_nodes_junctions()
-
-
-        from pdb import set_trace
-        #set_trace()
-
-        
-
         # Loop thru Branch nodes
         for inode, node in enumerate(nodes):
 
             if inode == len(nodes) - 1:
                 # Set node flow to branch mass flow
-                node._set_flow(self._w)
+                node._w = self._w
                 # Update DS_target
 
                 if isinstance(node, (fixedFlow, FixedFlow)):
@@ -747,16 +738,9 @@ class FlowBranch(baseBranch):
                 US_thermo = node.thermo
                 # Skip the rest of the loop iteration for this node
                 continue
-            
+
             # Update the node mass flow to branch object
-            error = node._set_flow(self._w)
-
-
-            if error:
-                self.penalty = error
-                from pdb import set_trace
-                set_trace()
-                return
+            node._w = self._w
 
             if isinstance(node, (fixedFlow, FixedFlow)):
                 if not self.stateful:
@@ -819,7 +803,7 @@ class FlowBranch(baseBranch):
                                              nodes[inode:])
                         #self.evaluate_choked(inode, US_thermo)
                         thermoNode = nodes[-2]
-                        flowNode = nodes[-1]    
+                        flowNode = nodes[-1]
                         self.DS_target = flowNode._get_outlet_state(
                             thermoNode.thermo, w=self._w)
                         return

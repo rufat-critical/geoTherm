@@ -439,7 +439,7 @@ class simpleTurbine(baseTurbine):
                    ((PR - 1)/(self.PR_nominal - 1))**self._k *
                    flow_sign)
 
-    def get_outlet_state(self, US, w):
+    def get_outlet_state(self, US, *, w=None, PR=None):
         """Calculate turbine outlet thermodynamic state for given mass flow.
 
         Uses inverse of the power-law relationship to determine pressure ratio
