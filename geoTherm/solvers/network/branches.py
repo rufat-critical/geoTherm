@@ -417,16 +417,6 @@ class FlowBranch(baseBranch):
                 self.fixed_flow_node = node
                 self._bounds = node._bounds
 
-                if isinstance(node, gt.fixedFlowTurbo):
-                    # Get the node bounds
-                    if hasattr(node, '_bounds'):
-                        self._bounds = node._bounds
-
-                    if len(self.x) != 0:
-                        # There shouldn't be any other states
-                        from pdb import set_trace
-                        set_trace()
-
             elif isinstance(node, cycleCloser):
                 # This calculates dH, dP imbalance
 
@@ -970,6 +960,7 @@ class FlowBranch(baseBranch):
             error = nodes[1].update_thermo(DS_state)
 
             if error:
+                return PR_hi - PR - 1
                 from pdb import set_trace
                 set_trace() 
 
@@ -977,8 +968,6 @@ class FlowBranch(baseBranch):
             self.evaluate_forward(nodes[1], DS_junction, nodes[2:], choked=True, debug=False)
 
             if self.penalty:
-                from pdb import set_trace
-                set_trace()
                 return self.penalty
             else:
                 return DS_junction.node.thermo._P - self.DS_target['P']
@@ -1000,11 +989,9 @@ class FlowBranch(baseBranch):
 
         DS_state = nodes[0].get_outlet_state(US_thermo, PR=PR)
 
-
         if nodes[1].name in self.thermal_junctions:
             Q = self.thermal_junctions[nodes[1].name].Q_flux
             DS_state['H'] += Q/(abs(self._w) + eps)
-
 
         nodes[1].update_thermo(DS_state)
 

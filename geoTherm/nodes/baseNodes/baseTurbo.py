@@ -48,73 +48,11 @@ class baseTurbo(baseFlow, ABC):
         """Set the mass flow rate"""
         self._w = w
         return False
-    
+
     def initialize(self, model):
         super().initialize(model)
 
         self._ref_thermo = thermo.from_state(model.nodes[self.US].thermo.state)
-
-    def _update_outlet_thermo(self):
-
-        US, _, _ = self.thermostates()
-        outlet = self.get_outlet_state(US, self._w)
-        self._ref_thermo._HP = outlet['H'], outlet['P']
-
-    
-class fixedFlowTurbo(baseTurbo):
-
-    @inputParser
-    def __init__(self, name,
-                 US,
-                 DS,
-                 w:'MASSFLOW',
-                 D: 'LENGTH' = 1,       # noqa
-                 eta=None,
-                 axial=False):
-        """
-        Initialize the Turbo Node.
-
-        Args:
-            name (str): Name of the turbine.
-            eta (float): Efficiency of the turbine.
-            US (str): Upstream node name.
-            DS (str): Downstream node name.
-            rotor (str): Rotor Object.
-            PR (float): Pressure ratio.
-            D (float, optional): Roter Diameter.
-            eta(float, optional): Efficiency.
-            w (object): Mass flow controller object.
-            Ns (float): Specific Speed
-            ns (float): Dimensionless Specific Speed
-            ds (float): Dimensionless Specific Diameter
-            axial (Boolean): Axial or Radial. Default is False
-        """
-
-        # Component Name
-        self.name = name
-        # Component Efficiency
-        self.eta = eta
-        # Upstream Station
-        self.US = US
-        # Downstream Station
-        self.DS = DS
-        # Rotor Diameter
-        self._D = D
-        # Mass Flow
-        self.axial = axial
-        self._w_setpoint = w
-        self.penalty = False
-
-        if self.eta is None:
-            logger.info(f"eta for {self.name} will be calculated using "
-                        "Claudio's Curves")
-            self.update_eta = True
-            # Set to an initial value
-            self.eta = 1
-        else:
-            self.update_eta = False
-
-
 
 class fixedPressureRatioTurbo(baseInertantFlow, baseTurbo):
     """Base class for turbomachinery (pumps/compressors) with a fixed pressure ratio.

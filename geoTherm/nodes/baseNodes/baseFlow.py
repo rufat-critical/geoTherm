@@ -255,6 +255,14 @@ class baseFlow(Node, ABC):
 
     @property
     def PR(self):
+        """Calculate actual pressure ratio (outlet/inlet).
+
+        For pumps, PR > 1 indicates normal operation (compression),
+        while PR < 1 indicates reverse flow.
+
+        Returns:
+            float: Pressure ratio (P_downstream / P_upstream)
+        """
         US, DS, _ = self.thermostates()
         return DS._P / US._P
 
@@ -269,13 +277,6 @@ class baseFlow(Node, ABC):
 
         US, DS, _ = self.thermostates()
         return self._get_dH(US, self._w)
-
-    @property
-    def _cdA(self):
-        # Incompressible cdA
-        US, DS, _ = self.thermostates()
-        dP = np.abs(US._P - DS._P)
-        return self._w/np.sqrt(2*US._density*dP)
 
 
 @addQuantityProperty

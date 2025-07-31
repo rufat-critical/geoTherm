@@ -88,8 +88,6 @@ class baseThermal(Node):
 
         return cool_state
 
-
-
     def get_US_state(self):
         """
         Get the upstream state based on the heat transfer direction.

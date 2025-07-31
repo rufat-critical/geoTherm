@@ -1,5 +1,5 @@
 from .baseNodes.baseThermo import baseThermo
-from .flowDevices import fixedFlow
+from .baseNodes.baseFlow import FixedFlow
 from ..logger import logger
 import numpy as np
 
@@ -127,10 +127,10 @@ class Outlet(Boundary):
         w = self.US_nodes[0]._w
 
 
-        if isinstance(self.US_nodes[0], fixedFlow):
-            outlet_state = self.US_nodes[0]._get_outlet_state(upVol, 1)
+        if isinstance(self.US_nodes[0], FixedFlow):
+            outlet_state = self.US_nodes[0].get_outlet_state(upVol, PR=1)
         else:
-            outlet_state = self.US_nodes[0]._get_outlet_state(upVol, w)
+            outlet_state = self.US_nodes[0].get_outlet_state(upVol, w=w)
 
 
         ### need some refactoring here

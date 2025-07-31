@@ -1,6 +1,5 @@
 import numpy as np
-#from .baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters
-from .baseNodes.baseTurbo import Turbo, fixedFlowTurbo, TurboSizer, turbineParameters, baseTurbo
+from .baseNodes.baseTurbo import Turbo, TurboSizer, turbineParameters, baseTurbo
 from ..units import addQuantityProperty, inputParser
 from ..utils import turb_axial_eta, turb_radial_eta, eps
 from ..flow_funcs import _dH_isentropic

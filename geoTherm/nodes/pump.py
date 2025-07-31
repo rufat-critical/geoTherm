@@ -1,4 +1,4 @@
-from .baseNodes.baseTurbo import Turbo, pumpParameters, fixedFlowTurbo, baseTurbo, fixedPressureRatioTurbo, turboParameters
+from .baseNodes.baseTurbo import Turbo, pumpParameters, baseTurbo, fixedPressureRatioTurbo, turboParameters
 from .baseNodes.baseFlow import baseInertantFlow, FixedFlow
 #from .flowDevices import fixedFlow
 from ..units import addQuantityProperty
@@ -9,6 +9,7 @@ import numpy as np
 from ..maps.pump.D35e import PumpMap
 from ..decorators import state_dict
 
+
 @addQuantityProperty
 class basePump(baseTurbo, turboParameters):
     """Base class for pump components.
@@ -18,9 +19,6 @@ class basePump(baseTurbo, turboParameters):
     """
 
     _units = baseTurbo._units | turboParameters._units | {'NPSP': 'PRESSURE'}
-
-
-    _displayVars = baseTurbo._displayVars + ['Q_in', 'Q_out']
 
     @property
     def _dH_is(self):
@@ -37,28 +35,11 @@ class basePump(baseTurbo, turboParameters):
         return self._dH_is / self.eta
 
     @property
-    def PR(self):
-        """Calculate actual pressure ratio (outlet/inlet).
-
-        For pumps, PR > 1 indicates normal operation (compression),
-        while PR < 1 indicates reverse flow.
-
-        Returns:
-            float: Pressure ratio (P_downstream / P_upstream)
-        """
-        US, DS, _ = self.thermostates()
-        return DS._P / US._P
-
-    @property
     def _NPSP(self):
         try:
             return self.US_node.thermo._P - self._ref_thermo._Pvap
         except:
             return 0
-
-
-class baseRotorPump(basePump):
-    pass
 
 
 @addQuantityProperty
@@ -76,7 +57,6 @@ class Pump(baseInertantPump):
         self.eta = eta
         self.PumpMap = PumpMap
 
-    
     def evaluate(self):
 
         US, DS, _ = self.thermostates()
@@ -85,12 +65,10 @@ class Pump(baseInertantPump):
 
         self._wdot = ((US._P + dP)- DS._P)/self._Z
 
-
     def initialize(self, model):
         super().initialize(model)
 
         self.rotor_node = self.model.nodes[self.rotor]
-
 
     def get_outlet_state(self, US, *, w=None, PR=None):
 
@@ -98,7 +76,6 @@ class Pump(baseInertantPump):
         N = self.rotor_node.N
         dP = self.PumpMap.get_dP(N, Q)
 
-        
         dH_is = _dH_isentropic(US, US._P + dP)
 
         #if error:
@@ -146,6 +123,27 @@ class FixedFlowPump(basePump, FixedFlow):
         dH_is = _dH_isentropic(US, US._P*PR)/self.eta
 
         return {'P': US._P*PR, 'H': US._H + dH_is}
+
+
+@addQuantityProperty
+class FixedFlowPumpMap(FixedFlowPump):
+    
+    def __init__(self, name, US, DS, rotor, w, eta, PumpMap):
+        super().__init__(name, US, DS, w, eta)
+        self.rotor = rotor
+        self.PumpMap = PumpMap
+
+
+    def initialize(self, model):
+        super().initialize(model)
+        self.rotor_node = self.model.nodes[self.rotor]
+
+    def evaluate(self):
+        US, DS, _ = self.thermostates()
+
+        N, _ = self.PumpMap.get_rpm((DS._P - US._P), self._Q_in)
+
+        self.rotor_node.N = N
 
 
 @addQuantityProperty
@@ -282,8 +280,6 @@ class Pump2(Turbo, pumpParameters):
         US, _, _ = self.thermostates
 
         return US._P*(self.PR-1)
-    
-
 
     def _get_dH(self):
         """Get enthalpy change across Pump."""
@@ -312,7 +308,6 @@ class Pump2(Turbo, pumpParameters):
 
         US = self.US_node.thermo
 
-
         return _dH_isentropic(US, US._P*self.PR)
 
 
@@ -335,37 +330,3 @@ class Pump2(Turbo, pumpParameters):
 
     def _set_flow(self, w):
         self._w = w
-
-
-class fixedFlowPump2(basePump, FixedFlow):
-    """Pump class with fixed mass flow.
-
-    Args:
-        name (str): Component identifier
-        US: Upstream node reference
-        DS: Downstream node reference
-        w (float): Fixed mass flow rate [kg/s]
-        eta (float): Isentropic efficiency
-        PR (float): Fixed pressure ratio (outlet/inlet pressure)
-    """
-
-    # State Bounds, defining them here for now
-    # In the future can make a control class to check/update bounds
-    _bounds = [1, 500]
-
-
-    def __init__(self, name, US, DS, w, eta, PR):
-
-        super().__init__(name, US, DS, w)
-        self.eta = eta
-        self.PR_setpoint = PR
-
-    def evaluate(self):
-        pass
-        #self.PR = self.DS_node.thermo._P/self.US_node.thermo._P
-
-    def get_outlet_state(self, US, w):
-
-        dH = _dH_isentropic(US, US._P*self.PR_setpoint)/self.eta
-
-        return {'H': US._H + dH, 'P': US._P*self.PR_setpoint}

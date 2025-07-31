@@ -2,7 +2,7 @@ from .node import Node
 #from .geometry import GeometryProperties, GeometryGroup
 from .baseNodes.baseFlow import baseInertantFlow
 from ..units import inputParser, addQuantityProperty
-from ..utils import dP_pipe
+from ..utils import UserDefinedFunction
 from ..logger import logger
 import numpy as np
 from ..decorators import state_dict
@@ -81,11 +81,16 @@ class FixedDP(BasePipe):
             Z: Number of parallel pipes (default: 1)
         """
         super().__init__(name, US, DS, Z=Z, w=w)
-        self.loss = PressureDrop(dP=dP)
+        self.loss = UserDefinedFunction(dP)
+
+    def get_outlet_state(self, US, *, w=None, PR=None):
+        dP = self.loss.evaluate(US, w, self.model)
+        return {'H': US._H,
+                'P': US._P + dP}
 
     @state_dict
     def _state_dict(self):
-        return {'dP': self.loss._dP}
+        return {'dP': self.loss._state}
 
     @property
     def _dP(self):
@@ -96,7 +101,7 @@ class FixedDP(BasePipe):
             float: The pressure drop value
         """
         US, _, _ = self.thermostates()
-        return self.loss.evaluate(US, self._w)
+        return self.loss.evaluate(US, self._w, self.model)
 
     @_dP.setter
     def _dP(self, value):
@@ -106,7 +111,7 @@ class FixedDP(BasePipe):
         Args:
             value: New pressure drop value
         """
-        self.loss._dP = value
+        self.loss.set_func(value)
 
 
 class Pipe(BasePipe):
@@ -173,7 +178,7 @@ class Pipe(BasePipe):
 @addQuantityProperty
 class LumpedPipe(Pipe):
 
-    _displayVars = ['w;.3f', 'dP;.3f', 'dH;.3f', 'geometry', "dP_sections;.3f"]
+    _displayVars = ['w;.3f', 'dP;.3f', 'dH;.3f', 'geometry']
     _units = {**Pipe._units, **{
         'dP_split': 'PRESSURE'
     }}
@@ -211,6 +216,10 @@ class LumpedPipe(Pipe):
     def _dP_split(self):
         US, _, _ = self.thermostates()
         return [loss.evaluate(US, self._w) for loss in self.loss]
+
+    @property
+    def _dP(self):
+        return np.sum(self._dP_split)
 
     @property
     def dP_sections(self):
