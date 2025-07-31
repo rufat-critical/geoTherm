@@ -363,7 +363,7 @@ class PumpMap:
         # Get data range
         data_range = self.get_data_range()
         rpm_min = data_range['rpm_min']
-        rpm_max = data_range['rpm_max']
+        rpm_max = data_range['rpm_max']*2
         
         # Binary search for RPM value
         left = rpm_min
@@ -372,7 +372,7 @@ class PumpMap:
         
         while iterations < max_iterations:
             rpm = (left + right) / 2
-            current_pressure, _ = self.get_dP(rpm, q)
+            current_pressure = self.get_dP(rpm, q)
             
             # Check if we're close enough
             if abs(current_pressure - pressure) < tolerance:
