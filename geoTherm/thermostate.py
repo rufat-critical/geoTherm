@@ -9,6 +9,8 @@ from .utils import R_ideal
 from .DEFAULTS import DEFAULTS
 from scipy.interpolate import interp1d
 from geoTherm.utilities.loaders import fluid_property_reader
+from scipy.optimize import root_scalar
+from scipy.integrate import quad
 
 
 # Utility functions for thermostate
@@ -161,6 +163,7 @@ phase_index = {'liquid': 0,
                'two-phase': 6,
                'unknown': 7}
 
+
 class CustomFluid:
     """Custom fluid state model"""
     
@@ -275,6 +278,12 @@ class CustomFluid:
         elif property_name == 'S':
             # Assume cp is 1.67
             return 1.5*np.log(self._T/273.15)
+        elif property_name == 'Tvap':
+            return np.inf
+        elif property_name == 'T_crit':
+            return np.inf
+        elif property_name == 'P_crit':
+            return np.inf
         else:
             from pdb import set_trace
             set_trace()
@@ -301,18 +310,27 @@ class CustomFluid:
             from pdb import set_trace; set_trace()
 
     def update_enthalpy(self, T):
-
-        cp = self.get_property('cp')
-        self._H = cp*(T - 273.15)
+        """Calculate enthalpy by integrating cp(T) from 273.15 to T"""
+        from scipy.integrate import quad
+        
+        def cp_function(t):
+            return self.interpolators['cp'](t)
+        
+        # Integrate cp(T) from 273.15 to T
+        H, _ = quad(cp_function, 273.15, T)
+        self._H = H
 
     def T_from_H(self, H):
+        """Calculate temperature from enthalpy by solving the integral equation"""
         
         def f(T):
-            cp = self.interpolators['cp'](T)
-            return cp*(T - 273.15) - H
+            def cp_function(t):
+                return self.interpolators['cp'](t)
+            
+            # Calculate H at temperature T
+            H_at_T, _ = quad(cp_function, 273.15, T)
+            return H_at_T - H
         
-        from scipy.optimize import root_scalar
-        T_guess = 300
         result = root_scalar(f, bracket=[200, 600], method='brentq')
         return result.root
 
