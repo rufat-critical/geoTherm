@@ -1017,6 +1017,10 @@ class Solution:
         for name, node in model.nodes.items():
             # For each display variable in the node
             for attr in node._displayVars:
+
+                # Split the formating of the attribute
+                attr = attr.split(';')[0]
+
                 # Create storage list for this variable
                 self._data[f'{name}.{attr}'] = []
 
@@ -1081,6 +1085,8 @@ class Solution:
             for attr in node._displayVars:
 
                 obj = node
+                # Split the formating of the attribute
+                attr = attr.split(';')[0]
                 # Special handling for thermodynamic nodes
                 if isinstance(node, baseThermo):
                     # Check if this is a thermodynamic property
@@ -1416,5 +1422,4 @@ class Solution2:
 
         # Save the DataFrame to CSV with modified headers
         self.df.to_csv(file_path, header=modified_headers, index=False)
-
 

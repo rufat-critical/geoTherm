@@ -1120,7 +1120,7 @@ class TurbineInterpolator:
         # Define the objective function (negative efficiency since we want to maximize)
         def objective(temp):
             return -self.eta_interpolator(temp, pr)
-        
+
         # Use scipy's minimize_scalar to find the optimal temperature
         result = minimize_scalar(
             objective,
@@ -1128,8 +1128,129 @@ class TurbineInterpolator:
             method='bounded',
             options={'xatol': 1.0}  # 1 degree tolerance
         )
-        
+
         optimal_temp = result.x
         max_efficiency = -result.fun  # Convert back from negative
-        
+
         return optimal_temp, max_efficiency
+
+
+# User defined function
+class UserDefinedFunction:
+    """
+    A flexible wrapper that handles both constant values and callable functions.
+
+    This class allows users to specify either a constant value or a custom function
+    that will be evaluated with specific arguments. It's commonly used in geoTherm
+    for defining parameters that can be either fixed values or dynamic calculations.
+
+    Attributes:
+        _func: The internal function that will be called during evaluation
+
+    Example:
+        # Constant value
+        udf = UserDefinedFunction(100.0)
+        result = udf.evaluate(upstream_node, mass_flow)  # Returns 100.0
+
+        # Custom function
+        def my_func(US, w, model=None):
+            return US._P * w  # Some calculation
+        udf = UserDefinedFunction(my_func)
+        result = udf.evaluate(upstream_node, mass_flow)  # Returns calculated value
+    """
+
+    def __init__(self, value):
+        """
+        Initialize the UserDefinedFunction.
+
+        Args:
+            value: Either a numeric constant (int/float) or a callable function
+        """
+        self._func = None
+        self.set_func(value)
+
+    def set_func(self, val):
+        """
+        Set the internal function based on the input value.
+
+        If val is numeric, creates a lambda that returns the constant value.
+        If val is callable, uses it directly.
+
+        Args:
+            val: Numeric constant or callable function
+
+        Raises:
+            Critical log message if val is neither numeric nor callable
+        """
+        if isinstance(val, (int, float)):
+            # Create a lambda that ignores arguments and returns the constant value
+            self._func = lambda US, w, model=None, val=val: val
+        elif callable(val):
+            # Use the callable directly
+            self._func = val
+        else:
+            logger.critical("Value must be numeric or callable.")
+
+    def evaluate(self, *args, **kwargs):
+        """
+        Evaluate the function with the given arguments.
+
+        Args:
+            *args: Positional arguments passed to the function
+            **kwargs: Keyword arguments passed to the function
+
+        Returns:
+            The result of calling the internal function
+        """
+        return self._func(*args, **kwargs)
+
+    @property
+    def _state(self):
+        return {'func': self._func}
+
+
+class ThermalUserDefinedFunction(UserDefinedFunction):
+    """
+    Specialized UserDefinedFunction for thermal systems with hot/cold node arguments.
+
+    This class extends UserDefinedFunction to handle thermal calculations that
+    typically involve both hot and cold nodes (e.g., heat exchangers, thermal
+    efficiency calculations).
+
+    The main difference from the parent class is that when a constant value is
+    provided, the lambda function expects (hot_node, cold_node, model=None) as
+    arguments instead of (US, w, model=None).
+
+    Example:
+        # Constant Heat
+        thermal_udf = ThermalUserDefinedFunction(1e6)
+        result = thermal_udf.evaluate(hot_node, cold_node)  # Returns 1e6
+
+        # Custom thermal calculation
+        def thermal_func(hot_node, cold_node, model=None):
+            return (hot_node._T - cold_node._T) / hot_node._T
+        thermal_udf = ThermalUserDefinedFunction(thermal_func)
+        result = thermal_udf.evaluate(hot_node, cold_node)  # Returns heat
+    """
+
+    def set_func(self, val):
+        """
+        Set the internal function for thermal calculations.
+
+        Overrides the parent method to use (hot_node, cold_node, model=None) 
+        as the default argument signature for constant values.
+
+        Args:
+            val: Numeric constant or callable function with thermal signature
+
+        Raises:
+            Critical log message if val is neither numeric nor callable
+        """
+        if isinstance(val, (int, float)):
+            # Create a lambda that ignores hot/cold nodes and returns the constant value
+            self._func = lambda hot_node, cold_node, model=None, val=val: val
+        elif callable(val):
+            # Use the callable directly
+            self._func = val
+        else:
+            logger.critical("Value must be numeric or callable.")

@@ -108,8 +108,6 @@ def _find_w_hot_cold_inlet_counter(T_pinch, cold_outlet, hot_inlet, hot_outlet, 
     cold_inlet_thermo._TP = (hot_outlet._T - T_pinch), cold_inlet_thermo._P
     Q_max = w_cold * (cold_outlet._H - cold_inlet_thermo._H)
 
-    from pdb import set_trace
-    set_trace()
 
     Q_min = 1e-5
     for i in range(10):
@@ -120,9 +118,6 @@ def _find_w_hot_cold_inlet_counter(T_pinch, cold_outlet, hot_inlet, hot_outlet, 
             Q_max *= 1.1
 
 
-    from pdb import set_trace
-    set_trace()
-
     sol = root_scalar(dT, bracket=[1e-5, Q_max], method='brentq')
 
     Q = sol.root 
@@ -130,7 +125,6 @@ def _find_w_hot_cold_inlet_counter(T_pinch, cold_outlet, hot_inlet, hot_outlet, 
     cold_inlet_thermo._HP = cold_outlet._H - Q/w_cold, cold_outlet._P
 
     return Q, w_hot, cold_inlet_thermo
-
 
 def _find_cold_outlet_hot_outlet_counter(T_pinch, cold_inlet, hot_inlet, w_cold, w_hot,
                                          cold_outlet_thermo=None,
@@ -305,6 +299,11 @@ class PinchSolver:
             This method uses the reference fluids stored in the solver instance.
             Use get_pinch_Q() for more flexible input specification.
         """
+        self._cold_outlet_fluid = self._update_reference_fluid(cold_inlet, self._cold_outlet_fluid)
+        self._cold_inlet_fluid = self._update_reference_fluid(cold_inlet, self._cold_inlet_fluid)
+        self._hot_inlet_fluid = self._update_reference_fluid(hot_inlet, self._hot_inlet_fluid)
+        self._hot_outlet_fluid = self._update_reference_fluid(hot_inlet, self._hot_outlet_fluid)
+
 
         return get_pinch_point(Q=Q,
                                cold_inlet=cold_inlet,
@@ -402,7 +401,10 @@ class PinchSolver:
                     hot_outlet_thermo=self._hot_outlet_fluid)
             else:
                 raise NotImplementedError(f"Configuration '{self.config}' not yet implemented")
+
         else:
+            from pdb import set_trace
+            set_trace()
             raise ValueError("Invalid combination of specified/unspecified parameters. "
                            "Please ensure exactly 2 parameters are None.")
 
