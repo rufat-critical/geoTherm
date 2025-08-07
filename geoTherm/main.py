@@ -1159,6 +1159,21 @@ class Solution:
 
         return df
 
+    def __getitem__(self, key):
+        """
+        Allow dictionary-style access to dataframe columns.
+        
+        Args:
+            key (str): Column name to retrieve from the dataframe
+            
+        Returns:
+            pandas.Series: The requested column from the dataframe
+            
+        Example:
+            sol['t'] returns sol.dataframe['t']
+        """
+        return self.dataframe[key]
+
     def get_units(self):
         """
         Get the display units for all tracked variables.
@@ -1206,220 +1221,4 @@ class Solution:
         # Save to CSV with UTF-8 BOM encoding for Excel compatibility
         full_df.to_csv(file_path, index=False, header=False,
                        encoding='utf-8-sig')
-
-
-
-class Solution2:
-
-    """
-    Solution class for storing geoTherm Model data in a pandas DataFrame.
-
-    Attributes:
-        model (object): The model object containing nodes with attributes.
-        extras (list): List of additional data to store.
-        df (pd.DataFrame): DataFrame containing the model data.
-    """
-
-    def __init__(self, model, extras=None):
-        """
-        Initializes the Solution object and prepares the DataFrame for
-        storing data.
-
-        Args:
-            model (object): The model containing nodes with attributes.
-            extras (list, optional): List of additional data to store.
-                                     Defaults to an empty list.
-        """
-        self.model = model
-        self.extras = extras if extras is not None else []
-        self.initialize()
-
-    def get_column_units(self):
-        """
-        Retrieves the units for each column in the DataFrame based on the
-        attributes of the nodes and predefined units for performance metrics.
-
-        Returns:
-            units (dict): A dictionary mapping column names to their units.
-        """
-        output_units = gt.units.output_units
-        units = {}
-
-        for column in self.df.columns:
-            # Column represents a node attribute
-            if '.' in column:
-                name, attr = column.split('.')
-                node = self.model.nodes[name]
-                # Special handling for thermo units
-                if attr in ['P', 'T', 'H', 'U', 'S', 'Q', 'density']:
-                    quantity = thermo._units[attr]
-                    units[column] = output_units.get(quantity, '')
-                elif hasattr(node, '_units') and attr in node._units:
-                    quantity = node._units[attr]
-                    units[column] = output_units.get(quantity, '')
-                else:
-                    # Fallback for attributes without associated units
-                    units[column] = ''
-            elif column in ['Wnet', 'Qin']:
-                units[column] = output_units['POWER']
-            else:
-                units[column] = ''
-
-        return units
-
-    def initialize(self):
-        """
-        Initializes the node attributes, prepares the DataFrame with the
-        necessary columns, and pre-allocates resources for efficient data
-        handling.
-        """
-
-        attributes_to_check = [
-            'P', 'T', 'H', 'U', 'density', 'phase', 'w', 'W', 'area', 'Q_in',
-            'Q_out', 'PR', 'N', 'Ns', 'Ds', 'phi', 'psi', 'x', 'xdot',
-        ]
-
-        dtype = {}
-        self.node_attrs = {}
-
-        # Iterate over each node in the model and get the attributes
-        for name, node in self.model.nodes.items():
-            for attr in attributes_to_check:
-                if not hasattr(node, attr):
-                    continue
-
-                attr_val = getattr(node, attr)
-                column = f"{name}.{attr}"
-
-                if isinstance(attr_val, (float, int)):
-                    dtype[column] = 'float64'
-                    self.node_attrs[column] = {
-                        'name': name, 'attr': attr, 'length': None,
-                        'index': None
-                    }
-                elif isinstance(attr_val, str):
-                    dtype[column] = 'str'
-                    self.node_attrs[column] = {
-                        'name': name, 'attr': attr, 'length': None,
-                        'index': None
-                    }
-                elif isinstance(attr_val, np.ndarray):
-                    length = len(attr_val)
-                    for i in range(length):
-                        col_name = f"{column}[{i}]"
-                        dtype[col_name] = 'float64'
-                        self.node_attrs[col_name] = {
-                            'name': name, 'attr': attr, 'index': i
-                        }
-                else:
-                    raise TypeError(
-                        f"Unsupported data type for attribute {attr}"
-                        )
-
-        # Performance metric columns
-        for col in ['Wnet', 'Qin', 'eta']:
-            dtype[col] = 'float64'
-
-        # Store state and xdot for the model
-        for i in range(0, len(self.model.x)):
-            dtype[f'x[{i}]'] = 'float64'
-            dtype[f'xdot[{i}]'] = 'float64'
-
-        for col in self.extras:
-            dtype[col] = 'float64'
-
-        # Initialize the DataFrame and pre-allocate the row data
-        self.df = pd.DataFrame({col: pd.Series(dtype=d)
-                                for col, d in dtype.items()})
-        self.__row = {col: None for col in self.df.columns}
-        # Check what unit system data is being saved in
-        self.unit_system = gt.units.output_units
-
-    def save(self, extras=None):
-        """
-        Saves the current state of the model's nodes, performance metrics,
-        and extras into the DataFrame.
-
-        Args:
-            extras (list, optional): List of extra values to save in the
-                                     DataFrame. Must correspond to
-                                     `self.extras`.
-        """
-        extras = extras if extras is not None else []
-
-        # Reset the pre-allocated row to NaN values
-        self.__row = {key: np.nan for key in self.__row.keys()}
-
-        # Extract data for each node using the pre-determined attributes
-        for column, attr_properties in self.node_attrs.items():
-            node = self.model.nodes[attr_properties['name']]
-            if attr_properties['index']:
-                # Handle array data
-                self.__row[column] = getattr(
-                    node, attr_properties['attr']
-                    )[attr_properties['index']]
-            else:
-                # Handle scalar and string data
-                self.__row[column] = getattr(
-                    node, attr_properties['attr'], np.nan
-                    )
-
-        self.__row['Wnet'] = self.model.performance[0]
-        self.__row['Qin'] = self.model.performance[1]
-        self.__row['eta'] = self.model.performance[2]
-
-        # Store state and xdot for the model
-        x = self.model.x
-        xdot = self.model.xdot
-
-        for i, xi in enumerate(x):
-            self.__row[f'x[{i}]'] = xi
-            self.__row[f'xdot[{i}]'] = xdot[i]
-
-        # Fill in the extras data by index
-        for i, extra in enumerate(self.extras):
-            self.__row[extra] = extras[i]
-
-        self.df = pd.concat([
-            self.df, pd.DataFrame([self.__row], columns=self.df.columns)
-            ],
-            ignore_index=True
-        )
-
-    def __getitem__(self, item):
-        """
-        Allows slicing of the Solution object by column name using the
-        DataFrame's slicing.
-
-        Args:
-            item (str or list of str): The column name(s) to slice.
-
-        Returns:
-            pd.DataFrame or pd.Series: The sliced DataFrame or Series.
-        """
-        return self.df[item]
-
-    def save_csv(self, file_path):
-        """
-        Saves the DataFrame to a CSV file with headers modified to include
-        units.
-
-        Args:
-            file_path (str): The file path where the CSV file will be saved.
-        """
-        # Get the units for each column
-        column_units = self.get_column_units()
-
-        # Modify the headers to include units
-        modified_headers = []
-        for column in self.df.columns:
-            unit = column_units.get(column, '')
-            if unit:
-                modified_header = f"{column} [{unit}]"
-            else:
-                modified_header = column
-            modified_headers.append(modified_header)
-
-        # Save the DataFrame to CSV with modified headers
-        self.df.to_csv(file_path, header=modified_headers, index=False)
 
