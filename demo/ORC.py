@@ -24,32 +24,59 @@ ORC_Turb_PR = 14.28571429
 mdot_ORC = (20, 'kg/s')
 mdot_H2O = (45, 'kg/s')
 
-ORC = gt.Model([gt.Boundary(name='LowT', fluid=ORC_fluid, P=ORC_Pin, T=ORC_Tin),
-                gt.Rotor('ORC_Rotor', N =12007.76906),
-                gt.fixedFlowPump(name='Pump', rotor= 'ORC_Rotor', eta=0.7, PR=20/1.4, w=mdot_ORC, US='LowT', DS='PumpOut', D=.1),
-                gt.Station(name='PumpOut', fluid=ORC_fluid),
-                gt.flow(name='ORC_HEX', US='PumpOut', DS='TurbIn', dP =(0, 'bar'),w=50.232),#, Q=(20, 'MW')),
-                #gt.Qdot(name='ORC_Heat', cool='ORC_HEX', Q=(20 , 'MW')),
-                gt.Heatsistor('ORC_Heat', hot='WaterHEX', cool='ORC_HEX', Q=(31374557.96)),
-                gt.Station(name='TurbIn', fluid=ORC_fluid),
-                gt.Turbine(name='Turb', rotor = 'ORC_Rotor', eta=.9, PR=ORC_Turb_PR, w=mdot_ORC, US='TurbIn', DS='TurbOut',
-                           D=(0.510569758, 'm')),
-                gt.Station(name='TurbOut', fluid=ORC_fluid),
-                gt.simpleHEX(name='CoolHex', US = 'TurbOut', DS = 'LowT', w=mdot_ORC, dP=(0,'bar'))])
 
+# Target for Turbine Inlet
+turbine_inlet = gt.thermo()
+turbine_inlet.TPY = (200, 'degC'), ((1.4+2)*14.2857, 'bar'), ORC_fluid
+
+
+def Q_transfer(hot, cool, model):
+    # Define a function to heat ORC fluid to a pinch of 5 degrees
+    return (turbine_inlet._H - model['PumpOut'].thermo._H)*model['Pump']._w
+    
+
+def Q_reject(hot, cool, model):
+    # Define a function to calculate Q necessary to close cycle
+    return (model['TurbOut'].thermo._H - model['LowT'].thermo._H)*model['Pump']._w
+    
+
+ORC = gt.Model([gt.Boundary(name='LowT', fluid=ORC_fluid, P=ORC_Pin, T=ORC_Tin),
+                gt.FixedFlowPump(name='Pump', eta=0.7, w=mdot_ORC, US='LowT', DS='PumpOut'),
+                gt.Station(name='PumpOut', fluid=ORC_fluid),
+                gt.FixedDP(name='ORC_HEX-Cold', US='PumpOut', DS='TurbIn', dP =(-2, 'bar'),w=50.232),
+                gt.Qdot(name='ORC_Heat', hot='ORC_HEX-Hot', cool='ORC_HEX-Cold', Q=Q_transfer),
+                gt.Station(name='TurbIn', fluid=ORC_fluid),
+                gt.FixedPRTurbine(name='Turb', eta=.9, PR=ORC_Turb_PR, w=mdot_ORC, US='TurbIn', DS='TurbOut'),
+                gt.Station(name='TurbOut', fluid=ORC_fluid),
+                gt.Qdot(name='Reject_Heat', hot='CoolHex-Hot', cool='CoolHex-Cold', Q=Q_reject),
+                gt.FixedDP(name='CoolHex-Hot', US = 'TurbOut', DS = 'LowT', dP=(-2, 'bar'), w=mdot_ORC)])
 
 HOT = gt.Model([gt.Boundary(name='Well', fluid=HOT_fluid, P=HOT_P, T=HOT_T),
-                gt.Rotor('DummyRotor', N =15000),
-              #gt.staticHEX(name='WaterHEX', US='Well', DS='WaterHEXOut',w=mdot_H2O, dP-=(38, 'bar')),#, Q= -ORC['ORC_HEX']._Q, dP =(38, 'bar'),w=50.232),
-              #gt.Qdot(name='ORC_Heat2', cool='WaterHEX', Q=(-21 , 'MW')),
-              gt.fixedFlow(name='WaterHEX', US='Well', DS='WaterHEXOut', dP =(-38, 'bar'),w=mdot_H2O),
-              gt.Station(name='WaterHEXOut', fluid=HOT_fluid),#, P=(2, 'bar'), T=473+5),
-              gt.Outlet(name='Outlet', fluid=HOT_fluid, P=(140, 'bar'), T=500),
-              gt.Pump(name='WaterPump',rotor='DummyRotor', eta=.7,PR=140/2,w=mdot_H2O*20,US='WaterHEXOut',DS='Outlet')])
+              gt.FixedDP(name='ORC_HEX-Hot', US='Well', DS='WaterHEXOut', dP=(-38, 'bar'),w=mdot_H2O),
+              gt.Station(name='WaterHEXOut', fluid=HOT_fluid),
+              gt.FixedFlowPump(name='WaterPump', eta=.7, w=mdot_H2O, US='WaterHEXOut',DS='Outlet'),
+              gt.POutlet(name='Outlet', fluid=HOT_fluid, P=(140, 'bar'), T=300)])
 
 
-combined = gt.Model()
-combined += ORC
-combined += gt.Balance('Turbin_Temp', 'Pump.w', 'TurbIn.T', 470, knob_min=0.5, knob_max=100)
-combined += HOT
-combined.solve_steady()
+Cool = gt.Model([gt.Boundary(name='CoolPumpInlet', fluid='Water', P=(1, 'bar'), T=(20, 'degC')),
+                 gt.FixedFlowPump(name='ChillerPump', eta=0.7, w=mdot_H2O, US='CoolPumpInlet', DS='CoolPumpOutlet'),
+                 gt.Station(name='CoolPumpOutlet', fluid='water'),
+                 gt.FixedDP(name='CoolHex-Cold', US='CoolPumpOutlet', DS = 'CoolHexOutlet', dP = (-2, 'bar')),
+                 gt.Station(name='CoolHexOutlet', fluid='water'),
+                 gt.FixedDP(name='AirCooler', US='CoolHexOutlet', DS='CoolPumpInlet', dP=(-2,'bar'))])
+                 
+# Combine the models
+ORC += HOT
+ORC += Cool
+
+# Solve the models
+ORC.solve_steady()
+
+# Change output units to mixed
+gt.units.output='mixed'
+
+# Draw the model network
+ORC.draw()
+
+# Show report
+gt.print_model_tables(ORC)
