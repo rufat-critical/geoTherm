@@ -136,6 +136,7 @@ class ENGLISH:
         'FLOWCOEFFICIENT': 'gal/min/psi**(0.5)',
     }
 
+
 @dataclass
 class ENGLISHFT:
     """
@@ -185,7 +186,6 @@ class ENGLISHFT:
     }
 
 
-
 @dataclass
 class MIXED:
     """
@@ -208,6 +208,54 @@ class MIXED:
         'MASSFLUX': 'kg/s/m**2',           # Kilogram per second per square
                                            # meter
         'POWER': 'MW',                     # Kilowatt
+        'PRESSURE': 'bar',                 # Bar
+        'SPECIFICENERGY': 'kJ/kg',         # Kilojoule per kilogram
+        'SPECIFICENTROPY': 'kJ/kg/degK',   # Kilojoule per kilogram per Kelvin
+        'SPECIFICHEAT': 'kJ/kg/K',         # Kilojoule per kilogram per Kelvin
+        'SPECIFICPOWER': 'MW/kg',          # Megawatt per kilogram
+        'TEMPERATURE': 'degC',             # Celsius
+        'VELOCITY': 'm/s',                 # Meter per second
+        'VISCOSITY': 'Pa*s',               # Pascal-second
+        'KINEMATICVISCOSITY': 'm**2/s',    # Square meter per second
+        'CONDUCTIVITY': 'W/m/K',           # Watt per meter-Kelvin
+        'VOLUME': 'in**3',                 # Cubic inch
+        'THERMALRESISTANCE': 'degK/W',     # Kelvin per Watt
+        'CONVECTION': 'W/m**2/degK',       # Watt per square meter per Kelvin
+        'VOLUMETRICFLOW': 'gallons/min',        # Cubic meter per second
+        'SPECIFICSPEED': 'rpm*(m**3/s)**(0.5)/(J/kg)**0.75',
+        'SPECIFICDIAMETER': 'm*(J/kg)**(1/4)/(m**3/s)**(0.5)',
+        'ROTATIONSPEED': 'rpm',            # Revolutions per minute
+        'SURFACETENSION': 'N/m',
+        'INERTANCE': 'm**-3',
+        'GASCONSTANT': 'J/kmol/K',
+        'RPM': 'rpm',
+        'ANGLE': 'deg',
+        'FLOWCOEFFICIENT': 'gal/min/psi**(0.5)',
+    }
+
+
+@dataclass
+class DEMO_UNITS:
+    """
+    Mixed Units Class
+
+    This class defines a mix of SI and English units used for various
+    physical quantities.
+    """
+    units = {
+        'AREA': 'in**2',                   # Square inch
+        'DENSITY': 'kg/m**3',              # Kilogram per cubic meter
+        'SPECIFICVOLUME': 'm**3/kg',       # Cubic meter per kilogram
+        'ENERGY': 'kJ',                    # Megajoule
+        'LENGTH': 'in',                    # Inch
+        '1/LENGTH': 'in**-1',               # Reciprocal inch
+        'MASS': 'kg',                      # Pound
+        'MOLARMASS': 'kg/kmol',
+        'MASSFLOW': 'kg/s',                # Kilogram per second
+        'MASSFLOWDERIV': 'kg/s**2',        # Kilogram per second squared
+        'MASSFLUX': 'kg/s/m**2',           # Kilogram per second per square
+                                           # meter
+        'POWER': 'kW',                     # Kilowatt
         'PRESSURE': 'bar',                 # Bar
         'SPECIFICENERGY': 'kJ/kg',         # Kilojoule per kilogram
         'SPECIFICENTROPY': 'kJ/kg/degK',   # Kilojoule per kilogram per Kelvin

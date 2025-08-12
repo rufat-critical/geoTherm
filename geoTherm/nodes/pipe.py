@@ -18,8 +18,10 @@ from geoTherm.pressure_drop.pressure_drop import PressureDrop
 class BasePipe(baseInertantFlow, GeometryProperties):
 
     _displayVars = ['w', 'dP', 'dH']
-    _units = {**GeometryProperties._units, **{
-        'w': 'MASSFLOW', 'U': 'VELOCITY'}}
+    _units = {**baseInertantFlow._units,
+              **GeometryProperties._units,
+              **{
+                  'U': 'VELOCITY', 'dP': 'PRESSURE'}}
     _bounds = [-1e5, 1e5]
 
     @inputParser
@@ -116,14 +118,9 @@ class FixedDP(BasePipe):
 
 class Pipe(BasePipe):
     _displayVars = ['w', 'dP', 'dH', 'geometry']
-    _units = {**GeometryProperties._units, **{
-        'w': 'MASSFLOW', 'U': 'VELOCITY', 'dP_head': 'PRESSURE'
-    }
-    }
-    #_units = {'D': 'LENGTH', 'L': 'LENGTH', 'w': 'MASSFLOW',
-    #          'roughness': 'LENGTH', 'dP': 'PRESSURE',
-    #          'Q': 'POWER', 'dH': 'SPECIFICENERGY',
-    #          'U': 'VELOCITY'}
+    _units = {**BasePipe._units,
+              **{
+                  'dP_head': 'PRESSURE'}}
 
     _bounds = [-1e5, 1e5]
 

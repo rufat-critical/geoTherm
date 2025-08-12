@@ -9,6 +9,7 @@ from scipy.interpolate import CloughTocher2DInterpolator
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize_scalar
 import pandas as pd
+import inspect
 
 # Get Machine precision
 eps = np.finfo(float).eps
@@ -1134,6 +1135,39 @@ class TurbineInterpolator:
 
         return optimal_temp, max_efficiency
 
+def validate_function_signature(func, expected_params, func_name="function"):
+    """
+    Validate that a callable function has the expected parameters.
+    
+    Args:
+        func: The callable function to validate
+        expected_params (set): Set of expected parameter names
+        func_name (str): Name of the function for error messages
+    
+    Returns:
+        bool: True if validation passes
+        
+    Raises:
+        ValueError: If required parameters are missing
+    """
+    if not callable(func):
+        raise ValueError(f"{func_name} must be callable")
+    
+    sig = inspect.signature(func)
+    actual_params = set(sig.parameters.keys())
+    
+    # Check for missing parameters
+    missing_params = expected_params - actual_params
+    if missing_params:
+        raise ValueError(f"{func_name} missing required parameters: {missing_params}")
+    
+    # Optional: Check for unexpected parameters
+    unexpected_params = actual_params - expected_params
+    if unexpected_params:
+        logger.warn(f"{func_name} has unexpected parameters: {unexpected_params}")
+    
+    return True
+
 
 # User defined function
 class UserDefinedFunction:
@@ -1159,6 +1193,8 @@ class UserDefinedFunction:
         result = udf.evaluate(upstream_node, mass_flow)  # Returns calculated value
     """
 
+    parameters = ['US', 'w', 'model']
+
     def __init__(self, value):
         """
         Initialize the UserDefinedFunction.
@@ -1168,6 +1204,23 @@ class UserDefinedFunction:
         """
         self._func = None
         self.set_func(value)
+
+    def _validate_func_signature(self, func):
+        """Validate the function signature."""
+
+        sig = inspect.signature(func)
+        actual_params = set(sig.parameters.keys())
+        # Check for missing parameters
+        missing_params = self.parameters - actual_params
+        if missing_params:
+            raise ValueError(f"Missing required parameters for {func.__name__}: {missing_params}")
+
+        # Check for unexpected parameters
+        unexpected_params = actual_params - self.parameters
+        if unexpected_params:
+            logger.warn(f"Unexpected parameters for {func.__name__}: {unexpected_params}")
+        return True
+
 
     def set_func(self, val):
         """
@@ -1183,13 +1236,20 @@ class UserDefinedFunction:
             Critical log message if val is neither numeric nor callable
         """
         if isinstance(val, (int, float)):
-            # Create a lambda that ignores arguments and returns the constant value
-            self._func = lambda US, w, model=None, val=val: val
+            # Create a lambda that accepts any arguments and returns the constant value
+            def constant_func(*args, **kwargs):
+                return val
+            self._func = constant_func
         elif callable(val):
             # Use the callable directly
+            self._validate_func_signature(val)
             self._func = val
         else:
-            logger.critical("Value must be numeric or callable.")
+            try:
+                self.set_func(float(val))
+            except:
+                logger.critical(
+                    f"Value must be numeric or callable. Got {type(val)}")
 
     def evaluate(self, *args, **kwargs):
         """
@@ -1207,6 +1267,10 @@ class UserDefinedFunction:
     @property
     def _state(self):
         return {'func': self._func}
+
+
+
+
 
 
 class ThermalUserDefinedFunction(UserDefinedFunction):
@@ -1254,3 +1318,4 @@ class ThermalUserDefinedFunction(UserDefinedFunction):
             self._func = val
         else:
             logger.critical("Value must be numeric or callable.")
+

@@ -241,15 +241,13 @@ class Model(modelTable):
         # Generate node_map
         self.node_map = self._generatenode_map()
 
-        # Loop thru nodes and call initialization method if defined
+        # Loop thru nodes and call initialization method
         for name, node in self.nodes.items():
-            if hasattr(node, 'initialize'):
-                node.initialize(self)
+            node.initialize(self)
 
         # Loop thru nodes and call evlauate method
         for name, node in self.nodes.items():
-            if hasattr(node, 'evaluate'):
-                node.evaluate()
+            node.evaluate()
 
         # Identify stateful components
         for name, node in self.nodes.items():

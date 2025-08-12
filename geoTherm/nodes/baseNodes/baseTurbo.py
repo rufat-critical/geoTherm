@@ -4,6 +4,22 @@ from ...units import inputParser, addQuantityProperty
 from ...logger import logger
 from ...thermostate import thermo
 from abc import ABC, abstractmethod
+from ...utils import UserDefinedFunction
+
+
+class EtaFunction(UserDefinedFunction):
+    """
+    A specialized UserDefinedFunction for efficiency calculations.
+    """
+    parameters = {'US_thermo', 'Pe', 'model'}
+
+
+class EtaRotorFunction(UserDefinedFunction):
+    """
+    A specialized UserDefinedFunction for efficiency calculations that
+    includes the rotor speed.
+    """
+    parameters = {'US_thermo', 'Pe', 'N', 'model'}
 
 
 @addQuantityProperty
@@ -23,6 +39,12 @@ class baseTurbo(baseFlow, ABC):
     }
 
     _displayVars = ['w', 'eta', 'dH_is', 'dH', 'W', 'PR']
+
+    def __init__(self, name, US, DS, eta):
+
+        super().__init__(name=name,
+                         US=US, DS=DS)
+        self.eta = eta
 
     @property
     @abstractmethod
@@ -53,6 +75,44 @@ class baseTurbo(baseFlow, ABC):
         super().initialize(model)
 
         self._ref_thermo = thermo.from_state(model.nodes[self.US].thermo.state)
+
+    @property
+    def eta(self):
+        return self.eta_func.evaluate(self.US_node.thermo,
+                                      self.DS_node.thermo._P,
+                                      self.model)
+
+    @eta.setter
+    def eta(self, value):
+        self.eta_func = EtaFunction(value)
+
+
+class baseTurbo_Rotor(baseTurbo):
+    """ Base Class for Turbomachinery with a Rotor"""
+
+    def __init__(self, name, US, DS, eta, rotor):
+        super().__init__(name=name,
+                         US=US, DS=DS,
+                         eta=eta)
+        self.rotor = rotor
+
+    def initialize(self, model):
+        # Initialize the base class
+        super().initialize(model)
+
+        # Attach the rotor node
+        self.rotor_node = model.nodes[self.rotor]
+
+    @property
+    def eta(self):
+        return self.eta_func.evaluate(self.US_node.thermo,
+                                      self.DS_node.thermo._P,
+                                      self.rotor_node.N,
+                                      self.model)
+    @eta.setter
+    def eta(self, value):
+        self.eta_func = EtaRotorFunction(value)
+
 
 class fixedPressureRatioTurbo(baseInertantFlow, baseTurbo):
     """Base class for turbomachinery (pumps/compressors) with a fixed pressure ratio.
@@ -317,40 +377,7 @@ class pumpParameters(turboParameters):
                    / (9.81*self.US_node.thermo._density))**0.75)
 
 
-class turbineParameters(turboParameters):
 
-    _units = turboParameters._units | {'NPSP': 'PRESSURE',
-                                       'u_tip': 'VELOCITY'}
-
-    @property
-    def phi(self):
-        return self._Q_out/(self._D**2*self._U_tip)
-
-    @property
-    def psi(self):
-
-        dH = self._get_dH()
-
-        return -dH/self._U_tip**2
-
-    @property
-    def _Ns(self):
-        """ Turbine Specific Speed Dimensional in SI """
-        return self.rotor_node.N*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
-
-    @property
-    def ns(self):
-        """ Turbine Specific Speed Dimensionless """
-        return self.rotor_node.Nrad*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
-
-    @property
-    def _Ds(self):
-        """ Turbine Specific Diameter"""
-        return self._D/np.sqrt(self._Q_out)*(-self._dH_is)**0.25
-
-    @property
-    def AN2(self):
-        return self.rotor_node.N**2*self._Q_out
 
 
 class TurboSizer(Turbo):

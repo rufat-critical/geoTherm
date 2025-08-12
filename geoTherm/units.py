@@ -345,7 +345,6 @@ def parse_state_dict(state_dict):
     return state
 
 
-
 def output_converter(quantity):
     """
     A decorator that converts the output of a function from SI units to the

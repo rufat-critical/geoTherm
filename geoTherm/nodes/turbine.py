@@ -1,7 +1,8 @@
 import numpy as np
-from .baseNodes.baseTurbo import Turbo, TurboSizer, turbineParameters, baseTurbo
+from .baseNodes.baseTurbo import Turbo, TurboSizer, turboParameters, baseTurbo, baseTurbo_Rotor
+from .baseNodes.baseFlow import baseFlowResistor
 from ..units import addQuantityProperty, inputParser
-from ..utils import turb_axial_eta, turb_radial_eta, eps
+from ..utils import turb_axial_eta, turb_radial_eta
 from ..flow_funcs import _dH_isentropic
 from scipy.optimize import fsolve
 from .baseNodes.baseFlow import baseInertantFlow
@@ -10,6 +11,44 @@ from scipy.optimize import root_scalar
 from ..logger import logger
 from .flowDevices import fixedFlow
 from ..decorators import state_dict
+from geoTherm.nodes.baseNodes.baseFlow import baseFlow
+
+
+class turbineParameters(turboParameters):
+
+    _units = turboParameters._units | {'NPSP': 'PRESSURE',
+                                       'u_tip': 'VELOCITY'}
+
+    @property
+    def phi(self):
+        return self._Q_out/(self._D**2*self._U_tip)
+
+    @property
+    def psi(self):
+
+        dH = self._get_dH()
+
+        return -dH/self._U_tip**2
+
+    @property
+    def _Ns(self):
+        """ Turbine Specific Speed Dimensional in SI """
+        return self.rotor_node.N*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
+
+    @property
+    def ns(self):
+        """ Turbine Specific Speed Dimensionless """
+        return self.rotor_node.Nrad*np.sqrt(self._Q_out)/(-self._dH_is)**(0.75)
+
+    @property
+    def _Ds(self):
+        """ Turbine Specific Diameter"""
+        return self._D/np.sqrt(self._Q_out)*(-self._dH_is)**0.25
+
+    @property
+    def AN2(self):
+        return self.rotor_node.N**2*self._Q_out
+
 
 @addQuantityProperty
 class baseTurbine(baseTurbo, turbineParameters):
@@ -38,7 +77,58 @@ class baseTurbine(baseTurbo, turbineParameters):
 
 
 @addQuantityProperty
-class chokedTurbine(baseTurbo):
+class baseTurbine_Rotor(baseTurbine, baseTurbo_Rotor):
+    pass
+
+
+class CdATurbine(baseTurbine_Rotor, baseFlowResistor):
+
+    def __init__(self, name, US, DS, rotor, eta, cdA, flow_func='isen'):
+        super().__init__(name=name,
+                         US=US, DS=DS,
+                         rotor=rotor,
+                         eta=eta)
+        self.flow = FlowModel(flow_func, cdA)
+
+    def get_outlet_state(self, US, *, w=None, PR=None):
+
+        if w is not None:
+            dP, error = self.flow._dP(US, w)
+        else:
+            dP = -US._P * (1 - PR)
+
+        if dP is None:
+            dP = -1e9
+
+        dH_is = _dH_isentropic(US, US._P + dP)
+        dH = dH_is*self.eta_func.evaluate(US,
+                                          US._P + dP,
+                                          self.rotor_node.N,
+                                          self.model)
+
+        return {'P': US._P + dP, 'H': US._H + dH}
+
+
+class TurbineMap(baseTurbine_Rotor):
+
+    def __init__(self, name, US, DS, rotor, map):
+
+        self.map = map
+        super().__init__(name, US, DS, rotor, eta=map.eta_func)
+
+    def get_outlet_state(self, US, *, w=None, PR=None):
+
+        from pdb import set_trace
+        set_trace()
+
+        self.eta = self.map.get_eta_ts(US._P, US._T, US._P*PR, self.rotor_node.N)
+
+        return super().get_outlet_state(US, w, PR)
+
+
+
+@addQuantityProperty
+class chokedTurbine(baseTurbine):
 
     _displayVars = ['w', 'eta_ts', 'dH_is', 'dH', 'W', 'PR']
 
@@ -63,15 +153,10 @@ class chokedTurbine(baseTurbo):
         # Create thermo for outlet static state
         self.static = self.US_node.thermo.from_state(self.US_node.thermo.state)
 
-    @property
-    def _dH(self):
-        return self._dH_is*self.eta
-    
-
     def evaluate(self):
 
         US, DS, flow_sign = self.thermostates()
-        
+
         # Calculate mass flow rate using flow model
         self._w = self.flow._w(US, DS)*flow_sign
 
@@ -110,12 +195,7 @@ class chokedTurbine(baseTurbo):
         self.eta = (US._H - self.static._H)/(-self.flow._dH(US, DS._P))
         self.eta_ts = (US._H - self.total._H)/(-self.flow._dH(US, DS._P))
 
-    @property
-    def _dH_is(self):
 
-        US, DS, _ = self.thermostates()
-        return self.flow._dH(US, DS._P)
-    
     @property
     def _dH_is_tot(self):
         US, DS, _ = self.thermostates()
@@ -231,7 +311,8 @@ class FixedFlowTurbine(baseTurbine, fixedFlow):
     _displayVars = ['w', 'eta', 'dH', 'W', 'PR']
     _bounds = [0, 1]
 
-    def __init__(self, name, US, DS, w, eta, flow_func='isentropic'):
+    @inputParser
+    def __init__(self, name, US, DS, w:'MASSFLOW', eta):
         """
         Initialize the fixed flow turbine.
 
@@ -243,8 +324,15 @@ class FixedFlowTurbine(baseTurbine, fixedFlow):
             eta (float): The isentropic efficiency.
             flow_func (str): The flow function to use.
         """
-        super().__init__(name, US, DS, w, flow_func=flow_func)
+
+        # Call baseFlow constructor first (the common ancestor)
+        baseFlow.__init__(self, name, US, DS)
+
+        # Manually set what baseTurbine.__init__ would set
         self.eta = eta
+        # Set the mass flow rate
+        self._w = w
+
 
     @state_dict
     def _state_dict(self):
@@ -269,29 +357,40 @@ class FixedFlowTurbine(baseTurbine, fixedFlow):
 
 from geoTherm.utils import TurbineInterpolator
 
+
 class TurbineMap(FixedFlowTurbine):
 
-    def __init__(self, name, US, DS, map, flow_func='isentropic'):
+    def __init__(self, name, US, DS, rotor, map, flow_func='isentropic'):
 
         super().__init__(name, US, DS,w=0,eta=1, flow_func=flow_func)
 
+        self.rotor = rotor
         self.map = map
+
+    def initialize(self, model):
+        super().initialize(model)
+
+        self.rotor_node = self.model.nodes[self.rotor]
 
     def evaluate(self):
         self._w = self.map.get_massflow(self.US_node.thermo._P,
                                         self.US_node.thermo._T,
-                                        self.DS_node.thermo._P)
+                                        self.DS_node.thermo._P,
+                                        self.rotor_node.N)
         self.eta = self.map.get_eta_ts(self.US_node.thermo._P,
                                        self.US_node.thermo._T,
-                                       self.DS_node.thermo._P)
+                                       self.DS_node.thermo._P,
+                                       self.rotor_node.N)
 
-    def get_outlet_state(self, US, PR):
+    def get_outlet_state(self, US, *, w=None, PR=None):
         self._w = self.map.get_massflow(US._P,
                                         US._T,
-                                        US._P*PR)
+                                        US._P*PR,
+                                        self.rotor_node.N)
         self.eta = self.map.get_eta_ts(US._P,
                                        US._T,
-                                       US._P*PR)
+                                       US._P*PR,
+                                       self.rotor_node.N)
 
         return {'P': US._P*PR, 'H': US._H + self._dH}
 
@@ -323,6 +422,7 @@ class FixedFlowTurbineMap(baseTurbine, fixedFlow):
     def _state_dict(self):
         return {'eta_map': self.eta_map.csv_file}
 
+
 class FixedPRTurbine(baseInertantFlow, baseTurbine):
 
     _bounds = [0, 1e5]
@@ -331,9 +431,10 @@ class FixedPRTurbine(baseInertantFlow, baseTurbine):
 
     _displayVars = ['w', 'PR', 'dP', 'dH', 'W']
 
+    @inputParser
     def __init__(self, name, US, DS, PR,
-                 w,
-                 eta=1.0, Z=(1, 'm**-3')):
+                 w:'MASSFLOW',
+                 eta=1.0, Z:'INERTANCE'=1):
         """Initialize pressure ratio controlled turbomachine.
 
         Args:
@@ -346,9 +447,13 @@ class FixedPRTurbine(baseInertantFlow, baseTurbine):
             eta: Isentropic efficiency
             Z: Flow inertance
         """
-        super().__init__(name=name, US=US, DS=DS, w=w, Z=Z)
-        self.PR_setpoint = PR
+        # Call baseInertantFlow constructor first
+        baseFlow.__init__(self, name=name, US=US, DS=DS)
+        self._w = w
+        self._Z = Z
+        # Set eta manually (don't call baseTurbo.__init__ to avoid conflicts)
         self.eta = eta
+        self.PR_setpoint = PR
 
     def get_outlet_state(self, US, *, w=None, PR=None):
         """Calculate outlet state based on pressure ratio."""

@@ -455,13 +455,9 @@ class baseFlowResistor(baseFlow):
             float: Maximum mass flow rate.
         """
 
-        if US.phase in ['two-phase']:
-            from pdb import set_trace
-            set_trace()
         return self.flow._w_max(US)
 
     def evaluate(self):
-
         # Get US, DS Thermo
         US, DS, flow_sign = self.thermostates()
         self._w = self.flow._w(US, DS)*flow_sign

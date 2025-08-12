@@ -52,10 +52,9 @@ class InertantResistor(baseInertantFlow):
 
         if dP is None:
             dP = -1e9
-            
+
         return {'P': US._P + dP, 'H': US._H}
 
-    
     def get_outlet_state_PR(self, US, PR):
         from pdb import set_trace
         set_trace()
@@ -65,6 +64,7 @@ class InertantResistor(baseInertantFlow):
         set_trace()
 
         return self.flow._w_max(US, DS)
+
 
 @addQuantityProperty
 class FixedFlowResistor(FixedFlow):

@@ -1,7 +1,7 @@
 from .baseNodes.baseTurbo import Turbo, pumpParameters, baseTurbo, fixedPressureRatioTurbo, turboParameters
-from .baseNodes.baseFlow import baseInertantFlow, FixedFlow
+from .baseNodes.baseFlow import baseInertantFlow, FixedFlow, baseFlow
 #from .flowDevices import fixedFlow
-from ..units import addQuantityProperty
+from ..units import addQuantityProperty, inputParser
 from ..utils import pump_eta
 from ..flow_funcs import _dH_isentropic
 from ..logger import logger
@@ -44,7 +44,13 @@ class basePump(baseTurbo, turboParameters):
 
 @addQuantityProperty
 class baseInertantPump(basePump, baseInertantFlow):
-    pass
+    
+    @inputParser
+    def __init__(self, name, US, DS, w,
+                 Z:'INERTANCE'=(1, 'm**-3')):
+        super().__init__(name, US, DS, w)
+        self._Z = Z
+
 
 
 @addQuantityProperty
@@ -52,6 +58,7 @@ class Pump(baseInertantPump):
 
     def __init__(self, name, US, DS, rotor, w, eta, PumpMap,
                  Z:'INERTANCE'=(1, 'm**-3')):   # noqa
+        
         super().__init__(name, US, DS, w, Z)
         self.rotor = rotor
         self.eta = eta
@@ -105,9 +112,15 @@ class FixedFlowPump(basePump, FixedFlow):
     _displayVars = ['w', 'eta', 'dH', 'W', 'PR']
     _bounds = [1, 100]
 
-    def __init__(self, name, US, DS, w, eta):
-        super().__init__(name, US, DS, w)
+    @inputParser
+    def __init__(self, name, US, DS, w:'MASSFLOW', eta):
+
+        baseFlow.__init__(self, name, US, DS)
+
+        # Manually set what basePump.__init__ would set
         self.eta = eta
+        # Set the mass flow rate
+        self._w = w
 
     @state_dict
     def _state_dict(self):
