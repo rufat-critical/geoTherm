@@ -1193,7 +1193,7 @@ class UserDefinedFunction:
         result = udf.evaluate(upstream_node, mass_flow)  # Returns calculated value
     """
 
-    parameters = ['US', 'w', 'model']
+    parameters = {'US', 'w', 'model'}
 
     def __init__(self, value):
         """
@@ -1267,10 +1267,6 @@ class UserDefinedFunction:
     @property
     def _state(self):
         return {'func': self._func}
-
-
-
-
 
 
 class ThermalUserDefinedFunction(UserDefinedFunction):

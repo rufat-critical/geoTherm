@@ -74,6 +74,8 @@ class baseFlow(Node, ABC):
         super().initialize(model)
         node_map = self.model.node_map[self.name]
 
+
+
         # Validate upstream and downstream connections
         if len(node_map['US']) != 1 or len(node_map['DS']) != 1:
             logger.critical(
@@ -376,22 +378,6 @@ class baseInertantFlow(baseFlow):
             return self.DS_node.thermo, self.US_node.thermo, -1
 
 
-    def _set_flow(self, w):
-        """
-        Set the flow rate and get outlet state.
-
-        Args:
-            w (float): Flow rate.
-
-        Returns:
-            tuple: Downstream node name and downstream state.
-        """
-
-        self._w = w
-
-        return False
-
-
 class baseFlowResistor(baseFlow):
     """Base class for a flow node that calculates flow in between stations."""
 
@@ -517,9 +503,20 @@ class FixedFlow(baseFlow):
     """
 
     @inputParser
-    def __init__(self, name, US, DS, w:'MASSFLOW'):
+    def __init__(self, name, US, DS, w:'MASSFLOW',
+                 controller=None):
         super().__init__(name, US, DS)
         self._w = w
+        self.controller = controller
+
+    def initialize(self, model):
+        super().initialize(model)
+        if self.controller is not None:
+            self.control_node = model.nodes[self.controller]
+
+    def evaluate(self):
+        if self.controller is not None:
+            self._w = self.control_node._w
 
     def thermostates(self):
         if self._w > 0:
@@ -543,4 +540,5 @@ class FixedFlow(baseFlow):
 
     @state_dict
     def _state_dict(self):
-        return {'w': (self.w, units.output_units['MASSFLOW'])}
+        return {'w': (self.w, units.output_units['MASSFLOW']),
+                'controller': self.controller}

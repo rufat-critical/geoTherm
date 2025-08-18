@@ -702,7 +702,6 @@ class Model(modelTable):
                 us_thermo = self.nodes[self.node_map[name]['US'][0]].thermo
                 H_in += flow_node._w * us_thermo._H
                 W_in += flow_node._w * flow_node._dH
-
         # Check downstream branches for backflow
         for name in node_map['DS']:
             flow_node = self.nodes[name]

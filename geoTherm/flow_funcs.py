@@ -943,128 +943,7 @@ class flow_func:
         elif self.flow_func == 'comp':
             return _w_comp(US_thermo, DS_thermo)
 
-class OneDflow:
 
-    def __init__(self, flow_type):
-        self.flow_type = flow_type
-
-    
-    def totalInlet_mass(self, total_state, w_flux, dP, dHt):
-        
-        inlet = _total_to_static(total_state, w_flux)
-        outlet = total_state.from_state(total_state.state)
-
-        Pe = inlet._P - dP
-        Hte = total_state._H - dHt
-
-        def find_outlet(S):
-            outlet._SP = inlet._S*S, Pe
-            
-            return Hte - (outlet._H+.5*(w_flux/outlet._density)**2)
-
-        
-        S = root_scalar(find_outlet, method='brentq', bracket = [.9, 1.5]).root
-        outlet._SP = inlet._S*S, Pe
-
-        from pdb import set_trace
-        set_trace()
-    
-
-
-
-
-    def totalInlet_mass2(self, total_state, Min, dP, dHt):
-        
-
-        #static_inlet = total_to_static_Mach(total_state, Min)
-
-        #PR = perfect_ratio_from_Mach(.6, 1.4, 'PR')
-
-        static_inlet = total_state.from_state(total_state.state)
-        static_inlet._SP = total_state._S, PR*total_state._P
-       # U = static_inlet.sound_speed*.6
-
-        #w_flux = static_inlet._density*U
-
-        #dP = 45/3*.02*static_inlet.
-        
-        from pdb import set_trace
-        set_trace()
-
-
-        dP2 = static_inlet._P - dP
-        dHT2 = total_state._H - dHt
-
-        outlet = total_state.from_state(total_state.state)
-        S1 = outlet._S
-        H2 = total_state._H - dHt
-
-        outlet._SP = S1*1.007035, dP2
-
-        outlet_total = _static_to_total(outlet, w_flux)
-
-        print(outlet_total._H -H2)
-
-        from pdb import set_trace
-        set_trace()
-
-
-def cdA(total_state, w, flow_func):
-
-    if flow_func == 'isentropic':
-        return _cdA_isen(total_state, w)
-    elif flow_func == 'incomp':
-        return _cdA_incomp(total_state, w)
-    else:
-        from pdb import set_trace
-        set_trace()
-
-
-def _cdA_isen(total_state, w):
-    return 1
-
-def _cdA_incomp(total_state, w):
-    return 1
-
-def _cdA_comp(total_state, static_state, w):
-    """Calculate discharge coefficient * area for compressible flow.
-
-    Args:
-        total_state: Upstream total (stagnation) state
-        static_state: Downstream static state
-        w: Mass flow rate [kg/s]
-
-    Returns:
-        float: Discharge coefficient * area [m²]
-    """
-    # Get fluid properties
-    R = total_state.gas_constant
-    gamma = total_state.gamma
-    P_t = total_state._P
-    T_t = total_state._T
-    P_s = static_state._P
-
-    # Calculate pressure ratio and critical pressure ratio
-    PR = P_s/P_t
-    PR_crit = (2/(gamma + 1))**(gamma/(gamma-1))
-
-    if PR > PR_crit:
-        # Subsonic flow
-        G = P_t * np.sqrt(
-            (2*gamma/(R*T_t*(gamma-1))) * 
-            (PR**(2/gamma) - PR**((gamma+1)/gamma))
-        )
-    else:
-        # Flow is choked
-        G = P_t * np.sqrt(
-            gamma/(R*T_t) * 
-            (2/(gamma+1))**((gamma+1)/(gamma-1))
-        )
-
-    # Calculate required cdA
-    cdA = w/G
-
-    return cdA
 
 
 class baseFlow:
@@ -1100,6 +979,9 @@ class baseFlow:
 
 class IncompressibleFlow(baseFlow):
 
+    def __init__(self, cdA):
+        self._cdA = cdA
+
     @classmethod
     def _w_flux(cls, total, static):
         """
@@ -1125,6 +1007,9 @@ class IncompressibleFlow(baseFlow):
         # Orifice flow equation: w/cdA = sqrt(2 * rho * dP)
         return flow_sign * np.sqrt(2 * US._density * dP)
 
+    def _w(self, total, static):
+        return self._w_flux(total, static) * self._cdA
+
     @classmethod
     def _w_flux_max(cls, total, w_flux, static=None):
         return 1e9
@@ -1145,22 +1030,23 @@ class IncompressibleFlow(baseFlow):
         # dH_inc = dP/rho
         return (Pout - total._P) / total._density
 
-    @classmethod
-    def _dP(cls, total, w_flux, static=None):
+    def _dP(self, total, w):
         """Calculate pressure drop for incompressible flow.
 
         Args:
             total (thermo): Total state
             w_flux (float): Mass flux [kg/s/m²]
-            static (thermo, optional): Static state
 
         Returns:
             float: Pressure drop [Pa]
         """
-        return -w_flux**2/(2*total._density), None
+        return -(w/self._cdA)**2/(2*total._density), None
 
 
 class PerfectGasFlow(baseFlow):
+
+    def __init__(self, cdA):
+        self._cdA = cdA
 
     @staticmethod
     def critical_PR(gamma):
@@ -1236,6 +1122,31 @@ class PerfectGasFlow(baseFlow):
             (PR ** (2. / gamma) - PR ** ((gamma + 1.) / gamma))
         )
 
+    def _w(self, total, static):
+        return self._w_flux(total, static) * self._cdA
+
+    @classmethod
+    def _w_flux_max(cls, total):
+        """Calculate maximum mass flux for compressible flow.
+
+        Args:
+            total (thermo): Total state
+
+        Returns:
+            float: Maximum mass flux [kg/s/m²]
+        """ 
+
+        # Get Static Density
+        D = cls.D_ratio(1, total.gamma)*total._density
+        # Get Sound Ratio
+        a = cls.sound_ratio(1, total.gamma)*total._sound
+
+        return D*a
+
+    def _w_max(self, total):
+        return self._w_flux_max(total) * self._cdA
+
+
     @classmethod
     def _dH(cls, total_state, Pout):
         """Calculate enthalpy change for compressible flow.
@@ -1271,23 +1182,7 @@ class PerfectGasFlow(baseFlow):
 
         return total._P*(cls.P_ratio(M, total.gamma) - 1), None
 
-    @classmethod
-    def _w_flux_max(cls, total):
-        """Calculate maximum mass flux for compressible flow.
 
-        Args:
-            total (thermo): Total state
-
-        Returns:
-            float: Maximum mass flux [kg/s/m²]
-        """ 
-
-        # Get Static Density
-        D = cls.D_ratio(1, total.gamma)*total._density
-        # Get Sound Ratio
-        a = cls.sound_ratio(1, total.gamma)*total._sound
-
-        return D*a
 
     @classmethod
     def P_ratio(cls, M, gamma):
@@ -1329,6 +1224,95 @@ class PerfectGasFlow(baseFlow):
 
 class IsentropicFlow(baseFlow):
     """Class for isentropic compressible flow calculations."""
+
+    def __init__(self, cdA):
+        self._cdA = cdA
+        self.ref_thermo = None
+
+    @classmethod
+    def _w_flux(cls, total, static, thermo_obj=None):
+        """Calculate isentropic mass flux between two states.
+
+        Args:
+            total (thermo): Total (stagnation) state
+            static (thermo): Static state
+
+        Returns:
+            float: Mass flux [kg/s/m²]
+        """
+        # Determine flow direction
+        if total._P >= static._P:
+            upstream, downstream, flow_sign = total, static, 1
+        else:
+            upstream, downstream, flow_sign = static, total, -1
+
+        # Get critical pressure ratio
+        PR_crit = cls.critical_PR_from_total(total, thermo_obj)
+
+        if PR_crit >= downstream._P/upstream._P:
+            return cls._w_flux_max(upstream, thermo_obj) * flow_sign
+
+        # Calculate isentropic outlet state
+        outlet = thermo.from_state(upstream.state)
+        outlet._SP = upstream._S, downstream._P
+
+        # Calculate velocity from enthalpy change
+        dH = upstream._H - outlet._H
+        velocity = np.sqrt(2 * np.max([dH, 0]))
+
+        return outlet._density * velocity * flow_sign
+
+    def _w(self, total, static, *args, **kwargs):
+
+        if self.ref_thermo is None:
+            self.ref_thermo = thermo.from_state(total.state)
+
+        return self._w_flux(total, static, self.ref_thermo) * self._cdA
+
+    @classmethod
+    def _w_flux_max(cls, total, static=None):
+        """Calculate maximum (choked) mass flux.
+
+        Args:
+            total (thermo): Total state
+            static (thermo, optional): Static state for calculations
+
+        Returns:
+            float: Maximum mass flux [kg/s/m²]
+        """
+
+        if total.phase == 'INCOMPRESSIBLE':
+            return 999999
+
+        if static is None:
+            static = thermo.from_state(total.state)
+
+        # Get critical conditions
+        PR_crit = cls.critical_PR_from_total(total, static)
+
+        static._SP = total._S, total._P * PR_crit
+
+
+        # For gases, use sonic flow equation
+        if static.phase in ['gas', 'supercritical_gas']:
+            return static._sound * static._density
+
+        dH = total._H - static._H
+        velocity = np.sqrt(2 * np.max([dH, 0]))
+
+        return static._density * velocity
+
+    def _w_max(self, total):
+
+        if self.ref_thermo is None:
+            self.ref_thermo = thermo.from_state(total.state)
+
+        return self._w_flux_max(total, self.ref_thermo) * self._cdA
+
+    def PR_crit(self, total):
+        if self.ref_thermo is None:
+            self.ref_thermo = thermo.from_state(total.state)
+        return self.critical_PR_from_total(total, self.ref_thermo)
 
 
     @classmethod
@@ -1416,73 +1400,6 @@ class IsentropicFlow(baseFlow):
 
         return static
 
-    @classmethod
-    def _w_flux(cls, total, static, thermo_obj=None):
-        """Calculate isentropic mass flux between two states.
-        
-        Args:
-            total (thermo): Total (stagnation) state
-            static (thermo): Static state
-            
-        Returns:
-            float: Mass flux [kg/s/m²]
-        """
-        # Determine flow direction
-        if total._P >= static._P:
-            upstream, downstream, flow_sign = total, static, 1
-        else:
-            upstream, downstream, flow_sign = static, total, -1
-
-
-        # Get critical pressure ratio
-        PR_crit = cls.critical_PR_from_total(total, thermo_obj)
-
-        if PR_crit >= downstream._P/upstream._P:
-            return cls._w_flux_max(upstream, thermo_obj) * flow_sign
-
-        # Calculate isentropic outlet state
-        outlet = thermo.from_state(upstream.state)
-        outlet._SP = upstream._S, downstream._P
-
-        # Calculate velocity from enthalpy change
-        dH = upstream._H - outlet._H
-        velocity = np.sqrt(2 * np.max([dH, 0]))
-
-        return outlet._density * velocity * flow_sign
-
-    @classmethod
-    def _w_flux_max(cls, total, static=None):
-        """Calculate maximum (choked) mass flux.
-        
-        Args:
-            total (thermo): Total state
-            static (thermo, optional): Static state for calculations
-            
-        Returns:
-            float: Maximum mass flux [kg/s/m²]
-        """
-
-        if total.phase == 'INCOMPRESSIBLE':
-            return 999999
-
-        if static is None:
-            static = thermo.from_state(total.state)
-
-        # Get critical conditions
-        PR_crit = cls.critical_PR_from_total(total, static)
-
-        static._SP = total._S, total._P * PR_crit
-
-
-        # For gases, use sonic flow equation
-        if static.phase in ['gas', 'supercritical_gas']:
-            return static._sound * static._density
-
-        dH = total._H - static._H
-        velocity = np.sqrt(2 * np.max([dH, 0]))
-
-        return static._density * velocity
-
 
     @classmethod
     def choked_state(cls, total, static=None):
@@ -1569,8 +1486,7 @@ class IsentropicFlow(baseFlow):
 
         return w/cls._w_flux(total, static)
 
-    @classmethod
-    def _dP(cls, total, w_flux, static=None):
+    def _dP(self, total, w, static=None):
         """Calculate isentropic pressure drop for given mass flux.
 
         Args:
@@ -1581,7 +1497,11 @@ class IsentropicFlow(baseFlow):
         Returns:
             float: Pressure drop [Pa], or None if no solution
         """
-        static, error = cls._total_to_static(total, w_flux, static=static)
+        
+        if self.ref_thermo is None:
+            self.ref_thermo = thermo.from_state(total.state)
+
+        static, error = self._total_to_static(total, w/self._cdA, static=self.ref_thermo)
 
         if error is None:
             return static._P - total._P, error
@@ -1953,7 +1873,22 @@ class CvFlow:
         self.thermo._TP = 288.71, 101325
         return self.thermo._density / 1.225
 
+class MapFlow:
 
+    def __init__(self, map):
+        self.map = map
+
+    def _w(self, US, DS, *args, **kwargs):
+        return self.map.get_massflow(US._P, US._T, DS._P, *args, **kwargs)
+    
+    def _w_max(self, US, *args, **kwargs):
+        return self.map._w_max(US._P, US._T, *args, **kwargs)
+
+    def _dP(self, US, w, *args, **kwargs):
+        return self.map._dP(US._P, US._T, w, *args, **kwargs)
+    
+    def _dH(self, US, Pout, *args, **kwargs):
+        return _dH_isentropic(US, Pout)
 
 
 class FlowModel:
@@ -1980,7 +1915,7 @@ class FlowModel:
         >>> pressure_drop = flow._dP(total_state, mass_flow)
     """
 
-    def __init__(self, flow_func: str, cdA: float):
+    def __init__(self, flow_func: str, *args, **kwargs):
         """Initialize flow model with specified flow function and cdA.
 
         Args:
@@ -1992,13 +1927,12 @@ class FlowModel:
             ValueError: If flow_func is not one of the supported types
         """
 
-        self._cdA = cdA
-
         # Map string to flow function class
         flow_map = {
             'isen': IsentropicFlow,
             'incomp': IncompressibleFlow,
             'comp': PerfectGasFlow,
+            'map': MapFlow
         }
 
         if flow_func not in flow_map:
@@ -2007,20 +1941,20 @@ class FlowModel:
                 f"Must be one of: {list(flow_map.keys())}"
             )
 
-        self.flow_func = flow_map[flow_func]
-        self.ref_thermo = None
+        self.flow = flow_map[flow_func](*args, **kwargs)
 
-    def initialize_thermo(self, total):
-        self.ref_thermo = thermo.from_state(total.state)
+    @property
+    def _cdA(self):
+        return self.flow._cdA
+    
+    @_cdA.setter
+    def _cdA(self, cdA):
+        self.flow._cdA = cdA
 
     def PR_crit(self, total):
-        if self.ref_thermo is None:
-            self.initialize_thermo(total)
+        return self.flow.critical_PR_from_total(total)
 
-        
-        return self.flow_func.critical_PR_from_total(total, self.ref_thermo)
-
-    def _w(self, total, static):
+    def _w(self, total, static, *args, **kwargs):
         """Calculate mass flow rate.
 
         Args:
@@ -2033,21 +1967,10 @@ class FlowModel:
         Note:
             Mass flow = mass_flux * cdA
         """
-        if self.ref_thermo is None:
-            self.initialize_thermo(total)
+        return self.flow._w(total, static, *args, **kwargs)
 
-        if self.flow_func == IsentropicFlow:
-            return self.flow_func._w_flux(total, static, self.ref_thermo) * self._cdA
-        else:
-            return self.flow_func._w_flux(total, static) * self._cdA
-
-    def _w_max(self, total):
-
-        if self.ref_thermo is None:
-            self.initialize_thermo(total)
-
-        return self.flow_func._w_flux_max(total, self.ref_thermo) * self._cdA
-
+    def _w_max(self, total, *args, **kwargs):
+        return self.flow._w_max(total, *args, **kwargs)
 
     def choked_state(self, total):
 
@@ -2056,7 +1979,7 @@ class FlowModel:
        
         return total._P*PR_crit, w_flux
 
-    def _dP(self, total, w):
+    def _dP(self, total, w, *args, **kwargs):
         """Calculate pressure drop for given mass flow.
 
         Args:
@@ -2071,21 +1994,17 @@ class FlowModel:
             Converts mass flow to mass flux using cdA before calculation
         """
 
-        if self.ref_thermo is None:
-            self.initialize_thermo(total)
-
         if w == 0:
             return 0, None
 
-        dP, error = self.flow_func._dP(total, w/self._cdA, self.ref_thermo)
+        dP, error = self.flow._dP(total, w, *args, **kwargs)
 
         if error is None:
             return dP, error
         else:
-            error = {'w_max': error['w_flux_max']*self._cdA}
             return None, error
 
-    def _dH(self, inlet_thermo, Pout):
+    def _dH(self, total_state, Pout, *args, **kwargs):
         """
         Calculate isentropic enthalpy change for a pressure change in SI units.
 
@@ -2096,4 +2015,4 @@ class FlowModel:
         Returns:
             float: Isentropic enthalpy change (in J).
         """
-        return self.flow_func._dH(inlet_thermo, Pout)
+        return self.flow._dH(total_state, Pout, *args, **kwargs)

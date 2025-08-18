@@ -355,7 +355,7 @@ def data_processor(df):
 class ConceptsMap:
     """Class for interpolating turbine performance parameters."""
 
-    def __init__(self, data_csv, type='axial', sheet_names=None, fallback_method='extrapolate'):
+    def __init__(self, data_csv=None, type='axial', sheet_names=None, fallback_method='extrapolate', map=None):
         """
         Initialize interpolator with data.
 
@@ -366,11 +366,15 @@ class ConceptsMap:
             fallback_method (str): Method for handling extrapolation ('extrapolate' or 'nearest')
         """
 
-        self.data_csv = data_csv
-        self.type = type
-        self.fallback_method = fallback_method
-        self.map = concepts_reader(data_csv, type, sheet_names)
 
+        if map is None:
+            self.data_csv = data_csv
+            self.map = concepts_reader(data_csv, type, sheet_names)
+        else:
+            self.map = map
+
+
+        self.fallback_method = fallback_method
         self.T_ref = 288.15  # K
         self.p_ref = 101325  # Pa
 
@@ -399,7 +403,7 @@ class ConceptsMap:
         self.T_min, self.T_max = self.map['T0'].min(), self.map['T0'].max()
         self.P_min, self.P_max = self.map['P0'].min(), self.map['P0'].max()
         self.RPM_min, self.RPM_max = self.map['RPM'].min(), self.map['RPM'].max()
-        self.PR_min, self.PR_max = self.map['P_out'].min(), self.map['P_out'].max()
+        self.PR_min, self.PR_max = self.map['PR_ts'].min(), self.map['PR_ts'].max()
 
         # Normalize the data
         self.map['T0'] /= self.T_range
@@ -431,14 +435,14 @@ class ConceptsMap:
         if self.fallback_method == 'nearest':
             # Create nearest neighbor interpolators
             self.fallback_interpolators = {
-                'w': NearestNDInterpolator(points=self.grid, values=self.map['m_c']),
-                'ETA_ts': NearestNDInterpolator(points=self.grid, values=self.map['ETA_ts']),
-                'Power': NearestNDInterpolator(points=self.grid, values=self.map['Power'])
+                'w': NearestNDInterpolator(self.grid, self.map['m_c']),
+                'ETA_ts': NearestNDInterpolator(self.grid, self.map['ETA_ts']),
+                'Power': NearestNDInterpolator(self.grid, self.map['Power'])
             }
         else:  # 'extrapolate'
-            # Create linear extrapolation functions
+            # Create linear extrapolation functions, but always use nearest neighbor for mass flow
             self.fallback_interpolators = {
-                'w': self._create_extrapolation_function('m_c'),
+                'w': NearestNDInterpolator(self.grid, self.map['m_c']),  # Always nearest for mass flow
                 'ETA_ts': self._create_extrapolation_function('ETA_ts'),
                 'Power': self._create_extrapolation_function('Power')
             }
@@ -520,26 +524,42 @@ class ConceptsMap:
         
         # If the result is NaN (outside the convex hull), use the fallback interpolator
         if np.isnan(value):
+
+            if param == 'ETA_ts':
+                return 0
+
             if not is_extrapolating:
                 method_name = "nearest neighbor" if self.fallback_method == 'nearest' else "linear extrapolation"
                 logger.warn(f"Warning: Using {method_name} for point outside convex hull")
-            
+
             # Use fallback interpolator
-            if self.fallback_method == 'nearest':
-                value = self.fallback_interpolators[param](*point)
-            else:
-                value = self.fallback_interpolators[param](*point)
+            value = self.fallback_interpolators[param](*point)
             
-            # Log the extrapolation
-            logger.warn(
-                f"Interpolation failed - point outside data range, using {self.fallback_method}: "
-                f"P0={P0/1e5:.1f} bar, T0={T0:.1f}K, "
-                f"PR_ts={PR_ts:.2f}, RPM={RPM:.0f}, {param}={value:.6f}"
-            )
+            # Log the extrapolation with appropriate message for mass flow
+            if param == 'w':
+                logger.warn(
+                    f"Mass flow interpolation outside bounds - using nearest neighbor: "
+                    f"P0={P0/1e5:.1f} bar, T0={T0:.1f}K, "
+                    f"PR_ts={PR_ts:.2f}, RPM={RPM:.0f}, {param}={value:.6f}. "
+                    f"Data ranges: P0={self.P_min/1e5:.1f}-{self.P_max/1e5:.1f} bar, "
+                    f"T0={self.T_min:.1f}-{self.T_max:.1f}K, "
+                    f"PR={self.PR_min:.2f}-{self.PR_max:.2f}, "
+                    f"RPM={self.RPM_min:.0f}-{self.RPM_max:.0f}"
+                )
+            else:
+                logger.warn(
+                    f"Interpolation failed - point outside convex hull, using {self.fallback_method}: "
+                    f"P0={P0/1e5:.1f} bar, T0={T0:.1f}K, "
+                    f"PR_ts={PR_ts:.2f}, RPM={RPM:.0f}, {param}={value:.6f}. "
+                    f"Data ranges: P0={self.P_min/1e5:.1f}-{self.P_max/1e5:.1f} bar, "
+                    f"T0={self.T_min:.1f}-{self.T_max:.1f}K, "
+                    f"PR={self.PR_min:.2f}-{self.PR_max:.2f}, "
+                    f"RPM={self.RPM_min:.0f}-{self.RPM_max:.0f}"
+                )
 
         return float(value)
 
-    def get_massflow(self, P0, T0, Pout, RPM=None):
+    def get_massflow(self, P0, T0, Pout, N=None):
         """
         Calculate mass flow using both direct interpolation and corrected mass flow approach.
 
@@ -553,15 +573,17 @@ class ConceptsMap:
         """
 
         # Get corrected mass flow and convert to actual mass flow
-        corrected_mass_flow = self.interpolate_at_pressure(P0=P0, T0=T0, Pout=Pout, RPM=RPM, param='w')
+        corrected_mass_flow = self.interpolate_at_pressure(P0=P0, T0=T0, Pout=Pout, RPM=N, param='w')
         mass_flow = float(corrected_mass_flow) * (P0/self.p_ref) * np.sqrt(self.T_ref/T0)
         
         return mass_flow
     
     def get_eta_ts(self, P0, T0, Pout, RPM=None):
         """Interpolate total-to-static efficiency."""
-        return self.interpolate_at_pressure(P0=P0, T0=T0, Pout=Pout, RPM=RPM, param='ETA_ts')
+        eta = self.interpolate_at_pressure(P0=P0, T0=T0, Pout=Pout, RPM=RPM, param='ETA_ts')
     
+        return np.minimum(1, np.maximum(0, eta))
+
     def get_W_shaft(self, P0, T0, Pout, RPM=None):
         """Interpolate shaft power."""
         return self.interpolate_at_pressure(P0=P0, T0=T0, Pout=Pout, RPM=RPM, param='Power')
@@ -569,3 +591,145 @@ class ConceptsMap:
     def eta_func(self, US_thermo, Pe, N, model):
         return self.get_eta_ts(US_thermo._P, US_thermo.T, Pe, N)
     
+    def optimal_power(self, T0, Pout, RPM=None):
+        """
+        Find the optimal power by maximizing get_W_shaft over pressure ratio.
+        
+        Args:
+            T0 (float): Inlet total temperature [K]
+            Pout (float): Outlet pressure [Pa]
+            RPM (float, optional): Rotational speed [rpm]
+            
+        Returns:
+            dict: Dictionary containing optimal conditions:
+                - 'power': Optimal shaft power [W]
+                - 'P0_opt': Optimal inlet pressure [Pa]
+                - 'PR_opt': Optimal pressure ratio
+                - 'massflow': Mass flow at optimal conditions [kg/s]
+                - 'eta': Efficiency at optimal conditions
+        """
+        from scipy.optimize import minimize_scalar
+        
+        # Define the objective function to maximize (negative for minimization)
+        def objective(P0):
+            power = self.get_W_shaft(P0, T0, 4e5, RPM)
+
+            eta = self.get_eta_ts(P0, T0, 4e5, RPM)
+
+            if eta == 0:
+                return 0
+            
+            return -power  # Negative because we want to maximize
+        
+        # Define bounds for pressure ratio optimization
+        # Use the data range with some safety margin
+        P_min = self.P_min  # Minimum PR slightly above 1
+        P_max = self.P_max
+        
+        # Optimize using scipy
+        result = minimize_scalar(
+            objective,
+            bounds=(P_min, P_max),
+            method='bounded'
+        )
+
+        P0_opt = result.x
+        PR_opt = P0_opt / Pout
+        power_opt = -result.fun
+        massflow_opt = self.get_massflow(P0_opt, T0, Pout, RPM)
+        eta_opt = self.get_eta_ts(P0_opt, T0, Pout, RPM)
+
+        
+        if not result.success:
+            logger.warn(f"Optimization failed: {result.message}")
+            # Fallback: try a grid search
+            from pdb import set_trace
+            set_trace()
+            PR_range = np.linspace(PR_min, PR_max, 100)
+            powers = []
+            for PR in PR_range:
+                P0 = PR * Pout
+                power = self.get_W_shaft(P0, T0, Pout, RPM)
+                powers.append(power)
+            
+            opt_idx = np.argmax(powers)
+            PR_opt = PR_range[opt_idx]
+            power_opt = powers[opt_idx]
+        else:
+            PR_opt = result.x
+            power_opt = -result.fun  # Convert back from negative
+        
+        return {
+            'power': power_opt,
+            'P0_opt': P0_opt,
+            'PR_opt': PR_opt,
+            'massflow': massflow_opt,
+            'eta': eta_opt
+        }
+    
+    def optimal_eta(self, T0, Pout, RPM=None):
+        """
+        Find the optimal efficiency by maximizing get_eta_ts over pressure ratio.
+        
+        Args:
+            T0 (float): Inlet total temperature [K]
+            Pout (float): Outlet pressure [Pa]
+            RPM (float, optional): Rotational speed [rpm]
+            
+        Returns:
+            dict: Dictionary containing optimal conditions:
+                - 'eta': Optimal efficiency
+                - 'P0_opt': Optimal inlet pressure [Pa]
+                - 'PR_opt': Optimal pressure ratio
+                - 'power': Power at optimal conditions [W]
+                - 'massflow': Mass flow at optimal conditions [kg/s]
+        """
+        from scipy.optimize import minimize_scalar
+        
+        # Define the objective function to maximize (negative for minimization)
+        def objective(PR):
+            P0 = PR * Pout
+            eta = self.get_eta_ts(P0, T0, Pout, RPM)
+            return -eta  # Negative because we want to maximize
+        
+        # Define bounds for pressure ratio optimization
+        PR_min = max(1.1, self.PR_min * 0.9)
+        PR_max = min(10.0, self.PR_max * 1.1)
+        
+        # Optimize using scipy
+        result = minimize_scalar(
+            objective,
+            bounds=(PR_min, PR_max),
+            method='bounded'
+        )
+        
+        if not result.success:
+            logger.warn(f"Optimization failed: {result.message}")
+            # Fallback: try a grid search
+            PR_range = np.linspace(PR_min, PR_max, 100)
+            etas = []
+            for PR in PR_range:
+                P0 = PR * Pout
+                eta = self.get_eta_ts(P0, T0, Pout, RPM)
+                etas.append(eta)
+            
+            opt_idx = np.argmax(etas)
+            PR_opt = PR_range[opt_idx]
+            eta_opt = etas[opt_idx]
+        else:
+            PR_opt = result.x
+            eta_opt = -result.fun  # Convert back from negative
+        
+        # Calculate other parameters at optimal conditions
+        P0_opt = PR_opt * Pout
+        power_opt = self.get_W_shaft(P0_opt, T0, Pout, RPM)
+        massflow_opt = self.get_massflow(P0_opt, T0, Pout, RPM)
+        
+        return {
+            'eta': eta_opt,
+            'P0_opt': P0_opt,
+            'PR_opt': PR_opt,
+            'power': power_opt,
+            'massflow': massflow_opt
+        }
+        

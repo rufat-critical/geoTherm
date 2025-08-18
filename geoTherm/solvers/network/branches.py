@@ -548,7 +548,6 @@ class FlowBranch(baseBranch):
 
         self.error = (self.DS_target['P']/Pout - 1)*np.sign(self._w)
 
-
         return np.array([self.error])
 
     @property
