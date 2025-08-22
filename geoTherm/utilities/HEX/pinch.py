@@ -136,7 +136,7 @@ def _find_w_hot_hot_outlet_counter(T_pinch, cold_inlet, cold_outlet, w_cold, hot
 
     def dT(T):
         hot_outlet_thermo._TP = T, hot_inlet._P
-        w_hot = Q/(hot_inlet._H - hot_outlet_thermo._H)
+        w_hot = Q/(hot_inlet._H - hot_outlet_thermo._H+eps)
 
         return get_pinch_point(Q=Q,
                         cold_inlet=cold_inlet,
