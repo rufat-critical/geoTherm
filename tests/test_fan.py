@@ -8,7 +8,8 @@ def test_fixed_flow_fan():
                       gt.FixedDP(name='HEX', US='Ambient', DS='Intake', dP=-100),
                       gt.Qdot(name='Hot',cool='HEX',Q=800e3),
                       gt.Station(name='Intake',fluid='air'),
-                      gt.FixedFlowFan(name='Fan', US='Intake', DS='Exhaust', eta=0.6,w=50),
+                      gt.FixedFlowFan(name='Fan', US='Intake', DS='Exhaust', rotor='DummyRotor', eta=0.6,w=50),
+                      gt.Rotor(name='DummyRotor', N=1000),
                       gt.POutlet(name='Exhaust',fluid='air', T=300, P=101325*.8)])
                   
 

@@ -798,7 +798,6 @@ class Network:
         self.evaluate(x)
 
     def solve(self):
-        
 
         if False:
             if not self.has_cycle and not self.thermal_branches:

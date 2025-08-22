@@ -135,4 +135,3 @@ def network_convergence(flow_func, network_func):
 
     # Check steady-state convergence
     assert model.converged, f"Model {network_func} did not converge for flow_func={flow_func}"
-    
