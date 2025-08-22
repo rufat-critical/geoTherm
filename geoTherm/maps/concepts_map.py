@@ -352,10 +352,12 @@ def data_processor(df):
 
     return df_clean
 
+from geoTherm.maps.massflow import MassFlowMap
+
 class ConceptsMap:
     """Class for interpolating turbine performance parameters."""
 
-    def __init__(self, data_csv=None, type='axial', sheet_names=None, fallback_method='extrapolate', map=None):
+    def __init__(self, data_csv=None, type='axial', sheet_names=None, map=None):
         """
         Initialize interpolator with data.
 
@@ -373,15 +375,20 @@ class ConceptsMap:
         else:
             self.map = map
 
-
-        self.fallback_method = fallback_method
-        self.T_ref = 288.15  # K
-        self.p_ref = 101325  # Pa
+        self.massflow_map = MassFlowMap(self.map)
 
         self.initialize()
 
     def initialize(self):
         # Initialize interpolators
+
+
+        # Get the min and max of each column
+        self.T_min, self.T_max = self.map['T0'].min(), self.map['T0'].max()
+        self.P_min, self.P_max = self.map['P0'].min(), self.map['P0'].max()
+        self.RPM_min, self.RPM_max = self.map['RPM'].min(), self.map['RPM'].max()
+        self.PR_min, self.PR_max = self.map['PR_ts'].min(), self.map['PR_ts'].max()
+        self.P_out_min, self.P_out_max = self.map['P_out'].min(), self.map['P_out'].max()
 
         # Initialize flags
         self.fixed_RPM = False
@@ -390,176 +397,85 @@ class ConceptsMap:
 
         if len(self.map['RPM'].unique()) == 1:
             self.fixed_RPM = True
+            logger.info("Turbine Map has constant RPM")
         if len(self.map['T0'].unique()) == 1:
             self.fixed_T0 = True
-        if len(self.map['P_out'].unique()) == 1:
+            logger.info("Turbine Map has constant T0")
+
+        rel_P_Out = (self.P_out_max - self.P_out_min)/self.P_out_min
+
+        if rel_P_Out < 0.05:
             self.fixed_P_out = True
+            logger.info("Turbine Map has constant P_out")
 
-        self.T_range = self.map['T0'].max() - self.map['T0'].min()
-        self.P_range = self.map['P0'].max() - self.map['P0'].min()
-        self.RPM_range = self.map['RPM'].max() - self.map['RPM'].min()
 
-        # Store original ranges for denormalization
-        self.T_min, self.T_max = self.map['T0'].min(), self.map['T0'].max()
-        self.P_min, self.P_max = self.map['P0'].min(), self.map['P0'].max()
-        self.RPM_min, self.RPM_max = self.map['RPM'].min(), self.map['RPM'].max()
-        self.PR_min, self.PR_max = self.map['PR_ts'].min(), self.map['PR_ts'].max()
+        if not self.fixed_RPM:
+            self.RPM_range = self.map['RPM'].max() - self.map['RPM'].min()
+        if not self.fixed_T0:
+            self.T_range = self.map['T0'].max() - self.map['T0'].min()
+        if not self.fixed_P_out:
+            self.P_out_range = self.map['P_out'].max() - self.map['P_out'].min()
 
-        # Normalize the data
-        self.map['T0'] /= self.T_range
-        self.map['P0'] /= self.P_range
-        self.map['RPM'] /= self.RPM_range
+        self.P_range = self.P_max - self.P_min
 
         # Create Grid for Interpolators
         if self.fixed_RPM and self.fixed_T0:
-            self.grid = np.column_stack((self.map['P0'], self.map['PR_ts']))
+            self.grid = np.column_stack((self.map['P0']/self.P_range,
+                                         self.map['PR_ts']))
         elif self.fixed_RPM and self.fixed_P_out:
-            self.grid = np.column_stack((self.map['T0'], self.map['P0'], self.map['PR_ts']))
+            self.grid = np.column_stack((self.map['P0']/self.P_range,
+                                         self.map['T0']/self.T_range))
         elif self.fixed_RPM:
-            self.grid = np.column_stack((self.map['T0'], self.map['P0'], self.map['PR_ts']))
+            self.grid = np.column_stack((self.map['P0']/self.P_range,
+                                         self.map['T0']/self.T_range,
+                                         self.map['PR_ts']))
         else:
-            self.grid = np.column_stack((self.map['RPM'], self.map['T0'], self.map['P0'], self.map['PR_ts']))
+            self.grid = np.column_stack((self.map['P0']/self.P_range,
+                                         self.map['T0']/self.T_range,
+                                         self.map['PR_ts'],
+                                         self.map['RPM']/self.RPM_range))
 
         # Create primary interpolators
         self.LinearNDInterpolator = {
-            'w': LinearNDInterpolator(points=self.grid, values=self.map['m_c']),
             'ETA_ts': LinearNDInterpolator(points=self.grid, values=self.map['ETA_ts']),
             'Power': LinearNDInterpolator(points=self.grid, values=self.map['Power'])
         }
 
-        # Create fallback interpolators
-        self.create_fallback_interpolators()
-
-    def create_fallback_interpolators(self):
-        """Create fallback interpolators for extrapolation."""
-        if self.fallback_method == 'nearest':
-            # Create nearest neighbor interpolators
-            self.fallback_interpolators = {
-                'w': NearestNDInterpolator(self.grid, self.map['m_c']),
-                'ETA_ts': NearestNDInterpolator(self.grid, self.map['ETA_ts']),
-                'Power': NearestNDInterpolator(self.grid, self.map['Power'])
-            }
-        else:  # 'extrapolate'
-            # Create linear extrapolation functions, but always use nearest neighbor for mass flow
-            self.fallback_interpolators = {
-                'w': NearestNDInterpolator(self.grid, self.map['m_c']),  # Always nearest for mass flow
-                'ETA_ts': self._create_extrapolation_function('ETA_ts'),
-                'Power': self._create_extrapolation_function('Power')
-            }
-
-    def _create_extrapolation_function(self, param):
-        """Create a linear extrapolation function for a given parameter."""
-        def extrapolate(*point):
-            # Find the k nearest points to use for extrapolation
-            k = min(5, len(self.grid))  # Use up to 5 nearest points
-            
-            # Calculate distances to all points
-            distances = np.sqrt(np.sum((self.grid - np.array(point))**2, axis=1))
-            nearest_indices = np.argsort(distances)[:k]
-            
-            # Get the coordinates and values for these points
-            nearest_points = self.grid[nearest_indices]
-            nearest_values = self.map[param].iloc[nearest_indices].values
-            
-            # Fit a linear hyperplane through these points
-            # Add a column of ones for the intercept term
-            A = np.column_stack((nearest_points, np.ones(k)))
-            # Solve for coefficients
-            try:
-                coeffs = np.linalg.lstsq(A, nearest_values, rcond=None)[0]
-                # Return the extrapolated value
-                return np.dot(np.append(point, 1), coeffs)
-            except np.linalg.LinAlgError:
-                # If linear fit fails, return the nearest neighbor value
-                return nearest_values[0]
-        
-        return extrapolate
-
-    def _check_if_point_in_bounds(self, point):
-        """Check if a point is within the data bounds."""
-        # Denormalize the point for bounds checking
-        if self.fixed_RPM and self.fixed_T0:
-            P_norm, PR = point
-            P = P_norm * self.P_range
-            return (self.P_min <= P <= self.P_max and 
-                   self.PR_min <= PR <= self.PR_max)
-        elif self.fixed_RPM:
-            T_norm, P_norm, PR = point
-            T = T_norm * self.T_range
-            P = P_norm * self.P_range
-            return (self.T_min <= T <= self.T_max and
-                   self.P_min <= P <= self.P_max and
-                   self.PR_min <= PR <= self.PR_max)
-        else:
-            RPM_norm, T_norm, P_norm, PR = point
-            RPM = RPM_norm * self.RPM_range
-            T = T_norm * self.T_range
-            P = P_norm * self.P_range
-            return (self.RPM_min <= RPM <= self.RPM_max and
-                   self.T_min <= T <= self.T_max and
-                   self.P_min <= P <= self.P_max and
-                   self.PR_min <= PR <= self.PR_max)
-
-    def interpolate_at_pressure(self, P0, Pout, RPM=None, T0=None, param=None):
+    def interpolate(self, P0, T0, P_out, RPM, param):
         """Interpolate any property using pre-built interpolator with fallback extrapolation."""
         # Calculate pressure ratio
-        PR_ts = P0 / Pout
-
-        if param is None:
-            raise ValueError("param must be specified")
+        PR_ts = P0 / P_out
         
         # Create the normalized point
         if self.fixed_RPM and self.fixed_T0:
             point = np.array([P0/self.P_range, PR_ts])
+        elif self.fixed_RPM and self.fixed_P_out:
+            point = np.array([P0/self.P_range, T0/self.T_range])
         elif self.fixed_RPM:
-            point = np.array([T0/self.T_range, P0/self.P_range, PR_ts])
+            point = np.array([P0/self.P_range, T0/self.T_range, PR_ts])
         else:
-            point = np.array([RPM/self.RPM_range, T0/self.T_range, P0/self.P_range, PR_ts])
+            point = np.array([P0/self.P_range,
+                              T0/self.T_range,
+                              PR_ts,
+                              RPM/self.RPM_range])
 
-        # Check if we're extrapolating
-        is_extrapolating = not self._check_if_point_in_bounds(point)
-        
         # Try primary interpolation
-        value = self.LinearNDInterpolator[param](point)
-        
-        # If the result is NaN (outside the convex hull), use the fallback interpolator
+        value = self.LinearNDInterpolator[param](point)        
+
         if np.isnan(value):
-
-            if param == 'ETA_ts':
-                return 0
-
-            if not is_extrapolating:
-                method_name = "nearest neighbor" if self.fallback_method == 'nearest' else "linear extrapolation"
-                logger.warn(f"Warning: Using {method_name} for point outside convex hull")
-
-            # Use fallback interpolator
-            value = self.fallback_interpolators[param](*point)
-            
-            # Log the extrapolation with appropriate message for mass flow
-            if param == 'w':
-                logger.warn(
-                    f"Mass flow interpolation outside bounds - using nearest neighbor: "
-                    f"P0={P0/1e5:.1f} bar, T0={T0:.1f}K, "
-                    f"PR_ts={PR_ts:.2f}, RPM={RPM:.0f}, {param}={value:.6f}. "
-                    f"Data ranges: P0={self.P_min/1e5:.1f}-{self.P_max/1e5:.1f} bar, "
-                    f"T0={self.T_min:.1f}-{self.T_max:.1f}K, "
-                    f"PR={self.PR_min:.2f}-{self.PR_max:.2f}, "
-                    f"RPM={self.RPM_min:.0f}-{self.RPM_max:.0f}"
-                )
-            else:
-                logger.warn(
-                    f"Interpolation failed - point outside convex hull, using {self.fallback_method}: "
-                    f"P0={P0/1e5:.1f} bar, T0={T0:.1f}K, "
-                    f"PR_ts={PR_ts:.2f}, RPM={RPM:.0f}, {param}={value:.6f}. "
-                    f"Data ranges: P0={self.P_min/1e5:.1f}-{self.P_max/1e5:.1f} bar, "
-                    f"T0={self.T_min:.1f}-{self.T_max:.1f}K, "
-                    f"PR={self.PR_min:.2f}-{self.PR_max:.2f}, "
-                    f"RPM={self.RPM_min:.0f}-{self.RPM_max:.0f}"
-                )
+            logger.warn(f"Interpolation is outside convex hull for {param}\n"
+                        f"P0={P0/1e5:.1f} bar, T0={T0:.1f}K, PR={PR_ts:.1f}, RPM={RPM:.0f}\n"
+                        f"Data ranges: \n"
+                        f"P0={self.P_min/1e5:.1f}-{self.P_max/1e5:.1f} bar,\n"
+                        f"T0={self.T_min:.1f}-{self.T_max:.1f}K,\n"
+                        f"P_out={self.P_out_min/1e5:.1f}-{self.P_out_max/1e5:.1f} bar,\n"
+                        f"RPM={self.RPM_min:.0f}-{self.RPM_max:.0f}")
+            logger.warn(f"returning 0 for {param}")
+            return 0
 
         return float(value)
 
-    def get_massflow(self, P0, T0, Pout, N=None):
+    def get_w(self, P0, T0, P_out, N=None):
         """
         Calculate mass flow using both direct interpolation and corrected mass flow approach.
 
@@ -573,20 +489,19 @@ class ConceptsMap:
         """
 
         # Get corrected mass flow and convert to actual mass flow
-        corrected_mass_flow = self.interpolate_at_pressure(P0=P0, T0=T0, Pout=Pout, RPM=N, param='w')
-        mass_flow = float(corrected_mass_flow) * (P0/self.p_ref) * np.sqrt(self.T_ref/T0)
-        
-        return mass_flow
-    
-    def get_eta_ts(self, P0, T0, Pout, RPM=None):
-        """Interpolate total-to-static efficiency."""
-        eta = self.interpolate_at_pressure(P0=P0, T0=T0, Pout=Pout, RPM=RPM, param='ETA_ts')
-    
-        return np.minimum(1, np.maximum(0, eta))
+        return self.massflow_map.get_w(P0, T0, P_out)
 
-    def get_W_shaft(self, P0, T0, Pout, RPM=None):
+    def _get_w(self, P0, T0, P_out, RPM=None):
+        return self.massflow_map._get_w(P0, T0, P_out)
+    
+    def get_eta_ts(self, P0, T0, P_out, RPM=None):
+        """Interpolate total-to-static efficiency."""
+        eta = self.interpolate(P0=P0, T0=T0, P_out=P_out, RPM=RPM, param='ETA_ts')
+        return eta
+
+    def get_W_shaft(self, P0, T0, P_out, RPM=None):
         """Interpolate shaft power."""
-        return self.interpolate_at_pressure(P0=P0, T0=T0, Pout=Pout, RPM=RPM, param='Power')
+        return self.interpolate(P0=P0, T0=T0, P_out=P_out, RPM=RPM, param='Power')
 
     def eta_func(self, US_thermo, Pe, N, model):
         return self.get_eta_ts(US_thermo._P, US_thermo.T, Pe, N)
@@ -612,13 +527,7 @@ class ConceptsMap:
         
         # Define the objective function to maximize (negative for minimization)
         def objective(P0):
-            power = self.get_W_shaft(P0, T0, 4e5, RPM)
-
-            eta = self.get_eta_ts(P0, T0, 4e5, RPM)
-
-            if eta == 0:
-                return 0
-            
+            power = self.get_W_shaft(P0, T0, Pout, RPM)
             return -power  # Negative because we want to maximize
         
         # Define bounds for pressure ratio optimization
@@ -633,13 +542,13 @@ class ConceptsMap:
             method='bounded'
         )
 
+
         P0_opt = result.x
         PR_opt = P0_opt / Pout
         power_opt = -result.fun
-        massflow_opt = self.get_massflow(P0_opt, T0, Pout, RPM)
+        massflow_opt = self.get_w(P0_opt, T0, Pout, RPM)
         eta_opt = self.get_eta_ts(P0_opt, T0, Pout, RPM)
 
-        
         if not result.success:
             logger.warn(f"Optimization failed: {result.message}")
             # Fallback: try a grid search
