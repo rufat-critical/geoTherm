@@ -63,5 +63,6 @@ setup(
         'pyyaml',
         'tabulate',
         'openpyxl',
+        'plotly',
     ],
 )
