@@ -15,7 +15,9 @@ def dT_Q_parallel(Q, hot_inlet, cold_inlet, w_hot, w_cold):
 
 def dT_Q_counter(Q, hot_inlet, cold_outlet, w_hot, w_cold,
                  cold_inlet_thermo=None,
-                 hot_outlet_thermo=None):
+                 hot_outlet_thermo=None,
+                 dP_cold=0,
+                 dP_hot=0):
 
     if hot_outlet_thermo is None:
         hot_outlet_thermo = hot_inlet.from_state(hot_inlet.state)
@@ -26,12 +28,14 @@ def dT_Q_counter(Q, hot_inlet, cold_outlet, w_hot, w_cold,
     if w_hot == 0:
         hot_outlet_thermo._HP = hot_inlet._H, hot_inlet._P
     else:
-        hot_outlet_thermo._HP = hot_inlet._H - Q/w_hot, hot_inlet._P
+        hot_outlet_thermo._HP = (hot_inlet._H - Q/w_hot,
+                                 hot_inlet._P + dP_hot)
 
     if w_cold == 0:
         cold_inlet_thermo._HP = cold_outlet._H, cold_outlet._P
     else:
-        cold_inlet_thermo._HP = cold_outlet._H - Q/w_cold, cold_outlet._P
+        cold_inlet_thermo._HP = (cold_outlet._H - Q/w_cold,
+                                 cold_outlet._P - dP_cold)
 
     return hot_outlet_thermo._T - cold_inlet_thermo._T
 
@@ -39,7 +43,9 @@ def dT_Q_counter(Q, hot_inlet, cold_outlet, w_hot, w_cold,
 def find_pinch_Q_counter(Q, hot_inlet, cold_outlet,
                          w_hot, w_cold,
                          cold_inlet_thermo=None,
-                         hot_outlet_thermo=None):
+                         hot_outlet_thermo=None,
+                         dP_cold=0,
+                         dP_hot=0):
 
     if Q == 0:
         return hot_inlet._T - cold_outlet._T
@@ -51,11 +57,15 @@ def find_pinch_Q_counter(Q, hot_inlet, cold_outlet,
 
     def dT_Q(Q_fraction):
         Q_i = Q_fraction * Q
+        dP_cold_i = Q_fraction * dP_cold
+        dP_hot_i = Q_fraction * dP_hot
         return dT_Q_counter(Q_i, hot_inlet, cold_outlet, w_hot, w_cold,
                             cold_inlet_thermo=cold_inlet_thermo,
-                            hot_outlet_thermo=hot_outlet_thermo)
+                            hot_outlet_thermo=hot_outlet_thermo,
+                            dP_cold=dP_cold_i,
+                            dP_hot=dP_hot_i)
 
-    Q_bnds = np.linspace(0, 1, 4)
+    Q_bnds = np.linspace(0, 1, 5)
     sol1 = minimize_scalar(dT_Q, bounds=[Q_bnds[0], Q_bnds[1]], method='bounded')
     sol2 = minimize_scalar(dT_Q, bounds=[Q_bnds[1], Q_bnds[2]], method='bounded')
     sol3 = minimize_scalar(dT_Q, bounds=[Q_bnds[2], Q_bnds[3]], method='bounded')
@@ -67,21 +77,94 @@ def get_pinch_point(Q, cold_inlet, hot_inlet, w_hot, w_cold, config='counter',
                     cold_outlet_thermo=None,
                     cold_inlet_thermo=None,
                     hot_outlet_thermo=None,
-                    hot_inlet_thermo=None):
+                    hot_inlet_thermo=None,
+                    dP_hot=0,
+                    dP_cold=0):
+
+    if cold_outlet_thermo is None:
+        cold_outlet_thermo = cold_inlet.from_state(cold_inlet.state)
 
     if config == 'counter':
 
-        if cold_outlet_thermo is None:
-            cold_outlet_thermo = cold_inlet.from_state(cold_inlet.state)
+        cold_outlet_thermo._HP = (cold_inlet._H + Q/w_cold,
+                                  cold_inlet._P + dP_cold)
 
-        cold_outlet_thermo._HP = cold_inlet._H + Q/w_cold, cold_inlet._P
-
-        return find_pinch_Q_counter(Q, hot_inlet, cold_outlet_thermo, w_hot, w_cold,
+        return find_pinch_Q_counter(Q,
+                                    hot_inlet=hot_inlet,
+                                    cold_outlet=cold_outlet_thermo,
+                                    w_hot=w_hot,
+                                    w_cold=w_cold,
                                     cold_inlet_thermo=cold_inlet_thermo,
-                                    hot_outlet_thermo=hot_outlet_thermo)
+                                    hot_outlet_thermo=hot_outlet_thermo,
+                                    dP_cold=dP_cold,
+                                    dP_hot=dP_hot)
     else:
         from pdb import set_trace
         set_trace()
+
+def _find_w_hot_hot_outlet_counter(T_pinch, cold_inlet, cold_outlet, w_cold, hot_inlet,
+                                   hot_outlet_thermo=None,
+                                   cold_inlet_thermo=None,
+                                   cold_outlet_thermo=None):
+
+    # Create a thermo object to output
+    hot_outlet_thermo = hot_inlet.from_state(hot_inlet.state)
+    
+    if cold_inlet_thermo is None:
+        cold_inlet_thermo = cold_inlet.from_state(cold_inlet.state)
+    if cold_outlet_thermo is None:
+        cold_outlet_thermo = cold_inlet.from_state(cold_inlet.state)
+    
+    cold_outlet_thermo._TP = cold_outlet._T, cold_inlet._P
+    dP_cold = cold_outlet._P - cold_inlet._P
+
+    # Calculate Q
+    Q = w_cold * (cold_outlet._H - cold_inlet._H)
+
+    def dT(T):
+        hot_outlet_thermo._TP = T, hot_inlet._P
+
+        w_hot = Q/(hot_inlet._H - hot_outlet_thermo._H)
+
+        return find_pinch_Q_counter(Q=Q,
+                                    hot_inlet=hot_inlet,
+                                    cold_outlet=cold_outlet_thermo,
+                                    w_hot=w_hot,
+                                    w_cold=w_cold,
+                                    cold_inlet_thermo=cold_inlet_thermo,
+                                    hot_outlet_thermo=hot_outlet_thermo) - T_pinch
+
+    def dT(T):
+        hot_outlet_thermo._TP = T, hot_inlet._P
+        w_hot = Q/(hot_inlet._H - hot_outlet_thermo._H)
+
+        return get_pinch_point(Q=Q,
+                        cold_inlet=cold_inlet,
+                        hot_inlet=hot_inlet,
+                        w_hot=w_hot,
+                        w_cold=w_cold,
+                        config='counter',
+                        cold_outlet_thermo=cold_outlet_thermo,
+                        cold_inlet_thermo=cold_inlet_thermo,
+                        hot_outlet_thermo=hot_outlet_thermo,
+                        dP_cold=dP_cold) - T_pinch
+
+    T_max = hot_inlet._T
+    T_min = cold_outlet._T
+
+    for i in range(10):
+        if np.sign(dT(T_min)) != np.sign(dT(T_max)):
+            break
+        else:
+            T_max = T_min
+            T_min /= 1.1
+
+    sol = root_scalar(dT, bracket=[T_min, T_max], method='brentq')
+
+    hot_outlet_thermo._TP = sol.root, hot_inlet._P
+    w_hot = Q/(hot_inlet._H - hot_outlet_thermo._H)
+
+    return Q, hot_outlet_thermo, w_hot
 
 
 def _find_w_hot_cold_inlet_counter(T_pinch, cold_outlet, hot_inlet, hot_outlet, w_cold,
@@ -104,10 +187,8 @@ def _find_w_hot_cold_inlet_counter(T_pinch, cold_outlet, hot_inlet, hot_outlet, 
                                     cold_inlet_thermo=cold_inlet_thermo,
                                     hot_outlet_thermo=hot_outlet_thermo) - T_pinch
 
-
     cold_inlet_thermo._TP = (hot_outlet._T - T_pinch), cold_inlet_thermo._P
     Q_max = w_cold * (cold_outlet._H - cold_inlet_thermo._H)
-
 
     Q_min = 1e-5
     for i in range(10):
@@ -120,7 +201,7 @@ def _find_w_hot_cold_inlet_counter(T_pinch, cold_outlet, hot_inlet, hot_outlet, 
 
     sol = root_scalar(dT, bracket=[1e-5, Q_max], method='brentq')
 
-    Q = sol.root 
+    Q = sol.root
     w_hot = Q/(hot_inlet._H - hot_outlet._H)
     cold_inlet_thermo._HP = cold_outlet._H - Q/w_cold, cold_outlet._P
 
@@ -283,7 +364,11 @@ class PinchSolver:
 
         return reference_fluid
 
-    def get_pinch_point(self, Q, cold_inlet, hot_inlet, w_hot, w_cold, config='counter'):
+    def get_pinch_point(self, Q,
+                        cold_inlet, hot_inlet,
+                        w_hot, w_cold,
+                        dP_cold=0, dP_hot=0,
+                        config='counter'):
         """
         Calculate the minimum temperature difference (pinch point) for given conditions.
 
@@ -314,7 +399,9 @@ class PinchSolver:
                                cold_outlet_thermo=self._cold_outlet_fluid,
                                cold_inlet_thermo=self._cold_inlet_fluid,
                                hot_outlet_thermo=self._hot_outlet_fluid,
-                               hot_inlet_thermo=self._hot_inlet_fluid)
+                               hot_inlet_thermo=self._hot_inlet_fluid,
+                               dP_cold=dP_cold,
+                               dP_hot=dP_hot)
 
     def get_pinch_Q(self, T_pinch, cold_inlet=None, cold_outlet=None,
                     hot_inlet=None, hot_outlet=None, w_cold=None, w_hot=None):
@@ -402,9 +489,19 @@ class PinchSolver:
             else:
                 raise NotImplementedError(f"Configuration '{self.config}' not yet implemented")
 
+        elif hot_outlet is None and w_hot is None:
+            if self.config == 'counter':
+
+                self._update_reference_fluid(cold_inlet, self._cold_inlet_fluid)
+                self._update_reference_fluid(cold_outlet, self._cold_outlet_fluid)
+
+                Q, hot_outlet, w_hot = _find_w_hot_hot_outlet_counter(
+                    T_pinch, cold_inlet, cold_outlet, w_cold, hot_inlet,
+                    hot_outlet_thermo=self._hot_outlet_fluid,
+                    cold_inlet_thermo=self._cold_inlet_fluid,
+                    cold_outlet_thermo=self._cold_outlet_fluid)
+        
         else:
-            from pdb import set_trace
-            set_trace()
             raise ValueError("Invalid combination of specified/unspecified parameters. "
                            "Please ensure exactly 2 parameters are None.")
 
