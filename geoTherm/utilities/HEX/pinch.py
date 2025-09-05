@@ -1,13 +1,17 @@
 from geoTherm.thermostate import thermo
+from geoTherm.nodes.baseNodes.baseThermo import baseThermo
 import numpy as np
 from scipy.optimize import root_scalar
 from geoTherm.units import inputParser, fromSI, units
-from geoTherm.utilities.heat_transfer import T_dQ
 from geoTherm.logger import logger
 from scipy.optimize import root_scalar, minimize_scalar
 from .profile import HEXProfile
 from geoTherm.utils import eps
+from functools import wraps
+from inspect import signature
 
+global debug_flag
+debug_flag=False
 
 def dT_Q_parallel(Q, hot_inlet, cold_inlet, w_hot, w_cold):
     pass
@@ -29,13 +33,22 @@ def dT_Q_counter(Q, hot_inlet, cold_outlet, w_hot, w_cold,
         hot_outlet_thermo._HP = hot_inlet._H, hot_inlet._P
     else:
         hot_outlet_thermo._HP = (hot_inlet._H - Q/w_hot,
-                                 hot_inlet._P + dP_hot)
+                                hot_inlet._P + dP_hot)
 
     if w_cold == 0:
         cold_inlet_thermo._HP = cold_outlet._H, cold_outlet._P
     else:
-        cold_inlet_thermo._HP = (cold_outlet._H - Q/w_cold,
-                                 cold_outlet._P - dP_cold)
+        try:
+            cold_inlet_thermo._HP = (cold_outlet._H - Q/w_cold,
+                                    cold_outlet._P - dP_cold)
+        except Exception as e:
+            logger.warn(f"Error updating cold inlet thermo for dT_Q_counter "
+                        f"calculation:\n{e}\n"
+                        f"Will try with dP_cold = 0")
+            
+            cold_inlet_thermo._HP = (cold_outlet._H - Q/w_cold,
+                                     cold_outlet._P)
+
 
     return hot_outlet_thermo._T - cold_inlet_thermo._T
 
@@ -45,7 +58,8 @@ def find_pinch_Q_counter(Q, hot_inlet, cold_outlet,
                          cold_inlet_thermo=None,
                          hot_outlet_thermo=None,
                          dP_cold=0,
-                         dP_hot=0):
+                         dP_hot=0,
+                         debug=False):
 
     if Q == 0:
         return hot_inlet._T - cold_outlet._T
@@ -65,7 +79,7 @@ def find_pinch_Q_counter(Q, hot_inlet, cold_outlet,
                             dP_cold=dP_cold_i,
                             dP_hot=dP_hot_i)
 
-    Q_bnds = np.linspace(0, 1, 5)
+    Q_bnds = np.linspace(0, 1, 4)
     sol1 = minimize_scalar(dT_Q, bounds=[Q_bnds[0], Q_bnds[1]], method='bounded')
     sol2 = minimize_scalar(dT_Q, bounds=[Q_bnds[1], Q_bnds[2]], method='bounded')
     sol3 = minimize_scalar(dT_Q, bounds=[Q_bnds[2], Q_bnds[3]], method='bounded')
@@ -80,6 +94,21 @@ def get_pinch_point(Q, cold_inlet, hot_inlet, w_hot, w_cold, config='counter',
                     hot_inlet_thermo=None,
                     dP_hot=0,
                     dP_cold=0):
+
+
+    if w_cold == 0 or w_hot == 0:
+
+        dH_cold = Q/w_cold if w_cold != 0 else 0
+        dH_hot = -Q/w_hot if w_hot != 0 else 0
+        cold_outlet_thermo._HP = cold_inlet._H + dH_cold, cold_inlet._P
+        hot_outlet_thermo._HP = hot_inlet._H + dH_hot, hot_inlet._P
+
+        T_pinch = np.min([hot_inlet._T - cold_inlet._T,
+                          hot_inlet._T - cold_outlet_thermo._T,
+                          hot_outlet_thermo._T - cold_inlet._T,
+                          hot_outlet_thermo._T - cold_outlet_thermo._T])
+        
+        return T_pinch
 
     if cold_outlet_thermo is None:
         cold_outlet_thermo = cold_inlet.from_state(cold_inlet.state)
@@ -102,6 +131,55 @@ def get_pinch_point(Q, cold_inlet, hot_inlet, w_hot, w_cold, config='counter',
         from pdb import set_trace
         set_trace()
 
+def _find_w_cold_cold_outlet_counter(T_pinch, hot_inlet, hot_outlet, w_hot, cold_inlet,
+                                     hot_outlet_thermo=None,
+                                     cold_inlet_thermo=None,
+                                     cold_outlet_thermo=None):
+
+
+    if cold_outlet_thermo is None:
+        cold_outlet_thermo = cold_inlet.from_state(cold_inlet.state)
+
+    if hot_outlet_thermo is None:
+        hot_outlet_thermo = hot_inlet.from_state(hot_inlet.state)
+
+    if cold_inlet_thermo is None:
+        cold_inlet_thermo = cold_inlet.from_state(cold_inlet.state)
+
+    # Calculate Q
+    Q = w_hot * (hot_inlet._H - hot_outlet._H)
+
+    def dT(T):
+        cold_outlet_thermo._TP = T, cold_inlet._P
+
+        if cold_outlet_thermo._H - cold_inlet._H == 0:
+            w_cold = 0
+        else:
+            w_cold = Q/(cold_outlet_thermo._H - cold_inlet._H)
+
+        return get_pinch_point(Q=Q,
+                        cold_inlet=cold_inlet,
+                        hot_inlet=hot_inlet,
+                        w_hot=w_hot,
+                        w_cold=w_cold,
+                        config='counter',
+                        cold_outlet_thermo=cold_outlet_thermo,
+                        cold_inlet_thermo=cold_inlet_thermo,
+                        hot_outlet_thermo=hot_outlet_thermo,
+                        dP_cold=0) - T_pinch
+
+
+    T_max = hot_inlet._T
+    T_min = cold_inlet._T+.1
+    sol = root_scalar(dT, bracket=[T_min, T_max], method='brentq')
+
+
+    cold_outlet_thermo._TP = sol.root, cold_inlet._P
+    w_cold = Q/(cold_outlet_thermo._H - cold_inlet._H)
+
+    return Q, cold_outlet_thermo, w_cold
+
+
 def _find_w_hot_hot_outlet_counter(T_pinch, cold_inlet, cold_outlet, w_cold, hot_inlet,
                                    hot_outlet_thermo=None,
                                    cold_inlet_thermo=None,
@@ -121,22 +199,10 @@ def _find_w_hot_hot_outlet_counter(T_pinch, cold_inlet, cold_outlet, w_cold, hot
     # Calculate Q
     Q = w_cold * (cold_outlet._H - cold_inlet._H)
 
+
     def dT(T):
         hot_outlet_thermo._TP = T, hot_inlet._P
-
         w_hot = Q/(hot_inlet._H - hot_outlet_thermo._H)
-
-        return find_pinch_Q_counter(Q=Q,
-                                    hot_inlet=hot_inlet,
-                                    cold_outlet=cold_outlet_thermo,
-                                    w_hot=w_hot,
-                                    w_cold=w_cold,
-                                    cold_inlet_thermo=cold_inlet_thermo,
-                                    hot_outlet_thermo=hot_outlet_thermo) - T_pinch
-
-    def dT(T):
-        hot_outlet_thermo._TP = T, hot_inlet._P
-        w_hot = Q/(hot_inlet._H - hot_outlet_thermo._H+eps)
 
         return get_pinch_point(Q=Q,
                         cold_inlet=cold_inlet,
@@ -149,17 +215,17 @@ def _find_w_hot_hot_outlet_counter(T_pinch, cold_inlet, cold_outlet, w_cold, hot
                         hot_outlet_thermo=hot_outlet_thermo,
                         dP_cold=dP_cold) - T_pinch
 
-    T_max = hot_inlet._T
+    T_max = hot_inlet._T-eps
     T_min = cold_outlet._T
 
-    for i in range(10):
+    for i in range(50):
         if np.sign(dT(T_min)) != np.sign(dT(T_max)):
             break
         else:
             T_max = T_min
             T_min /= 1.1
-
     sol = root_scalar(dT, bracket=[T_min, T_max], method='brentq')
+
 
     hot_outlet_thermo._TP = sol.root, hot_inlet._P
     w_hot = Q/(hot_inlet._H - hot_outlet_thermo._H)
@@ -283,6 +349,95 @@ def _find_w_cold_hot_outlet_counter(T_pinch, cold_inlet, cold_outlet,
     return Q, hot_outlet_thermo, w_cold
 
 
+def thermostate_input_parser(input_parameter_names):
+    """
+    Decorator factory for handling thermodynamic state inputs in PinchSolver methods.
+    
+    This decorator automatically processes method arguments that are thermodynamic
+    state objects, ensuring they are in the correct format and updating reference
+    fluids in the solver instance as needed.
+    
+    The decorator performs the following operations:
+    1. Extracts specified parameters from method arguments
+    2. Converts baseThermo objects to thermo objects by accessing their .thermo attribute
+    3. Validates that non-None inputs are either thermo or baseThermo objects
+    4. Updates the solver's reference fluid states when input fluids differ
+    
+    Args:
+        input_parameter_names (list[str]): List of parameter names to process.
+            These should correspond to method parameters that expect thermo objects.
+            Common examples: ['cold_inlet', 'hot_inlet', 'cold_outlet', 'hot_outlet']
+    
+    Returns:
+        decorator: A decorator function that wraps the target method
+        
+    Example:
+        @thermostate_input_parser(['cold_inlet', 'hot_inlet'])
+        def calculate_pinch_point(self, cold_inlet, hot_inlet, w_cold, w_hot):
+            # cold_inlet and hot_inlet are automatically processed
+            # baseThermo objects are converted to thermo objects
+            # reference fluids are updated if needed
+            pass
+    
+    Note:
+        - None values are skipped (no processing)
+        - baseThermo objects are converted to thermo objects via .thermo attribute
+        - Invalid types (not thermo or baseThermo) trigger critical logger errors
+        - The solver's reference fluids are updated when input fluids have different
+          thermodynamic or fluid properties than the current references
+    """
+    def decorator(method):
+        method_signature = signature(method)
+
+        @wraps(method)
+        def wrapper(self, *args, **kwargs):
+            # Bind the method arguments to parameter names
+            bound_arguments = method_signature.bind_partial(self,
+                                                            *args,
+                                                            **kwargs)
+            
+            # Process each specified input parameter
+            for param_name in input_parameter_names:
+                # Skip if parameter not provided
+                if param_name not in bound_arguments.arguments:
+                    continue
+
+                param_value = bound_arguments.arguments[param_name]
+
+                # Skip None values
+                if param_value is None:
+                    continue
+
+                # Convert baseThermo to thermo object
+                if isinstance(param_value, baseThermo):
+                    bound_arguments.arguments[param_name] = param_value.thermo
+                # Validate that we have a thermo object
+                elif not isinstance(param_value, thermo):
+                    logger.critical(
+                        f"Invalid input type for parameter '{param_name}':"
+                        f"{param_value} of type {type(param_value)}. "
+                        "Expected thermo or baseThermo object, "
+                        f"got {type(param_value)}."
+                    )
+                    raise TypeError(
+                        f"Parameter '{param_name}' must be a thermo or "
+                        f"baseThermo object, not {type(param_value)}"
+                    )
+
+                # Update the solver's reference fluid for this parameter
+                # This ensures the solver uses the correct fluid properties
+                self._update_reference_fluid(
+                    bound_arguments.arguments[param_name],
+                    f'_{param_name}_fluid'
+                )
+
+            # Call the original method with processed arguments
+            return method(*bound_arguments.args, **bound_arguments.kwargs)
+
+        return wrapper
+    return decorator
+
+
 class PinchSolver:
     """
     A solver for heat exchanger pinch point analysis.
@@ -306,7 +461,7 @@ class PinchSolver:
         ...                            hot_inlet=hot_in, w_cold=1.0, w_hot=1.0)
     """
 
-    def __init__(self, cold_fluid, hot_fluid, config='counter'):
+    def __init__(self, cold_fluid=None, hot_fluid=None, config='counter'):
         """
         Initialize the PinchSolver with reference fluids.
 
@@ -336,10 +491,12 @@ class PinchSolver:
             cold_fluid (thermo): Cold fluid state to use as reference
             hot_fluid (thermo): Hot fluid state to use as reference
         """
-        self._hot_inlet_fluid = hot_fluid.from_state(hot_fluid.state)
-        self._hot_outlet_fluid = hot_fluid.from_state(hot_fluid.state)
-        self._cold_inlet_fluid = cold_fluid.from_state(cold_fluid.state)
-        self._cold_outlet_fluid = cold_fluid.from_state(cold_fluid.state)
+        if hot_fluid is not None:
+            self._hot_inlet_fluid = hot_fluid.from_state(hot_fluid.state)
+            self._hot_outlet_fluid = hot_fluid.from_state(hot_fluid.state)
+        if cold_fluid is not None:
+            self._cold_inlet_fluid = cold_fluid.from_state(cold_fluid.state)
+            self._cold_outlet_fluid = cold_fluid.from_state(cold_fluid.state)
 
     def _update_reference_fluid(self, input_fluid, reference_fluid):
         """
@@ -356,14 +513,27 @@ class PinchSolver:
             thermo: Updated reference fluid (same object if no update needed)
         """
         input_state = input_fluid.state
+        reference_fluid_attr = reference_fluid
+        reference_fluid = getattr(self, reference_fluid_attr)
         reference_state = reference_fluid.state
 
         # Check if the fluid compositions match
-        if (input_state['thermo'] | input_state['fluid']) != (reference_state['thermo'] | reference_state['fluid']):
-            reference_fluid = reference_fluid.from_state(input_state)
+        if ((input_state['thermo'] | input_state['fluid']) 
+            != (reference_state['thermo'] | reference_state['fluid'])):
+                logger.info("Updating reference fluid: \n")
+                if input_state['thermo'] != reference_state['thermo']:
+                    logger.info(f"from {reference_state['thermo']} to "
+                                f"{input_state['thermo']}")
+                if input_state['fluid'] != reference_state['fluid']:
+                    logger.info(f"from {reference_state['fluid']} to "
+                                f"{input_state['fluid']}")
 
-        return reference_fluid
+                setattr(self, reference_fluid_attr,
+                        reference_fluid.from_state(input_state))
 
+
+
+    @thermostate_input_parser(['cold_inlet', 'hot_inlet'])
     def get_pinch_point(self, Q,
                         cold_inlet, hot_inlet,
                         w_hot, w_cold,
@@ -384,11 +554,6 @@ class PinchSolver:
             This method uses the reference fluids stored in the solver instance.
             Use get_pinch_Q() for more flexible input specification.
         """
-        self._cold_outlet_fluid = self._update_reference_fluid(cold_inlet, self._cold_outlet_fluid)
-        self._cold_inlet_fluid = self._update_reference_fluid(cold_inlet, self._cold_inlet_fluid)
-        self._hot_inlet_fluid = self._update_reference_fluid(hot_inlet, self._hot_inlet_fluid)
-        self._hot_outlet_fluid = self._update_reference_fluid(hot_inlet, self._hot_outlet_fluid)
-
 
         return get_pinch_point(Q=Q,
                                cold_inlet=cold_inlet,
@@ -403,6 +568,8 @@ class PinchSolver:
                                dP_cold=dP_cold,
                                dP_hot=dP_hot)
 
+    @thermostate_input_parser(['cold_inlet', 'cold_outlet',
+                               'hot_inlet', 'hot_outlet'])
     def get_pinch_Q(self, T_pinch, cold_inlet=None, cold_outlet=None,
                     hot_inlet=None, hot_outlet=None, w_cold=None, w_hot=None):
         """
@@ -450,9 +617,6 @@ class PinchSolver:
         if cold_inlet is None and w_hot is None:
             if self.config == 'counter':
 
-                self._update_reference_fluid(cold_outlet, self._cold_outlet_fluid)
-                self._update_reference_fluid(hot_inlet, self._hot_inlet_fluid)
-
                 Q, w_hot, cold_inlet = _find_w_hot_cold_inlet_counter(
                     T_pinch, cold_outlet, hot_inlet, hot_outlet, w_cold)
             else:
@@ -461,12 +625,6 @@ class PinchSolver:
         # Scenario 2: Solve for cold_outlet and hot_outlet
         elif cold_outlet is None and hot_outlet is None:
             if self.config == 'counter':
-
-                self._update_reference_fluid(cold_inlet, self._cold_outlet_fluid)
-                self._update_reference_fluid(cold_inlet, self._cold_inlet_fluid)
-                self._update_reference_fluid(hot_inlet, self._hot_outlet_fluid)
-
-
                 Q, cold_outlet, hot_outlet = _find_cold_outlet_hot_outlet_counter(
                     T_pinch, cold_inlet, hot_inlet, w_cold, w_hot,
                     cold_outlet_thermo=self._cold_outlet_fluid,
@@ -478,10 +636,6 @@ class PinchSolver:
         # Scenario 3: Solve for hot_outlet and w_cold
         elif hot_outlet is None and w_cold is None:
             if self.config == 'counter':
-
-                self._update_reference_fluid(cold_inlet, self._cold_inlet_fluid)
-                self._update_reference_fluid(hot_inlet, self._hot_outlet_fluid)
-
                 Q, hot_outlet, w_cold = _find_w_cold_hot_outlet_counter(
                     T_pinch, cold_inlet, cold_outlet, hot_inlet, w_hot,
                     cold_inlet_thermo=self._cold_inlet_fluid,
@@ -491,12 +645,16 @@ class PinchSolver:
 
         elif hot_outlet is None and w_hot is None:
             if self.config == 'counter':
-
-                self._update_reference_fluid(cold_inlet, self._cold_inlet_fluid)
-                self._update_reference_fluid(cold_outlet, self._cold_outlet_fluid)
-
                 Q, hot_outlet, w_hot = _find_w_hot_hot_outlet_counter(
                     T_pinch, cold_inlet, cold_outlet, w_cold, hot_inlet,
+                    hot_outlet_thermo=self._hot_outlet_fluid,
+                    cold_inlet_thermo=self._cold_inlet_fluid,
+                    cold_outlet_thermo=self._cold_outlet_fluid)
+        
+        elif cold_outlet is None and w_cold is None:
+            if self.config == 'counter':
+                Q, cold_outlet, w_cold = _find_w_cold_cold_outlet_counter(
+                    T_pinch, hot_inlet, hot_outlet, w_hot, cold_inlet,
                     hot_outlet_thermo=self._hot_outlet_fluid,
                     cold_inlet_thermo=self._cold_inlet_fluid,
                     cold_outlet_thermo=self._cold_outlet_fluid)
@@ -514,6 +672,8 @@ class PinchSolver:
             'hot_inlet': hot_inlet,
             'hot_outlet': hot_outlet
         }
+
+
 
 
 def dT_subcritical_counter_flow(cold_inlet, cold_outlet, hot_inlet, hot_outlet, w_hot, w_cold, 
