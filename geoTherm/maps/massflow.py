@@ -8,6 +8,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 from geoTherm.logger import logger
 from scipy.optimize import brentq
+from geoTherm.common import eps
 
 
 class MassFlowMap:
@@ -35,19 +36,45 @@ class MassFlowMap:
         self.P0_min, self.P0_max = self.df['P0'].min(), self.df['P0'].max()
         self.P_out_min, self.P_out_max = self.df['P_out'].min(), self.df['P_out'].max()
 
+
+        self.fixed_T0 = False
+        if self.T0_max - self.T0_min < 1:
+            logger.info("T0 is constant for the massflow map")
+            self.fixed_T0 = True
+
+        self.fixed_P0 = False
+        if self.P0_max - self.P0_min < 1:
+            logger.info("P0 is constant for the massflow map")
+            self.fixed_P0 = True
+
         self.T0_range = self.T0_max - self.T0_min
         self.P0_range = self.P0_max - self.P0_min
         self.P_out_range = self.P_out_max - self.P_out_min
 
-        # Create grid for mass flow interpolator (T0, P0, PR_ts)
-        self.grid = np.column_stack((self.df['P0']/self.P0_range,
-                                     self.df['T0']/self.T0_range,
-                                     self.df['P_out']/self.P_out_range))
+        if self.fixed_T0:
+            # Create grid for mass flow interpolator (T0, P0, PR_ts)
+            self.grid = np.column_stack((self.df['P0']/self.P0_range,
+                                        self.df['P_out']/self.P_out_range))
+        elif self.fixed_P0:
+            from pdb import set_trace
+            set_trace()
+        else:
+            self.grid = np.column_stack((self.df['P0']/self.P0_range,
+                                        self.df['T0']/self.T0_range,
+                                        self.df['P_out']/self.P_out_range))
 
         # Group by P0 and T0, then find the maximum massflow for each group (choked condition)
-        self.choked_df = self.df.groupby(['P0', 'T0'])['massflow'].max().reset_index()
+        choked_df = self.df.groupby(['P0', 'T0'])['massflow'].idxmax()
+        self.choked_df = self.df.loc[choked_df].reset_index(drop=True)
         self.choked_grid = np.column_stack((self.choked_df['P0']/self.P0_range,
                                             self.choked_df['T0']/self.T0_range))
+
+        # Check if T0 is the same and constant T0 or not
+
+        if self.fixed_T0:
+            # Build the interpolator for mass flow rate with T0 fixed
+            from pdb import set_trace
+            set_trace()
 
         self.LinearNDInterpolator = {
             'w': LinearNDInterpolator(
@@ -61,18 +88,23 @@ class MassFlowMap:
             'w_choked': LinearNDInterpolator(
                 points=self.choked_grid,
                 values=self.choked_df['massflow']
+            ),
+            'PR_critical': LinearNDInterpolator(
+                points=self.choked_grid,
+                values=self.choked_df['P0']/self.choked_df['P_out']
             )
         }
 
         self.fallback_interpolator = {
             'w': NearestNDInterpolator(self.grid, self.df['massflow']),
             'w_c': NearestNDInterpolator(self.grid, self.df['m_c']),
-            'w_choked': NearestNDInterpolator(self.choked_grid, self.choked_df['massflow'])
+            'w_choked': NearestNDInterpolator(self.choked_grid, self.choked_df['massflow']),
+            'PR_critical': NearestNDInterpolator(self.choked_grid, self.choked_df['P0']/self.choked_df['P_out'])
         }
 
     def interpolate(self, P0, T0, P_out, param):
 
-        if param == 'w_choked':
+        if param in ['w_choked', 'PR_critical']:
             point = np.column_stack((P0/self.P0_range,
                                      T0/self.T0_range))
         else:
@@ -90,9 +122,15 @@ class MassFlowMap:
                         f"T0={self.T0_min:.1f}-{self.T0_max:.1f}K,\n"
                         f"P_out={self.P_out_min/1e5:.1f}-{self.P_out_max/1e5:.1f} bar")
 
-            if param == 'w':
+            if param =='w':
+                PR_critical = self.interpolate(P0, T0, 0, 'PR_critical')
+                if P0/(P_out+eps) > PR_critical:
+                    w_choked = self.interpolate(P0, T0, 0, 'w_choked')
+                    logger.warn(f"Using choked mass flow rate")
+                    return w_choked
+ 
                 logger.warn(f"Using nearest neighbor fallback.")
-                w_choked = self.interpolate(P0, T0, None, 'w_choked')
+                w_choked = self.interpolate(P0, T0, 0, 'w_choked')
                 w = self.fallback_interpolator['w'](point)
                 return float(np.minimum(w, w_choked))
             else:
@@ -118,6 +156,20 @@ class MassFlowMap:
         float or array-like
             Mass flow rate (kg/s)
         """
+
+        PR_critical = self.interpolate(P0, T0, 0, 'PR_critical')
+        PR = P0/(P_out+eps)
+        if PR > PR_critical:
+            if PR > 1e4:
+                PR = np.inf
+            logger.warn(f"Pressure ratio is outside the bounds of the massflow map, "
+                        f"using choked mass flow rate\n"
+                        f"P0={P0/1e5:.1f} bar, T0={T0:.1f}K, P_out={P_out/1e5:.1f} bar\n"
+                        f"PR={PR:.3f}, PR_critical={PR_critical:.3f}")
+
+            w_choked = self.interpolate(P0, T0, 0, 'w_choked')
+            return w_choked
+
         corrected_w = self.interpolate(P0=P0, T0=T0, P_out=P_out, param='w_c')
         w = corrected_w * (P0/self.p_ref) * np.sqrt(self.T_ref/T0)
 
