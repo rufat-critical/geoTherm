@@ -1,7 +1,7 @@
 import numpy as np
 import re
 from scipy.optimize import root_scalar
-from .logger import logger
+from geoTherm.logger import logger
 import geoTherm as gt
 import yaml
 from scipy.interpolate import interp1d
@@ -1194,6 +1194,7 @@ class UserDefinedFunction:
     """
 
     parameters = {'US', 'w', 'model'}
+    quantity = 'PRESSURE'
 
     def __init__(self, value):
         """
@@ -1221,7 +1222,6 @@ class UserDefinedFunction:
             logger.warn(f"Unexpected parameters for {func.__name__}: {unexpected_params}")
         return True
 
-
     def set_func(self, val):
         """
         Set the internal function based on the input value.
@@ -1244,6 +1244,7 @@ class UserDefinedFunction:
             # Use the callable directly
             self._validate_func_signature(val)
             self._func = val
+            logger.info(f"{self.quantity} function set to SI units")
         else:
             try:
                 self.set_func(float(val))
@@ -1267,6 +1268,17 @@ class UserDefinedFunction:
     @property
     def _state(self):
         return {'func': self._func}
+
+
+class UserDefinedMassFlow(UserDefinedFunction):
+    """
+    A UserDefinedFunction that returns a mass flow rate.
+    """
+
+    parameters = {'US', 'DS', 'model'}
+    quantity = 'MASSFLOW'
+
+
 
 
 class ThermalUserDefinedFunction(UserDefinedFunction):

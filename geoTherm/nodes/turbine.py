@@ -430,9 +430,9 @@ from geoTherm.utils import TurbineInterpolator
 
 class TurbineMap(FixedFlowTurbine):
 
-    def __init__(self, name, US, DS, rotor, map, flow_func='isentropic'):
+    def __init__(self, name, US, DS, rotor, map):
 
-        super().__init__(name, US, DS,w=0,eta=1, flow_func=flow_func)
+        super().__init__(name, US, DS, w=0, rotor=rotor, eta=1)
 
         self.rotor = rotor
         self.map = map
@@ -443,7 +443,8 @@ class TurbineMap(FixedFlowTurbine):
         self.rotor_node = self.model.nodes[self.rotor]
 
     def evaluate(self):
-        self._w = self.map.get_massflow(self.US_node.thermo._P,
+
+        self._w = self.map._get_w(self.US_node.thermo._P,
                                         self.US_node.thermo._T,
                                         self.DS_node.thermo._P,
                                         self.rotor_node.N)
@@ -453,14 +454,14 @@ class TurbineMap(FixedFlowTurbine):
                                        self.rotor_node.N)
 
     def get_outlet_state(self, US, *, w=None, PR=None):
-        self._w = self.map.get_massflow(US._P,
-                                        US._T,
-                                        US._P*PR,
-                                        self.rotor_node.N)
+        self._w = self.map._get_w(US._P,
+                                    US._T,
+                                    US._P*PR,
+                                    N=self.rotor_node.N)
         self.eta = self.map.get_eta_ts(US._P,
                                        US._T,
                                        US._P*PR,
-                                       self.rotor_node.N)
+                                       N=self.rotor_node.N)
 
         return {'P': US._P*PR, 'H': US._H + self._dH}
 

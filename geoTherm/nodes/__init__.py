@@ -15,3 +15,4 @@ from .flowDevices import *
 from .tube_banks import *
 from .valve import *
 from .HEX import *
+from .generator import *

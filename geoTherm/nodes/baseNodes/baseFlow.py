@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 #from ...nodes.heatsistor import Qdot
 from geoTherm.decorators import state_dict
 from ...units import units
+from ...utils import UserDefinedMassFlow
 
 
 @addQuantityProperty
@@ -38,7 +39,6 @@ class baseFlow(Node, ABC):
         self.name = name
         self.US = US
         self.DS = DS
-        self._w = 0
         self.penalty = False
         self._unidirectional = unidirectional
 
@@ -497,6 +497,7 @@ class baseFlowResistor(baseFlow):
         return {'H': US._H, 'P': US._P + dP}
 
 
+@addQuantityProperty
 class FixedFlow(baseFlow):
     """
     A flow component with a fixed flow rate.
@@ -506,8 +507,18 @@ class FixedFlow(baseFlow):
     def __init__(self, name, US, DS, w:'MASSFLOW',
                  controller=None):
         super().__init__(name, US, DS)
-        self._w = w
+
+        self._mass_flow = UserDefinedMassFlow(w)
         self.controller = controller
+
+    @property
+    def _w(self):
+        return self._mass_flow.evaluate(self.US_node,
+                                        self.DS_node,
+                                        self.model)
+    @_w.setter
+    def _w(self, value):
+        self._mass_flow.set_func(value)
 
     def initialize(self, model):
         super().initialize(model)
