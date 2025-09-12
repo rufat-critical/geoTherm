@@ -5,7 +5,6 @@ from scipy.optimize import root_scalar
 from geoTherm.units import inputParser, fromSI, units
 from geoTherm.logger import logger
 from scipy.optimize import root_scalar, minimize_scalar
-from .profile import HEXProfile
 from geoTherm.utils import eps
 from functools import wraps
 from inspect import signature
@@ -149,6 +148,8 @@ def _find_w_cold_cold_outlet_counter(T_pinch, hot_inlet, hot_outlet, w_hot, cold
     # Calculate Q
     Q = w_hot * (hot_inlet._H - hot_outlet._H)
 
+    dP_hot = hot_outlet._P - hot_inlet._P
+
     def dT(T):
         cold_outlet_thermo._TP = T, cold_inlet._P
 
@@ -166,6 +167,7 @@ def _find_w_cold_cold_outlet_counter(T_pinch, hot_inlet, hot_outlet, w_hot, cold
                         cold_outlet_thermo=cold_outlet_thermo,
                         cold_inlet_thermo=cold_inlet_thermo,
                         hot_outlet_thermo=hot_outlet_thermo,
+                        dP_hot=dP_hot,
                         dP_cold=0) - T_pinch
 
 
@@ -530,8 +532,8 @@ class PinchSolver:
 
                 setattr(self, reference_fluid_attr,
                         reference_fluid.from_state(input_state))
-
-
+                from pdb import set_trace
+                set_trace()
 
     @thermostate_input_parser(['cold_inlet', 'hot_inlet'])
     def get_pinch_point(self, Q,
@@ -540,7 +542,8 @@ class PinchSolver:
                         dP_cold=0, dP_hot=0,
                         config='counter'):
         """
-        Calculate the minimum temperature difference (pinch point) for given conditions.
+        Calculate the minimum temperature difference (pinch point) for given
+        conditions.
 
         Args:
             Q (float): Heat transfer rate [W]

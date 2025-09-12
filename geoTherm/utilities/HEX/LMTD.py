@@ -162,6 +162,87 @@ def UA(hot_fluid_in, hot_fluid_out, cold_fluid_in, cold_fluid_out,
         set_trace()
 
 
+def Q_segments(fluid_in, fluid_out):
+
+    if fluid_in.T < fluid_out.T:
+        fluid_in, fluid_out = fluid_out, fluid_in
+
+
+    if fluid_in.phase == fluid_out.phase:
+        return np.array([fluid_in._H - fluid_out._H])
+
+    elif (fluid_in.phase in ['supercritical', 'supercritical_liquid', 'supercritical_gas']
+          and fluid_out.phase in ['supercritical', 'supercritical_liquid', 'supercritical_gas']):
+        return np.array([fluid_in._H - fluid_out._H])
+
+    if fluid_in.phase == 'two-phase':
+        saturated = fluid_in.from_state(fluid_in.state)
+        saturated._PQ = fluid_in._P, 0
+
+        return np.array([fluid_in._H - saturated._H, fluid_in._H - fluid_out._H])
+
+
+    from pdb import set_trace
+    set_trace()
+
+
+def UA_counter(hot_inlet, hot_outlet, cold_inlet, cold_outlet, w_hot, w_cold):
+
+    Q_tot_hot = w_hot*(hot_inlet._H - hot_outlet._H)
+    Q_tot_cold = w_cold*(cold_inlet._H - cold_outlet._H)
+
+    if np.abs(Q_tot_hot + Q_tot_cold) > 1:
+        from pdb import set_trace
+        set_trace()
+
+    Q_hot = Q_segments(hot_inlet, hot_outlet)*w_hot
+    Q_cold = Q_segments(cold_inlet, cold_outlet)*w_cold
+
+    Q = np.concatenate([Q_hot, Q_cold])
+
+    # Remove duplicate Q values that are within 0.1 of each other
+    if len(Q) > 1:
+        # Sort the array to make comparison easier
+        Q_sorted = np.sort(Q)
+        # Find indices where consecutive values differ by more than 0.1
+        keep_mask = np.concatenate([[True], np.abs(np.diff(Q_sorted)) > 0.1])
+        # Get the unique values
+        Q_unique = Q_sorted[keep_mask]
+        # Restore original order (approximately) by finding closest matches
+        Q_filtered = []
+        for q in Q:
+            # Find if this value is close to any value we're keeping
+            close_to_kept = np.any(np.abs(Q_unique - q) <= 0.1)
+            if close_to_kept:
+                # Only add if we haven't already added a close value
+                already_added = np.any(np.abs(np.array(Q_filtered) - q) <= 0.1)
+                if not already_added:
+                    Q_filtered.append(q)
+        Q = np.array(Q_filtered)
+
+
+    hot = hot_inlet.from_state(hot_inlet.state)
+    cold = cold_inlet.from_state(cold_inlet.state)
+    for q in Q:
+        hot._HP = hot_inlet._H - q/w_hot, hot_inlet._P
+        cold._HP = cold_inlet._H + q/w_cold, cold_inlet._P
+        lmtd = LMTD(hot._T, hot_outlet._T, cold._T, cold_outlet._T, config='counter')
+        UA = q/lmtd
+        from pdb import set_trace
+        set_trace()
+
+
+
+
+        from pdb import set_trace
+        set_trace()
+
+
+    from pdb import set_trace
+    set_trace()
+
+
+
 def UA_counterflow(hot_fluid_in, hot_fluid_out, cold_fluid_in, cold_fluid_out,
                   mdot_hot, mdot_cold):
     """

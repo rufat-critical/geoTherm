@@ -4,6 +4,200 @@ from scipy.optimize import root_scalar
 from geoTherm.units import inputParser, fromSI, units
 import matplotlib.pyplot as plt
 import copy
+from geoTherm.nodes.baseNodes.baseThermal import baseThermal
+from geoTherm.nodes.baseNodes.baseFlow import baseFlow
+from geoTherm.logger import logger
+from geoTherm.utilities.HEX.pinch import PinchSolver
+
+
+class HEXAnalyzer:
+    """
+    Heat Exchanger Analyzer for comprehensive thermal analysis.
+    
+    This class provides a high-level interface for analyzing heat exchanger
+    performance, including temperature profiles, pinch point analysis, and
+    visualization capabilities.
+    
+    Attributes:
+        HEX_node (baseThermal): The heat exchanger node to analyze
+        config (str): Flow configuration ('counter' or 'parallel')
+        Profile (HEXProfile): Temperature profile analysis results
+        PinchSolver (PinchSolver): Pinch point analysis solver
+    
+    Example:
+        >>> analyzer = HEXAnalyzer(hex_node, config='counter')
+        >>> analyzer.analyze()
+        >>> pinch_temp = analyzer.T_pinch
+        >>> analyzer.plot()
+    """
+    
+    def __init__(self, HEX_node, config='counter'):
+        """
+        Initialize the HEX Analyzer.
+        
+        Args:
+            HEX_node (baseThermal): Heat exchanger node to analyze.
+                Must be a BaseThermal node with hot_node and cool_node attributes.
+            config (str, optional): Flow configuration. Defaults to 'counter'.
+                Options: 'counter' for counterflow, 'parallel' for parallel flow.
+        
+        Raises:
+            TypeError: If HEX_node is not a BaseThermal node.
+        """
+        self.HEX_node = HEX_node
+        self.config = config
+        
+        # Validate input node type
+        if not isinstance(HEX_node, baseThermal):
+            logger.critical(f"HEX_node must be a BaseThermal node, not {type(HEX_node)}")
+            raise TypeError(f"HEX_node must be a BaseThermal node, not {type(HEX_node)}")
+
+    def _get_data(self):
+        """
+        Extract fluid data from the heat exchanger node.
+        
+        Retrieves mass flow rates, inlet/outlet thermodynamic states,
+        and pressure drops for both hot and cold fluid streams.
+        
+        Returns:
+            dict: Dictionary containing:
+                - w_hot (float): Hot fluid mass flow rate [kg/s]
+                - w_cold (float): Cold fluid mass flow rate [kg/s]
+                - hot_inlet (thermo): Hot fluid inlet thermodynamic state
+                - hot_outlet (thermo): Hot fluid outlet thermodynamic state
+                - cold_inlet (thermo): Cold fluid inlet thermodynamic state
+                - cold_outlet (thermo): Cold fluid outlet thermodynamic state
+        
+        Raises:
+            TypeError: If hot_node or cool_node are not BaseFlow nodes.
+        """
+        hot = self.HEX_node.hot_node
+        cool = self.HEX_node.cool_node
+        
+        # Validate node types
+        if not isinstance(hot, baseFlow):
+            logger.critical(f"Hot node must be a BaseFlow node, not {type(hot)}")
+            
+        if not isinstance(cool, baseFlow):
+            logger.critical(f"Cool node must be a BaseFlow node, not {type(cool)}")
+
+        return {
+            'w_hot': hot._w,
+            'w_cold': cool._w,
+            'hot_inlet': hot.US_node.thermo,
+            'hot_outlet': hot.DS_node.thermo,
+            'cold_inlet': cool.US_node.thermo,
+            'cold_outlet': cool.DS_node.thermo
+        }
+
+    def analyze(self):
+        """
+        Perform comprehensive heat exchanger analysis.
+        
+        Creates a HEXProfile instance and evaluates the temperature
+        and pressure profiles along the heat exchanger length.
+        
+        The analysis results are stored in self.Profile and can be
+        accessed for further processing or visualization.
+        
+        Returns:
+            None
+            
+        Note:
+            This method must be called before accessing profile results
+            or generating plots.
+        """
+        data = self._get_data()
+        self.Profile = HEXProfile(**data)
+        self.Profile.evaluate(self.HEX_node._Q)
+
+    @property
+    def T_pinch(self):
+        """
+        Calculate the pinch point temperature difference.
+        
+        Performs pinch point analysis to determine the minimum
+        temperature difference between hot and cold fluids in
+        the heat exchanger.
+        
+        Returns:
+            float: Pinch point temperature difference [K]
+            
+        Note:
+            This property creates a new PinchSolver instance each time
+            it's accessed. For repeated calculations, consider caching
+            the result.
+        """
+        data = self._get_data()
+        self.PinchSolver = PinchSolver(
+            cold_fluid=data['cold_inlet'],
+            hot_fluid=data['hot_inlet'],
+            config=self.config
+        )
+
+        return self.PinchSolver.get_pinch_point(
+            self.HEX_node._Q,
+            cold_inlet=data['cold_inlet'],
+            hot_inlet=data['hot_inlet'],
+            w_cold=data['w_cold'],
+            w_hot=data['w_hot'],
+            dP_cold=self.HEX_node.cool_node._dP,
+            dP_hot=self.HEX_node.hot_node._dP
+        )
+
+    def plot(self, figsize=(12, 8)):
+        """
+        Generate and display heat exchanger profile plots.
+        
+        Creates comprehensive visualization including:
+        - Temperature profiles for both fluids
+        - Pressure profiles
+        - Quality profiles (for two-phase flows)
+        - Pinch point identification and analysis
+        
+        Args:
+            figsize (tuple, optional): Figure size (width, height) in inches.
+                Defaults to (12, 8).
+        
+        Returns:
+            None
+            
+        Raises:
+            ValueError: If analyze() has not been called first.
+        """
+        self.analyze()
+        self.Profile.plot(figsize=figsize)
+
+    def get_summary(self):
+        """
+        Get a summary of heat exchanger performance metrics.
+        
+        Returns:
+            dict: Dictionary containing key performance metrics:
+                - Q_total: Total heat transfer rate [W]
+                - T_pinch: Pinch point temperature difference [K]
+                - hot_inlet_T: Hot fluid inlet temperature [K]
+                - hot_outlet_T: Hot fluid outlet temperature [K]
+                - cold_inlet_T: Cold fluid inlet temperature [K]
+                - cold_outlet_T: Cold fluid outlet temperature [K]
+                - w_hot: Hot fluid mass flow rate [kg/s]
+                - w_cold: Cold fluid mass flow rate [kg/s]
+        """
+        if not hasattr(self, 'Profile'):
+            self.analyze()
+
+        data = self._get_data()
+
+        return {
+            'Q_total': self.HEX_node._Q,
+            'T_pinch': self.T_pinch,
+            'hot_inlet_T': data['hot_inlet']._T,
+            'hot_outlet_T': data['hot_outlet']._T,
+            'cold_inlet_T': data['cold_inlet']._T,
+            'cold_outlet_T': data['cold_outlet']._T,
+            'w_hot': data['w_hot'],
+            'w_cold': data['w_cold']
+        }
 
 
 class HEXProfile:
@@ -64,7 +258,7 @@ class HEXProfile:
                 w_hot = Q/(hot_inlet._H - hot_outlet._H)
             else:
                 Q_hot = (hot_inlet._H - hot_outlet._H) * w_hot
-                if np.abs(Q - Q_hot) > 1:
+                if np.abs((Q - Q_hot)/Q) > 1e-5:
                     from pdb import set_trace
                     set_trace()
 

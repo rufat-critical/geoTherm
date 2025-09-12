@@ -1,0 +1,407 @@
+import numpy as np
+from scipy.interpolate import LinearNDInterpolator
+from geoTherm.common import logger
+import pandas as pd
+from geoTherm.units import toSI
+
+
+def find_data_locations(df, sheet_name, row_names):
+    """
+    Find the row and column indices for specified row names in a DataFrame.
+    Looks for the specific format: [Variable Name, Units, Float] or [Variable Name, Units, String] for Run Status.
+    Now handles cases where there might be blank columns between data columns.
+    
+    Args:
+        df (pd.DataFrame): DataFrame to search in
+        sheet_name (str): Name of the sheet being processed
+        row_names (list): List of row names to find
+        
+    Returns:
+        dict: Dictionary with row names as keys and location info as values
+               Each value is a list of dicts with 'units' and 'data_ranges' (list of (start, end) tuples)
+    """
+    data_locations = {}
+    
+    # Initialize data_locations with empty lists for each row_name
+    for row_name in row_names:
+        data_locations[row_name] = []
+    
+    # Search through all cells to find variable names in the correct format
+    for row_idx in range(len(df)):
+        for col_idx in range(len(df.columns) - 2):  # Need at least 3 columns for [var, unit, data]
+            cell_value = str(df.iloc[row_idx, col_idx]).strip()
+            
+            # Check if this cell contains any of our target row names (EXACT MATCH ONLY)
+            for row_name in row_names:
+                # Use exact string matching - cell must exactly equal the row_name
+                if cell_value == row_name:
+                    # Found a potential variable name - verify the format [Variable Name, Units, Data]
+                    unit_col_idx = col_idx + 1
+                    data_start_col_idx = unit_col_idx + 1
+                    
+                    # Check if we have enough columns
+                    if unit_col_idx >= len(df.columns) or data_start_col_idx >= len(df.columns):
+                        continue
+                    
+                    # Get the unit cell value
+                    unit_cell = str(df.iloc[row_idx, unit_col_idx]).strip()
+                    
+                    # Additional validation: Check that the cell before the variable name is empty or not another variable
+                    if col_idx > 0:
+                        prev_cell = str(df.iloc[row_idx, col_idx - 1]).strip()
+                        if prev_cell and prev_cell not in ['', 'nan'] and prev_cell not in row_names:
+                            continue
+                    
+                    # Verify this is a valid format:
+                    if (unit_cell and 
+                        unit_cell not in row_names and 
+                        not unit_cell.isdigit()):
+                        
+                        # Find all data ranges for this variable (handling blank columns)
+                        data_ranges = find_data_ranges(df, row_idx, data_start_col_idx, row_names)
+                        
+                        if data_ranges:  # Only add if we found valid data ranges
+                            location_info = {
+                                'units': (row_idx, unit_col_idx),
+                                'data_ranges': data_ranges
+                            }
+                            data_locations[row_name].append(location_info)
+
+    # Check for any missing row names
+    missing_names = [name for name in row_names if not data_locations[name]]
+    if missing_names:
+        print(f"Warning: Could not find the following row names in sheet {sheet_name}: {missing_names}")
+
+    return data_locations
+
+
+def find_data_ranges(df, row_idx, start_col, row_names):
+    """
+    Find all continuous data ranges for a variable, handling blank columns.
+    
+    Args:
+        df (pd.DataFrame): DataFrame to search in
+        row_idx (int): Row index containing the variable
+        start_col (int): Starting column index to search from
+        row_names (list): List of variable names to avoid
+    
+    Returns:
+        list: List of (start, end) tuples representing data ranges
+    """
+    data_ranges = []
+    current_start = None
+    
+    for col_idx in range(start_col, len(df.columns)):
+        cell_value = str(df.iloc[row_idx, col_idx]).strip()
+        
+        # Stop if we hit another variable name
+        if cell_value in row_names:
+            break
+            
+        # Check if this cell contains valid data
+        is_valid_data = False
+        if cell_value and cell_value != 'nan' and cell_value != '':
+            # For numeric data, try to convert to float
+            try:
+                float(cell_value)
+                is_valid_data = True
+            except (ValueError, TypeError):
+                # For Run Status, accept any non-empty string
+                if 'Run Status' in row_names:  # This is a bit of a hack, but works for the current use case
+                    is_valid_data = True
+        
+        if is_valid_data:
+            if current_start is None:
+                current_start = col_idx
+        else:
+            # We hit an empty/invalid cell
+            if current_start is not None:
+                # End the current range
+                data_ranges.append((current_start, col_idx))
+                current_start = None
+    
+    # Handle case where data goes to the end of the row
+    if current_start is not None:
+        data_ranges.append((current_start, len(df.columns)))
+    
+    return data_ranges
+
+
+def extract_row_data(df, data_locations):
+    """
+    Extract data for specified row locations from a DataFrame.
+    Handles horizontal data structure with potential blank columns between data ranges.
+    """
+    extracted_data = {}
+
+    for row_name, location_list in data_locations.items():
+        if location_list:  # Check if the list is not empty
+            all_values = []
+            unit = None
+
+            # Process all locations for this variable
+            for location in location_list:
+                # Get the row that contains the variable name
+                var_row_idx = location['units'][0]
+
+                # Extract unit from the unit column (use first non-None unit found)
+                if unit is None:
+                    unit = df.iloc[var_row_idx, location['units'][1]] if len(df.columns) > location['units'][1] else None
+
+                # Extract data from all identified ranges
+                for start_col, end_col in location['data_ranges']:
+                    data_values = df.iloc[var_row_idx, start_col:end_col].dropna().tolist()
+                    
+                    # Filter out non-numeric values
+                    valid_values = []
+                    for val in data_values:
+                        try:
+                            float_val = float(val)
+                            valid_values.append(float_val)
+                        except (ValueError, TypeError):
+                            if row_name == 'Run Status':
+                                valid_values.append(val)
+                            else:
+                                continue
+
+                    all_values.extend(valid_values)
+
+            extracted_data[row_name] = {
+                'unit': unit,
+                'values': all_values,
+            }
+        else:
+            extracted_data[row_name] = {
+                'unit': None,
+                'values': [],
+            }
+
+    return extracted_data
+
+
+def concepts_data_reader(xlsx_path, row_names, sheet_names=None):
+    """ 
+    Load Excel data from specified sheets and return a combined DataFrame.
+
+    Args:
+        xlsx_path (str): Path to Excel file
+        row_names (list): List of row names to read
+        sheet_names (list, optional): List of sheet names to read. If None, all sheets are read.
+
+    Returns:
+        tuple: (combined DataFrame, dict of units)
+                - Combined DataFrame contains all data from all sheets with a 'sheet' column
+                - Units dict has variable names as keys and their units as values
+    """
+    # Load excel file
+    xls = pd.read_excel(xlsx_path, sheet_name=None, header=None)
+
+    # Determine which sheets to process
+    if sheet_names is None:
+        sheets_to_process = list(xls.keys())
+    else:
+        sheets_to_process = [sheet for sheet in sheet_names if sheet in xls.keys()]
+
+    # Initialize containers
+    all_dataframes = []
+    units_dict = {}
+
+    for sheet in sheets_to_process:
+        data_locations = find_data_locations(xls[sheet], sheet, row_names)
+
+        if not data_locations: # Check if data_locations is empty
+            continue
+
+        sheet_data = extract_row_data(xls[sheet], data_locations)
+
+        # Create DataFrame for this sheet with just the values
+        sheet_df_data = {}
+        for row_name in row_names:
+            if row_name in sheet_data:
+                sheet_df_data[row_name] = sheet_data[row_name]['values']
+                # Store units (use first non-None unit found)
+                if row_name not in units_dict and sheet_data[row_name]['unit'] is not None:
+                    units_dict[row_name] = sheet_data[row_name]['unit']
+            else:
+                sheet_df_data[row_name] = []
+
+        # Create DataFrame and pad with NaN to make all columns same length
+        max_length = max(len(values) for values in sheet_df_data.values()) if sheet_df_data else 0
+        for row_name in sheet_df_data:
+            if len(sheet_df_data[row_name]) < max_length:
+                sheet_df_data[row_name].extend([None] * (max_length - len(sheet_df_data[row_name])))
+
+        # Create DataFrame and drop rows with any NaN values
+        df = pd.DataFrame(sheet_df_data)
+        df_clean = df.dropna().copy()  # Add .copy() to create an explicit copy
+
+        # Only add sheet name column if DataFrame is not empty
+        if not df_clean.empty:
+            df_clean['sheet'] = sheet
+            all_dataframes.append(df_clean)
+
+    combined_df = pd.concat(all_dataframes, ignore_index=True)
+
+    # Do some cleaning
+    OG_len = len(combined_df)
+    combined_df = combined_df[combined_df['Run Status'] == 'OK:CONV']
+    if OG_len != len(combined_df):
+        logger.info(f"Removed {OG_len - len(combined_df)} rows that did not "
+                    "converge")
+
+    # Remove duplicate rows
+    print(f"Before removing duplicates: {len(combined_df)} rows")
+    combined_df = combined_df.drop_duplicates()
+    print(f"After removing duplicates: {len(combined_df)} rows")
+
+    return combined_df, units_dict
+
+
+# Variable mapping configuration
+RITAL_MAPPING = {
+    'STAGE InletTotalPressure': 'P0',
+    'STAGE InletTotalTemperature': 'T0', 
+    'STAGE Pexit': 'P_out',
+    "STAGE PR_TS": 'PR_ts',
+    "STAGE Power": 'Power',
+    "STAGE RPM": 'RPM',
+    'STAGE MFLOW CORRECTED': 'm_c',
+    'STAGE EFF_TS': 'ETA_ts'
+}
+
+AXIAL_MAPPING = {'p00.in': 'P0',
+                 'T00.in': 'T0',
+                 'p.out': 'P_out',
+                 'T.out': 'T_out',
+                 'PR_ts': 'PR_ts',
+                 'm.out': 'massflow',
+                 'N': 'RPM',
+                 'Power(Shaft)': 'Power',
+                 'ETA_ts_ad': 'ETA_ts',
+                 'Run Status': 'Converged'}
+
+Quantities = {
+    'P0': 'PRESSURE',
+    'T0': 'TEMPERATURE',
+    'P_out': 'PRESSURE',
+    'T_out': 'TEMPERATURE',
+    'Power': 'POWER',
+    'massflow': 'MASSFLOW',
+    'm_c': 'MASSFLOW',
+    'RPM': 'RPM',
+}
+
+
+# Unit corrections
+UNIT_CORRECTIONS = {
+    'KPa': 'kPa',
+    'Kg/s': 'kg/s',
+    'Bar': 'bar',
+    'K': 'degK',
+    }
+
+
+def concepts_reader(xlsx_path, type='axial', sheet_names=None):
+
+    if type == 'axial':
+        mapping = AXIAL_MAPPING
+    elif type == 'rital':
+        mapping = RITAL_MAPPING
+    else:
+        raise ValueError(f"Invalid type: {type}")
+
+    logger.info(f"Reading concepts map data from {xlsx_path} for "
+                f"{type} type")
+
+    df, units = concepts_data_reader(xlsx_path,
+                                     list(mapping.keys()),
+                                     sheet_names)
+
+
+    # Apply mapping to rename dataframe columns
+    df = df.rename(columns=mapping)
+
+    # Apply mapping to rename units dictionary keys
+    units = {mapping[key]: value for key, value in units.items() if key in mapping}
+
+    # Apply unit corrections to the units dictionary
+    for key, unit in units.items():
+        if unit is not None:
+            # Apply unit corrections if the unit exists in UNIT_CORRECTIONS
+            corrected_unit = UNIT_CORRECTIONS.get(unit, unit)
+            units[key] = corrected_unit
+
+    # Loop through each variable and convert to SI if it's in Quantities
+    for column in df.columns:
+        if column in Quantities:
+            unit = units[column]
+            # Get the quantity type for this variable
+            quantity_type = Quantities[column]
+            # Convert the data to SI units
+            data_array = df[column].to_numpy()
+            converted_data = toSI((data_array, unit), quantity_type)
+
+            # Update the dataframe with converted values
+            df[column] = converted_data
+
+    # Generate corrected mass flow for axial maps
+    if type == 'axial' and 'massflow' in df.columns:
+        T_ref = 288.15  # K
+        p_ref = 101325  # Pa
+
+        # Calculate corrected mass flow from actual mass flow
+        df['m_c'] = df['massflow'] * np.sqrt(df['T0']/T_ref) * (p_ref/df['P0'])
+
+        # Add units for corrected mass flow
+        units['m_c'] = 'kg/s'
+
+    df = data_processor(df)
+
+    return df
+
+def excel_reader(xlsx_path, type='axial', sheet_names=None):
+
+    if isinstance(xlsx_path, str):
+        return concepts_reader(xlsx_path, type, sheet_names)
+    else:
+        return pd.concat([concepts_reader(df, type, sheet_names)
+                         for df in xlsx_path],
+                         ignore_index=True)
+
+
+
+def data_processor(df):
+    df_clean = df.copy()
+    
+    # Remove duplicate points (exact duplicates)
+    df_clean = df.drop_duplicates()
+    
+    # Remove points that are too close together
+    # Calculate distances between points in normalized space
+    T_norm = (df_clean['T0'] - df_clean['T0'].min()) / (df_clean['T0'].max() - df_clean['T0'].min())
+    P_norm = (df_clean['P0'] - df_clean['P0'].min()) / (df_clean['P0'].max() - df_clean['P0'].min())
+    PR_norm = (df_clean['PR_ts'] - df_clean['PR_ts'].min()) / (df_clean['PR_ts'].max() - df_clean['PR_ts'].min())
+    RPM_norm = (df_clean['RPM'] - df_clean['RPM'].min()) / (df_clean['RPM'].max() - df_clean['RPM'].min())
+    
+    # Calculate pairwise distances
+    points = np.column_stack((T_norm, P_norm, PR_norm, RPM_norm))
+    
+    # Remove points that are too close (distance < threshold)
+    threshold = 1e-6  # Adjust this value as needed
+    keep_indices = []
+    
+    for i in range(len(points)):
+        keep_point = True
+        for j in keep_indices:
+            if np.linalg.norm(points[i] - points[j]) < threshold:
+                keep_point = False
+                break
+        if keep_point:
+            keep_indices.append(i)
+    
+    # Update data with cleaned version
+    df_clean.iloc[keep_indices].reset_index(drop=True)
+
+    logger.info(f"Data cleaned: {len(df)} -> {len(keep_indices)} points")
+
+    return df_clean
